@@ -1,3 +1,15 @@
 spring:
   application:
     name: jotang-note
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:jotang_note}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # 库表与基础数据随应用启动初始化；脚本均为幂等，可重复执行
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
