@@ -1,6 +1,14 @@
 -- Jotang Note MVP 建表脚本，对应《概要设计》§3.2
 -- 全部 IF NOT EXISTS，可重复执行
 
+-- 学院（预置数据，用户注册时必选，D8）
+CREATE TABLE IF NOT EXISTS `college` (
+  `id`   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(128)    NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- 用户
 CREATE TABLE IF NOT EXISTS `user` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -8,6 +16,7 @@ CREATE TABLE IF NOT EXISTS `user` (
   `email`         VARCHAR(128)    NOT NULL COMMENT '邮箱，密码找回用',
   `password_hash` VARCHAR(100)    NOT NULL COMMENT 'BCrypt',
   `nickname`      VARCHAR(32)     NOT NULL,
+  `college_id`    BIGINT UNSIGNED NOT NULL COMMENT '所属学院，注册时必选（D8）',
   `avatar`        VARCHAR(255)    NULL     COMMENT '头像 Bucket 对象键（非完整 URL；对外拼公网 URL）',
   `role`          VARCHAR(16)     NOT NULL DEFAULT 'USER' COMMENT 'USER / ADMIN',
   `status`        TINYINT         NOT NULL DEFAULT 1      COMMENT '1正常 0禁用（预留）',
@@ -15,18 +24,19 @@ CREATE TABLE IF NOT EXISTS `user` (
   `updated_at`    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_username` (`username`),
-  UNIQUE KEY `uk_email` (`email`)
+  UNIQUE KEY `uk_email` (`email`),
+  KEY `idx_college` (`college_id`),
+  CONSTRAINT `fk_user_college` FOREIGN KEY (`college_id`) REFERENCES `college`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 课程（预置数据，含一条固定的「其他」）
+-- D8：不再记开课学院——学院挂在上传者身上，笔记的学院由 user.college_id 推导（概要设计 §3.3）
 CREATE TABLE IF NOT EXISTS `course` (
   `id`       BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `name`     VARCHAR(128)    NOT NULL,
-  `college`  VARCHAR(128)    NULL,
   `is_other` TINYINT         NOT NULL DEFAULT 0 COMMENT '1=内置「其他」',
   PRIMARY KEY (`id`),
-  KEY `idx_name` (`name`),
-  KEY `idx_college` (`college`)
+  UNIQUE KEY `uk_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 笔记（软删除：status 含 DELETED，行不物理删除）

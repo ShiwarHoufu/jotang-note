@@ -34,12 +34,22 @@ import java.io.IOException;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    /** 免登录接口（§5.1）。密码找回的两个接口也必须放行——用户正是登不上才要找回。 */
+    /**
+     * 免登录接口（§5.1、§5.3）。
+     *
+     * <p>密码找回的两个接口必须放行——用户正是登不上才要找回。
+     *
+     * <p>{@code /api/colleges} 也必须放行，理由与密码找回同源：注册页要拿它填学院下拉框，
+     * 而注册发生在登录之前。不放行则下拉框取不到数据，谁也注册不了。
+     *
+     * <p>与之相对，{@code /api/courses} 与 {@code /api/tags} 刻意**不放行**——浏览内容需登录。
+     */
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/register",
             "/api/auth/login",
             "/api/auth/password/forgot",
-            "/api/auth/password/reset"
+            "/api/auth/password/reset",
+            "/api/colleges"
     };
 
     private final ObjectMapper objectMapper;

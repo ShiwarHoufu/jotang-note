@@ -28,6 +28,12 @@ public class User {
 
     private String nickname;
 
+    /**
+     * 所属学院，注册时必选（D8）。外键指向 {@code college.id}，
+     * 因此该表的外键异常不等于数据损坏——见 AuthService 里对入参的先校验。
+     */
+    private Long collegeId;
+
     /** OSS 对象键（非完整 URL）；对外拼公网 URL 见 §6.7 */
     private String avatar;
     /** USER / ADMIN */

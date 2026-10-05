@@ -7,13 +7,16 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * tag 表。data.sql 预置若干常用标签，用户上传时也可自由打标，与 note 多对多。
- * 见《概要设计》§3.2。
+ * college 表。预置数据，用户注册时必选，用户不能自建。
+ * 见《概要设计》§3.2、决策 D8。
+ *
+ * <p>学院挂在用户而不是课程上：笔记的学院归属由上传者推导，
+ * 因此这里只有 id 与名称，没有任何统计字段。
  */
 @Getter
 @Setter
-@TableName("tag")
-public class Tag {
+@TableName("college")
+public class College {
 
     @TableId(type = IdType.AUTO)
     private Long id;

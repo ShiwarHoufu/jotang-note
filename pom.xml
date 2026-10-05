@@ -139,6 +139,26 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+            <!--
+                Mockito 5 起默认走 inline mock maker，需要把 mockito-core 作为 Java agent 挂载。
+                不显式挂的话它会在运行时动态 attach，JDK 21 起每次都打一串
+                "Mockito is currently self-attaching..." 与 "Dynamic loading of agents..." 警告，
+                未来版本将直接禁止动态挂载。这里按官方推荐的方式挂上，把警告消掉。
+                本项目自身没写 Mockito，但 Spring 的 MockitoTestExecutionListener 在装配测试上下文时
+                会初始化它，所以照样会触发。
+
+                路径没有用 dependency-plugin 的 properties goal 动态生成，而是按本地仓库的标准布局拼：
+                那个 goal 设的 ${org.mockito:mockito-core:jar} 只在构建期存在，IDE 静态解析不到会标红，
+                从 IDE 跑测试时还可能把未解析的字面量原样传给 JVM，导致 JVM 直接启动失败。
+                下面两个属性 Maven 与 IDE 都能解析——${mockito.version} 由 spring-boot-dependencies 定义。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</argLine>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
