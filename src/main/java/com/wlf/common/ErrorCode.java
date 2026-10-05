@@ -18,6 +18,9 @@ public enum ErrorCode {
     /** 未登录 / token 无效 / token 过期。*/
     UNAUTHORIZED(40100, "未登录或登录已过期", HttpStatus.UNAUTHORIZED),
 
+    /** 登录时用户名或密码错误。前端动作：登录表单内提示，不跳转——与 40100 的「跳登录」区别开 */
+    BAD_CREDENTIALS(40101, "用户名或密码错误", HttpStatus.UNAUTHORIZED),
+
     /** 无权限：非本人操作、非管理员调用管理接口 */
     FORBIDDEN(40300, "无权限", HttpStatus.FORBIDDEN),
 
@@ -32,6 +35,9 @@ public enum ErrorCode {
 
     /** 重复收藏。前端动作：按钮置为「已收藏」态 */
     ALREADY_FAVORITED(40902, "已收藏过该笔记", HttpStatus.CONFLICT),
+
+    /** 注册时邮箱已被占用。与 USERNAME_TAKEN 同为 409，前端据 code 决定标红哪个输入框 */
+    EMAIL_TAKEN(40903, "该邮箱已被注册", HttpStatus.CONFLICT),
 
     /** 文件类型或大小不合法。具体原因（扩展名 / 魔数 / 大小）由 message 说明 */
     FILE_INVALID(42200, "文件类型或大小不合法", HttpStatus.UNPROCESSABLE_ENTITY),

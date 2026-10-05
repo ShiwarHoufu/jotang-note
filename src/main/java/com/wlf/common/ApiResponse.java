@@ -19,10 +19,8 @@ public class ApiResponse<T> {
 
     /** 业务码，0 表示成功，其余见 {@link ErrorCode} */
     private final int code;
-
     /** 提示文案，直接面向用户 */
     private final String message;
-
     /** 业务数据，无数据时为 null */
     private final T data;
 

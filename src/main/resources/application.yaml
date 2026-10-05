@@ -13,3 +13,10 @@ spring:
     init:
       mode: always
       encoding: UTF-8
+
+# JWT：密钥不落仓库，一律外部注入；本机开发由 application-local.yaml 覆盖 jwt.secret。
+# 密钥是 32 字节密钥的 Base64 串（解码后 256 位，恰为 HS256 下限），生成示例：
+#   openssl rand -base64 32
+jwt:
+  secret: ${JWT_SECRET}
+  ttl: ${JWT_TTL:2h}
