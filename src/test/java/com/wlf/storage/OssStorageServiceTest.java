@@ -2,6 +2,8 @@ package com.wlf.storage;
 
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.OSSObject;
+import com.wlf.common.BusinessException;
+import com.wlf.common.ErrorCode;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,7 +12,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -20,7 +26,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
 
+import javax.imageio.ImageIO;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * storage 模块的集成测试：真打阿里云 OSS。
@@ -104,12 +113,110 @@ class OssStorageServiceTest {
         assertThat(ossServer.doesObjectExist(bucketNote, key)).isFalse();
     }
 
+    /**
+     * 读取原语：§6.2 的 MD / 文本预览走后端代理，要靠它把对象内容取回来。
+     *
+     * <p>用 try-with-resources 走一遍，同时验证返回的流能被正常关闭——OSSObject 持有的
+     * HTTP 连接由该流负责释放，若实现只取了内容而丢掉 OSSObject，连接就会泄漏。
+     */
+    @Test
+    void openReturnsFullObjectContent() throws Exception {
+        String key = "test/" + UUID.randomUUID() + ".txt";
+        byte[] payload = "后端代理预览 · /raw".getBytes(StandardCharsets.UTF_8);
+
+        try {
+            storageService.upload(Bucket.NOTE, key, new ByteArrayInputStream(payload),
+                    payload.length, "text/plain");
+
+            try (InputStream in = storageService.open(Bucket.NOTE, key)) {
+                assertThat(in.readAllBytes()).isEqualTo(payload);
+            }
+        } finally {
+            storageService.delete(Bucket.NOTE, key);
+        }
+    }
+
+    /**
+     * 对象不存在时统一翻译成 50000，不把 OSS 的 NoSuchKey 原样泄漏给上层。
+     *
+     * <p>正常业务流程走不到这里——读取前调用方已校验笔记状态。真出现「库里记着、对象没了」
+     * 说明数据不一致，是服务端问题，不该让前端按「资源不存在」处理。
+     */
+    @Test
+    void openTranslatesMissingObjectIntoServerError() {
+        String missingKey = "test/" + UUID.randomUUID() + "-absent.txt";
+
+        assertThatThrownBy(() -> storageService.open(Bucket.NOTE, missingKey))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.SERVER_ERROR));
+    }
+
+    /**
+     * 预览路径：{@code downloadName} 传 null，签出的 URL 供前端内联展示。
+     *
+     * <p>与下载用例的区别是本方法不携带下载文件名——URL 里既没有 filename 也没有 attachment，
+     * 否则 OSS 会把它当成附件下载并在保存时改名。
+     *
+     * <p><b>注意</b>：拿这个 URL 在浏览器地址栏直接打开会被 OSS <b>强制下载</b>。默认域名
+     * （*.aliyuncs.com）会对图片、PDF 等类型附加 {@code Content-Disposition: attachment}
+     * 与 {@code x-oss-force-download: true}（实测确认，阿里云错误码 0048-00000101），
+     * 显式请求 inline 也压不过它。但这只影响「导航」场景：前端用 {@code <img src>} 加载
+     * 子资源时浏览器会忽略该响应头，图片照常显示；真正受影响的只有必须走 {@code <iframe>}
+     * 的 PDF 预览。详见《概要设计》§6.2。故本用例只断言「URL 由我们构造正确」，
+     * 不对那个由平台强加的响应头做断言。
+     */
+    @Test
+    void previewUrlCarriesInlineDispositionAndNoDownloadName() throws Exception {
+        String key = "test/" + UUID.randomUUID() + ".png";
+        byte[] payload = onePixelPng();
+
+        try {
+            storageService.upload(Bucket.NOTE, key, new ByteArrayInputStream(payload),
+                    payload.length, "image/png");
+
+            // downloadName 传 null = 预览（§6.2：TTL 5min）
+            String url = storageService.presignedUrl(Bucket.NOTE, key, Duration.ofMinutes(5), null);
+            HttpResponse<byte[]> response = get(url);
+
+            assertThat(response.statusCode())
+                    .withFailMessage("签名 URL 请求失败：HTTP %d，OSS 响应体=%s%nURL=%s",
+                            response.statusCode(),
+                            new String(response.body(), StandardCharsets.UTF_8),
+                            url)
+                    .isEqualTo(200);
+            assertThat(response.body()).isEqualTo(payload);
+            // 类型取自对象元数据（上传时写入），浏览器据此渲染
+            assertThat(response.headers().firstValue("Content-Type")).contains("image/png");
+
+            // 我们这一侧能控制的部分：声明 inline，且绝不夹带下载文件名
+            assertThat(url)
+                    .withFailMessage("预览 URL 不该带下载文件名，实际=%s", url)
+                    .contains("response-content-disposition=inline")
+                    .doesNotContain("filename")
+                    .doesNotContain("attachment");
+        } finally {
+            storageService.delete(Bucket.NOTE, key);
+        }
+    }
+
     @Test
     void publicUrlPointsAtAvatarBucketOnPublicEndpoint() {
         String url = storageService.publicUrl(Bucket.AVATAR, "avatars/1/abc.png");
 
         assertThat(url)
                 .isEqualTo("https://" + bucketAvatar + "." + endpointBrowser + "/avatars/1/abc.png");
+    }
+
+    /**
+     * 用 ImageIO 生成一张 1×1 PNG。
+     *
+     * <p>刻意生成真实图片而不是随手编一串字节：用例断言的是「图片能内联预览」，
+     * 若将来有人加上真正的图片校验，编造的字节会让这个用例变成假的通过。
+     */
+    private static byte[] onePixelPng() throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), "png", out);
+        return out.toByteArray();
     }
 
     private static HttpResponse<byte[]> get(String url) throws Exception {

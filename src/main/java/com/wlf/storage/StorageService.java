@@ -4,13 +4,11 @@ import java.io.InputStream;
 import java.time.Duration;
 
 /**
- * 存储抽象：流式上传、签发签名 URL、删除对象。
+ * 存储抽象：流式上传、读取、签发签名 URL、删除对象。
  * 所有 OSS 操作收敛于此，业务层不感知底层存储；OSS 为首个实现，V2 可平替 MinIO。
  * 见《概要设计》§1.1、§6.2、§6.7。
  *
- * <p>本层只提供「存 / 签 / 删」三件原语，<b>不含任何业务策略</b>：
- * 对象键怎么拼（§6.1 的 {@code notes/yyyy/MM/{uuid}.{ext}}）、TTL 多长、
- * 哪些扩展名合法、文件头魔数是什么，全部由调用方（note / user 模块）决定。
+ * <p>本层只提供「存 / 读 / 签 / 删」四件原语，<b>不含任何业务策略</b>：
  * 这样 note 的单元测试可以直接 mock 本接口，不必碰 OSS SDK。
  */
 public interface StorageService {
@@ -22,6 +20,24 @@ public interface StorageService {
      * @return 上传结果；key 原样回传，便于调用方直接落库
      */
     StoredObject upload(Bucket bucket, String key, InputStream in, long size, String contentType);
+
+    /**
+     * 打开对象供读取。返回的流<b>由调用方负责关闭</b>（关闭流即释放底层 HTTP 连接），
+     * 请配合 try-with-resources 使用。
+     *
+     * <p>用途是 §6.2 的 MD / 文本预览：这类文件体积小，由后端代理转发而不是签发直连 URL，
+     * 以便固定响应头（{@code Content-Type: text/plain; charset=utf-8} 与
+     * {@code X-Content-Type-Options: nosniff}），不给浏览器直接解析原文件的机会。
+     * 图片 / PDF 不走这里，它们走 {@link #presignedUrl} 直连 OSS。
+     *
+     * <p>刻意返回 {@code InputStream} 而非 OSS SDK 的 {@code OSSObject}：不让 SDK 类型
+     * 泄漏进业务层，V2 平替 MinIO 时本签名无需改动。响应头、状态校验等流程留在调用方。
+     *
+     * @throws com.wlf.common.BusinessException 对象不存在或 OSS 故障时抛 50000。
+     *         正常的业务流不会走到「对象不存在」——读取前调用方已校验笔记状态，
+     *         故该情形属数据不一致（库里记着、对象没了），按服务端错误处理
+     */
+    InputStream open(Bucket bucket, String key);
 
     /**
      * 签发浏览器可直连的签名 URL。两种场景共用本方法：
