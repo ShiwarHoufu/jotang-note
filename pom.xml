@@ -30,6 +30,13 @@
         <java.version>21</java.version>
         <jjwt.version>0.13.0</jjwt.version>
         <aliyun-oss.version>3.18.5</aliyun-oss.version>
+        <!--
+            surefire 默认跳过的测试标签。storage 的集成测试真打阿里云 OSS（@Tag("oss")），
+            依赖网络与有效 AccessKey，离线环境或 CI 上必然失败，故默认排除。
+            单独运行（必须同时清空排除，否则 JUnit 的排除优先于包含，会一个都不跑）：
+                ./mvnw test -DexcludedGroups= -Dgroups=oss
+        -->
+        <excludedGroups>oss</excludedGroups>
     </properties>
 
     <dependencyManagement>
@@ -157,6 +164,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <argLine>-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</argLine>
+                    <!-- 取值见 <properties> 中的 excludedGroups，便于命令行覆盖 -->
+                    <excludedGroups>${excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
             <plugin>
