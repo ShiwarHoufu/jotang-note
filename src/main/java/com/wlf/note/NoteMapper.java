@@ -6,6 +6,7 @@ import com.wlf.catalog.dto.TagResponse;
 import com.wlf.entity.Note;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.util.Collection;
@@ -103,4 +104,66 @@ public interface NoteMapper extends BaseMapper<Note> {
      */
     @Update("UPDATE note SET view_count = view_count + 1 WHERE id = #{id} AND status = #{status}")
     int incrementViewCount(@Param("id") Long id, @Param("status") String status);
+
+    /**
+     * 收藏量原子自增。见 §3.3、§6.5。
+     *
+     * <p><b>为什么不放在 {@code FavoriteMapper}</b>：{@code favorite_count} 是 {@code note} 的列，
+     * 与上面那条浏览量自增是同一类东西（note 的原子计数器），放在一起才是同质的位置。
+     * 代价是 {@code FavoriteService} 要注入本 Mapper——这是 §1.1「不引用对方 Mapper」的一处违反，
+     * 既存先例是 {@code AuthService} 直接注入 {@code UserMapper}（注册即往 user 表插行），
+     * 形状相同：<b>写的是对方模块拥有的单表列，而对方的 Service 承接不了这个写</b>
+     * （{@code NoteService} 已经注入 {@code FavoriteService}，再加一个反向入口就是构造器循环依赖）。
+     * §1.1 的措辞已按此校正，见该节的「跨模块访问」。
+     *
+     * <p><b>这里刻意不带 {@code status} 守卫</b>，与 {@link #incrementViewCount} 不同：
+     * 调用方 {@code FavoriteService#favorite} 已经在同一事务里用
+     * {@link #selectStatusForUpdate} 拿到该行的 X 锁，状态在提交前不可能变，
+     * 再写一遍 {@code AND status = ?} 只是把同一条规则说两遍。
+     * 浏览量那条没有这个前提（详情页刻意不开事务），所以它必须自带守卫。
+     */
+    @Update("UPDATE note SET favorite_count = favorite_count + 1 WHERE id = #{id}")
+    int incrementFavoriteCount(@Param("id") Long id);
+
+    /**
+     * 收藏量原子自减。
+     *
+     * <p>{@code favorite_count} 是派生值（§3.3 提供了一条离线校准 SQL 用于对账），
+     * 因此它可能与 {@code favorite} 表的实际行数漂移。{@code AND favorite_count > 0} 是漂移时的
+     * 兜底：计数值一旦为负，前端会渲染出「-1 人收藏」，而那是修不回来的观感问题，
+     * 比少减一次严重得多——校准 SQL 迟早会把真实值算回来。
+     *
+     * @return 受影响行数。0 表示笔记不存在、或计数已经是 0——两种情形对调用方都是
+     *         「这次没减」，无需区分
+     */
+    @Update("UPDATE note SET favorite_count = favorite_count - 1 WHERE id = #{id} AND favorite_count > 0")
+    int decrementFavoriteCount(@Param("id") Long id);
+
+    /**
+     * 读某篇笔记的收藏量。收藏 / 取消收藏接口靠它把最新值回给前端。
+     *
+     * <p>为什么不直接用 {@code BaseMapper#selectById}：那会把标题、简介、教师等十几列一并读回来，
+     * 只为拿一个计数。这里要的是「最新的收藏量」这一个事实，语句就该只陈述它。
+     *
+     * @return 收藏量；<b>笔记不存在时为 {@code null}</b>——调用方据此报 40400
+     */
+    @Select("SELECT favorite_count FROM note WHERE id = #{id}")
+    Long selectFavoriteCount(@Param("id") Long id);
+
+    /**
+     * 锁住笔记行并读出状态，供收藏 / 取消收藏把「存在性 + 状态 + 排他锁」一次拿到。
+     *
+     * <p><b>这里的 {@code FOR UPDATE} 不是顺手加的，取锁顺序是收藏接口唯一的死锁防线。</b>
+     * InnoDB 在检查 {@code fk_fav_note} 时会对父行 {@code note} 取隐式<b>共享</b>锁，
+     * 所以「先 INSERT favorite 再 UPDATE note」的直觉写法会这样死锁：两个用户同时收藏同一篇笔记，
+     * T1、T2 各持 S(note)，随后各自要 UPDATE note 把它升级成 X(note)，互等。
+     * 热门笔记被多人收藏正是最现实的争用场景。
+     *
+     * <p>因此收藏与取消收藏<b>都先走这一条</b>拿到 X 锁，全站锁序统一为 note → favorite。
+     * 取消收藏那里只用它的「行存在吗」，不用返回值——但要的正是同一把锁、同一个先后。
+     *
+     * @return 状态字符串；<b>笔记不存在时为 {@code null}</b>——调用方据此报 40400
+     */
+    @Select("SELECT status FROM note WHERE id = #{id} FOR UPDATE")
+    String selectStatusForUpdate(@Param("id") Long id);
 }
