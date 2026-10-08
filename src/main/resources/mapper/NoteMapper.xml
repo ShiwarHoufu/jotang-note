@@ -69,4 +69,87 @@
         ORDER BY t.id
     </select>
 
+    <!--
+      列表 / 搜索主干。与详情那条最大的区别有两个：
+
+      ① 只出 ONLINE（§4.1：列表/搜索对 OFFLINE、DELETED 不可见），且不 JOIN note_file——
+         列表项不带文件信息，那是详情页才有的东西。
+
+      ② 标签不并进来。它与笔记是 to-many，一旦 JOIN 进一条带 LIMIT 的语句，
+         LIMIT 切的就是 JOIN 之后的行：一篇带 3 个标签的笔记会占掉 3 个名额，
+         一页 20 条实际只回来七八篇，甚至某篇笔记在页边界上被切成半条。
+         这个错误是静默的——返回的条数「看起来只是少了一点」。标签另起一条 IN 查询
+         （selectTagRefsByNoteIds），在 Service 里按 noteId 装配。
+
+      注意区分：按标签**筛选**用的 JOIN（下面那个 <if>）是安全的，因为它带着
+       tag_id = ? 的等值条件，而 note_tag 的主键是 (note_id, tag_id)，每篇笔记至多匹配一行。
+       危险的是「把每篇笔记的全部标签拉进来」，那才是一对多展开。
+    -->
+    <select id="selectListPage" resultType="com.wlf.note.NoteListRow">
+        SELECT n.id,
+               n.title,
+               n.view_count,
+               n.download_count,
+               n.favorite_count,
+               n.updated_at,
+               c.id   AS course_id,
+               c.name AS course_name,
+               u.id   AS uploader_id,
+               u.nickname,
+               u.avatar,
+               g.name AS college_name
+        FROM note n
+                 JOIN course c ON c.id = n.course_id
+                 JOIN `user` u ON u.id = n.uploader_id
+                 JOIN college g ON g.id = u.college_id
+        <if test="tagId != null">
+                 JOIN note_tag nt ON nt.note_id = n.id AND nt.tag_id = #{tagId}
+        </if>
+        WHERE n.status = #{status}
+        <if test="courseId != null">
+            AND n.course_id = #{courseId}
+        </if>
+        <!--
+          排序走 <choose> + 写死的字面量，全程不出现 ${}。ORDER BY 没法用 #{} 参数化，
+          只能拼接字符串，所以排序键必须来自这份白名单，绝不能是用户传来的字面量。
+          分支按 sort 的字符串取值（NoteListQuery.Sort 的 name()）来选。
+
+          每个排序都带 n.id DESC 作次级键，不是洁癖：view_count / download_count
+          在大面积并列时（新站全是 0），只按它排的话 MySQL 不保证同分行的相对顺序稳定，
+          翻页会看到重复或漏掉的笔记。次级键定死，顺序才是确定的。
+
+          另：InnoDB 的二级索引叶子节点隐含主键 id，所以 (status, updated_at) 这类索引
+          可以直接支撑「status 等值 + updated_at DESC, id DESC」的倒扫，不需要 filesort。
+        -->
+        <choose>
+            <when test="sort == 'HOT_VIEW'">
+                ORDER BY n.view_count DESC, n.id DESC
+            </when>
+            <when test="sort == 'HOT_DOWNLOAD'">
+                ORDER BY n.download_count DESC, n.id DESC
+            </when>
+            <otherwise>
+                ORDER BY n.updated_at DESC, n.id DESC
+            </otherwise>
+        </choose>
+    </select>
+
+    <!--
+      一整页笔记的标签，一次取回（N+1 的解法）。
+
+      调用方保证 noteIds 非空：IN () 是语法错误，空页应当在 Service 里直接短路。
+    -->
+    <select id="selectTagRefsByNoteIds" resultType="com.wlf.note.NoteTagRef">
+        SELECT nt.note_id,
+               t.id   AS tag_id,
+               t.name AS tag_name
+        FROM note_tag nt
+                 JOIN tag t ON t.id = nt.tag_id
+        WHERE nt.note_id IN
+        <foreach collection="noteIds" item="noteId" open="(" separator="," close=")">
+            #{noteId}
+        </foreach>
+        ORDER BY nt.note_id, t.id
+    </select>
+
 </mapper>

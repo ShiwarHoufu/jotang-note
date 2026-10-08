@@ -81,7 +81,7 @@ class NoteDetailResponseTest {
         NoteDetailResponse offline = new NoteDetailResponse(
                 12L, "第一章 绪论", "简介", "张老师", NoteStatus.OFFLINE,
                 new CourseResponse(3L, "离散数学"),
-                new NoteDetailResponse.Uploader(7L, "小明", "https://oss.example.com/a.png", "计算机学院"),
+                new UploaderResponse(7L, "小明", "https://oss.example.com/a.png", "计算机学院"),
                 List.of(new TagResponse(3L, "复习")),
                 43L, 3L, 5L,
                 LocalDateTime.of(2026, 10, 1, 10, 0),
@@ -107,7 +107,7 @@ class NoteDetailResponseTest {
         return new NoteDetailResponse(
                 12L, "第一章 绪论", "简介", "张老师", NoteStatus.ONLINE,
                 new CourseResponse(3L, "离散数学"),
-                new NoteDetailResponse.Uploader(7L, "小明", "https://oss.example.com/a.png", "计算机学院"),
+                new UploaderResponse(7L, "小明", "https://oss.example.com/a.png", "计算机学院"),
                 List.of(new TagResponse(3L, "复习"), new TagResponse(8L, "期末")),
                 43L, 3L, 5L,
                 LocalDateTime.of(2026, 10, 1, 10, 0),

@@ -52,10 +52,12 @@ CREATE TABLE IF NOT EXISTS `note` (
   `download_count` INT UNSIGNED    NOT NULL DEFAULT 0,
   `favorite_count` INT UNSIGNED    NOT NULL DEFAULT 0,
   `created_at`     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  -- 这里的语义是「用户最后编辑笔记的时间」。不能挂上 ON UPDATE
+  `updated_at`     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `deleted_at`     DATETIME        NULL COMMENT 'status=DELETED 时写入',
   PRIMARY KEY (`id`),
-  KEY `idx_status_created`  (`status`, `created_at`),      -- 首页最新
+  KEY `idx_status_created`  (`status`, `created_at`),      -- 最新发布
+  KEY `idx_status_updated`  (`status`, `updated_at`),      -- 最近更新（sort=latest 的排序键）
   KEY `idx_status_view`     (`status`, `view_count`),      -- 热门·浏览
   KEY `idx_status_download` (`status`, `download_count`),  -- 热门·下载
   KEY `idx_course_status`   (`course_id`, `status`),       -- 课程页

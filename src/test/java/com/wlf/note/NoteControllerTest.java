@@ -186,7 +186,7 @@ class NoteControllerTest {
      */
     @Test
     void detailServesOfflineNoteWithNullFile() throws Exception {
-        Long noteId = insertNote(NoteStatus.OFFLINE);
+        Long noteId = insertNote(courseId, MARKER + "已下架", NoteStatus.OFFLINE);
 
         mockMvc.perform(get("/api/notes/" + noteId).header("Authorization", token()))
                 .andExpect(status().isOk())
@@ -197,12 +197,84 @@ class NoteControllerTest {
                 .andExpect(jsonPath("$.data.isFavorited").value(false));
     }
 
-    /** 直接插库造一篇笔记，避开上传流程——这里验的是读路径的路由与响应形状 */
-    private Long insertNote(NoteStatus status) {
+    // ==================== GET /api/notes ====================
+
+    @Test
+    void listRequiresLogin() throws Exception {
+        mockMvc.perform(get("/api/notes"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+    }
+
+    /**
+     * 非法的 {@code sort} 必须落成 40001 而不是 50000。
+     *
+     * <p>这条盯的是参数绑定这一层：{@code GlobalExceptionHandler} 只处理了
+     * {@code MethodArgumentNotValidException} 与 {@code ConstraintViolationException}。
+     * 如果把参数写成散装的 {@code @RequestParam}，枚举转换失败会走 Spring 6.1 的
+     * {@code HandlerMethodValidationException}——没人接，掉进兜底变成「服务器内部错误」，
+     * 前端看到的是后端炸了而不是自己传错了。
+     */
+    @Test
+    void listRejectsUnknownSortWithFieldDetail() throws Exception {
+        mockMvc.perform(get("/api/notes").param("sort", "bogus").header("Authorization", token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001))
+                .andExpect(jsonPath("$.data[0].field").value("sort"));
+    }
+
+    @Test
+    void listRejectsPageBelowOne() throws Exception {
+        mockMvc.perform(get("/api/notes").param("page", "0").header("Authorization", token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001))
+                .andExpect(jsonPath("$.data[0].field").value("page"));
+    }
+
+    @Test
+    void listRejectsSizeAboveFifty() throws Exception {
+        mockMvc.perform(get("/api/notes").param("size", "51").header("Authorization", token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001))
+                .andExpect(jsonPath("$.data[0].field").value("size"));
+    }
+
+    @Test
+    void listRejectsDeepPagination() throws Exception {
+        mockMvc.perform(get("/api/notes").param("page", "51").header("Authorization", token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001))
+                .andExpect(jsonPath("$.data[0].field").value("page"));
+    }
+
+    /** 分页外壳的四个字段都要在，且默认值生效 */
+    @Test
+    void listReturnsPageEnvelope() throws Exception {
+        Long isolatedCourse = insertCourse();
+        insertNote(isolatedCourse, MARKER + "列表项", NoteStatus.ONLINE);
+        // 已下架的不能出现（§4.1）
+        insertNote(isolatedCourse, MARKER + "已下架", NoteStatus.OFFLINE);
+
+        mockMvc.perform(get("/api/notes")
+                        .param("courseId", String.valueOf(isolatedCourse))
+                        .header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].title").value(MARKER + "列表项"))
+                .andExpect(jsonPath("$.data.items[0].isFavorited").value(false))
+                .andExpect(jsonPath("$.data.items[0].tags").isArray())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.page").value(1))
+                .andExpect(jsonPath("$.data.size").value(20));
+    }
+
+    /** 直接插库造一篇笔记（含文件行），避开上传流程——这里验的是读路径的路由与响应形状 */
+    private Long insertNote(Long noteCourseId, String title, NoteStatus status) {
         Note note = new Note();
         note.setUploaderId(uploaderId);
-        note.setCourseId(courseId);
-        note.setTitle(MARKER + "已下架");
+        note.setCourseId(noteCourseId);
+        note.setTitle(title);
         note.setStatus(status.name());
         noteMapper.insert(note);
 
@@ -215,6 +287,18 @@ class NoteControllerTest {
         noteFileMapper.insert(file);
 
         return note.getId();
+    }
+
+    /**
+     * 造一个只属于本用例的课程。列表接口没有能把开发库里已有笔记排除掉的天然边界，
+     * 想用 {@code total == 1} 这类断言就必须先用一个自造课程把结果圈住。
+     */
+    private Long insertCourse() {
+        Course course = new Course();
+        course.setName(MARKER + "课程-" + UUID.randomUUID().toString().substring(0, 8));
+        course.setIsOther(0);
+        courseMapper.insert(course);
+        return course.getId();
     }
 
     private MockMultipartFile pdf() {

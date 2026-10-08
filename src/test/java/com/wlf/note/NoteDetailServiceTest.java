@@ -26,6 +26,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -220,6 +221,29 @@ class NoteDetailServiceTest {
         assertThatThrownBy(() -> noteService.detail(999_999_999L, viewerId))
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
+    }
+
+    /**
+     * 浏览量自增不能碰 {@code updated_at}。这个字段的语义是「用户最后编辑笔记的时间」，
+     * 而详情页是整个系统里唯一会高频改写 {@code note} 行的入口。
+     *
+     * <p><b>写法是有意的</b>：{@code updated_at} 是 {@code DATETIME}，秒级精度，
+     * 「调一次 detail 再比较前后」在同秒内根本发现不了问题。所以这里先把它显式设成一个
+     * 过去的时间再调——若列上还挂着 {@code ON UPDATE CURRENT_TIMESTAMP}（比如某个库
+     * 没做迁移，或者哪天有人把它加回来），那次自增会立刻把它刷成 {@code NOW()}，断言随即失败。
+     * 这样无需 sleep 就能当迁移哨兵用。
+     */
+    @Test
+    void viewingDoesNotTouchUpdatedAt() {
+        Fixture fixture = createNote(NoteStatus.ONLINE, null);
+        LocalDateTime editedAt = LocalDateTime.of(2020, 1, 1, 0, 0);
+        jdbcTemplate.update("UPDATE note SET updated_at = ? WHERE id = ?", editedAt, fixture.noteId());
+
+        noteService.detail(fixture.noteId(), viewerId);
+
+        assertThat(noteMapper.selectById(fixture.noteId()).getUpdatedAt()).isEqualTo(editedAt);
+        // 顺带确认这次调用确实发生了自增——否则「时间没变」可能只是因为压根什么都没干
+        assertThat(noteMapper.selectById(fixture.noteId()).getViewCount()).isEqualTo(1L);
     }
 
     /** 不存在的笔记不该被那次「先自增」的 UPDATE 影响——它的 WHERE 根本匹配不到行 */

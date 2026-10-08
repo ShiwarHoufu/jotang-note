@@ -1,17 +1,24 @@
 package com.wlf.note;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.wlf.catalog.CourseService;
 import com.wlf.catalog.TagService;
 import com.wlf.catalog.dto.CourseResponse;
+import com.wlf.catalog.dto.TagResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
+import com.wlf.common.PageResponse;
 import com.wlf.entity.Note;
 import com.wlf.entity.NoteFile;
 import com.wlf.favorite.FavoriteService;
 import com.wlf.note.dto.NoteCreatedResponse;
 import com.wlf.note.dto.NoteDetailResponse;
+import com.wlf.note.dto.NoteListItemResponse;
+import com.wlf.note.dto.NoteListQuery;
 import com.wlf.note.dto.NoteUploadRequest;
+import com.wlf.note.dto.UploaderResponse;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import com.wlf.storage.StoredObject;
@@ -24,6 +31,9 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 笔记核心业务。见《概要设计》§6.1（上传）、§6.2（预览与下载）、§5.4（详情）。
@@ -33,6 +43,18 @@ import java.util.List;
 @Slf4j
 @Service
 public class NoteService {
+
+    /**
+     * 分页深度上限：只能翻到前 1000 条（§3.3）。按默认 {@code size=20} 算就是最多 50 页。
+     *
+     * <p>管的是「页码」，不是「单页大小」——后者的守卫在 {@code NoteListQuery} 的
+     * {@code @Max(50)} 上。插件层的 {@code maxLimit} 只能截断单页，管不住页码，
+     * 所以这个校验必须落在 Service 里（{@code MybatisPlusConfig} 有同样的说明）。
+     *
+     * <p>为什么列表和搜索用同一个上限：搜索的深翻是全表扫，列表的深翻是 OFFSET 扫描后丢弃，
+     * 两者都不该放行，而分成两条规则只会让人记错哪条适用于哪里。
+     */
+    private static final int MAX_PAGE_DEPTH = 1000;
 
     private final NoteMapper noteMapper;
     private final NoteFileMapper noteFileMapper;
@@ -110,16 +132,9 @@ public class NoteService {
     }
 
     /**
-     * 详情：读取元数据与标签、判断是否已收藏，并在 ONLINE 时把浏览量 +1。见 §5.4、§4.1。
-     *
-     * <p><b>非 ONLINE 的笔记照常返回，不抛 40301。</b>§4.1 的表把「详情页」与
-     * 「预览 / 下载 / 收藏」分成了两列：已下架的笔记在详情页是「提示已下架」，
-     * 只有预览 / 下载 / 收藏才禁止。所以本方法把 {@code status} 原样带出去，
-     * 由前端渲染提示条；但**文件那三个字段会被丢掉**——已下架笔记的文件名不该再从任何路径露出去。
+     * 详情：读取元数据与标签、判断是否已收藏，并在 ONLINE 时把浏览量 +1。
      *
      * <p>三条查询的顺序是有意的：<b>先自增、后读取</b>，这样 SELECT 拿到的就是已含本次浏览的值。
-     * 反过来写的话，要么得在 Java 里再算一次加法（多一处可能与库不一致的算术），
-     * 要么只能返回一个不含自己的旧值。
      *
      * <p><b>本方法刻意不开事务。</b>里面的写语句只有浏览量自增一条，而把它圈进事务的后果是：
      * {@code note} 那一行的排他锁会一直持有到方法返回——这中间还夹着标签查询、收藏查询与响应体装配。
@@ -151,7 +166,7 @@ public class NoteService {
                 row.getTeacher(),
                 status,
                 new CourseResponse(row.getCourseId(), row.getCourseName()),
-                new NoteDetailResponse.Uploader(
+                new UploaderResponse(
                         row.getUploaderId(), row.getNickname(),
                         avatarUrl(row.getAvatar()), row.getCollegeName()),
                 noteMapper.selectTagRefs(noteId),
@@ -188,6 +203,95 @@ public class NoteService {
      */
     private String avatarUrl(String avatarKey) {
         return avatarKey == null ? null : storageService.publicUrl(Bucket.AVATAR, avatarKey);
+    }
+
+    /**
+     * 列表：按最近更新 / 热门浏览 / 热门下载取一页笔记。见 §5.4。
+     *
+     * <p><b>只出 {@code ONLINE} 的笔记</b>——§4.1 的表里「列表 / 搜索」这一列对
+     * OFFLINE、DELETED 是不可见。这与详情页正相反：详情要把状态带出去让前端渲染提示，
+     * 列表则根本不该让它们出现。
+     *
+     * <p><b>一页固定四次数据库交互</b>，与页大小无关：主干分页查询 + MP 自动改写的 count
+     * + 标签批量查询 + 收藏批量查询。后两条都是对「这一页的 id 列表」做一次 {@code IN}，
+     * 而不是逐条查——那会立刻退化成 N+1（一页 20 条就是 40 次往返）。
+     *
+     * <p>标签与收藏都在 Java 里按 {@code noteId} 归到各自的行上，而不是让 SQL 去关联。
+     *
+     * @param viewerId 当前登录者，只用于填 {@code isFavorited}；取自 JWT
+     * @throws BusinessException 40001 分页过深（{@code page × size > 1000}，见 {@link #MAX_PAGE_DEPTH}）
+     */
+    public PageResponse<NoteListItemResponse> list(Long viewerId, NoteListQuery query) {
+        requireShallowPaging(query);
+
+        // Page 只携带「第几页、每页几条」，count 语句由分页插件改写生成，不在这里手写
+        IPage<NoteListRow> result = noteMapper.selectListPage(
+                new Page<>(query.getPage(), query.getSize()),
+                NoteStatus.ONLINE.name(),
+                query.getSort().name(),
+                query.getCourseId(),
+                query.getTagId());
+
+        // total 取插件回填的真实总数，不封顶；page/size 回显入参而不是 result.getCurrent()，
+        // 免得前端收到一个与它请求时不一致的页码（插件内部对越界页有它自己的处理）
+        return new PageResponse<>(
+                assemble(result.getRecords(), viewerId),
+                result.getTotal(),
+                query.getPage(),
+                query.getSize());
+    }
+
+    /**
+     * 把一页的行装配成出参：两次批量查询，再在内存里按 {@code noteId} 归位。
+     *
+     * <p>空页要在这里短路——{@code IN ()} 是语法错误，两条批量查询都吃不下空集合。
+     */
+    private List<NoteListItemResponse> assemble(List<NoteListRow> rows, Long viewerId) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<Long> noteIds = rows.stream().map(NoteListRow::getId).toList();
+
+        // groupingBy 的下游是 toList（ArrayList），组内保持查询的 encounter order，
+        // 于是每篇笔记的标签仍是 tag.id 升序——与详情页那条查询的口径一致
+        Map<Long, List<TagResponse>> tagsByNote = noteMapper.selectTagRefsByNoteIds(noteIds).stream()
+                .collect(Collectors.groupingBy(NoteTagRef::getNoteId,
+                        Collectors.mapping(ref -> new TagResponse(ref.getTagId(), ref.getTagName()),
+                                Collectors.toList())));
+
+        Set<Long> favoritedNoteIds = favoriteService.favoritedNoteIds(viewerId, noteIds);
+
+        return rows.stream()
+                .map(row -> new NoteListItemResponse(
+                        row.getId(),
+                        row.getTitle(),
+                        new CourseResponse(row.getCourseId(), row.getCourseName()),
+                        new UploaderResponse(row.getUploaderId(), row.getNickname(),
+                                avatarUrl(row.getAvatar()), row.getCollegeName()),
+                        // 没有标签时给空列表：getOrDefault 的默认值必须是不可变的 List.of()，
+                        // 而不是 null——前端可以无条件遍历
+                        tagsByNote.getOrDefault(row.getId(), List.of()),
+                        row.getViewCount(),
+                        row.getDownloadCount(),
+                        row.getFavoriteCount(),
+                        row.getUpdatedAt(),
+                        favoritedNoteIds.contains(row.getId())))
+                .toList();
+    }
+
+    /**
+     * 分页深度守卫。超出时<b>报错而不是截断</b>：返回一页空白但 {@code total} 还写着很大的数，
+     * 用户分不清是「翻得太深」还是「这一页恰好没数据」，前端也无从把「下一页」置灰。
+     *
+     * <p>乘法前把 {@code page} 提升为 {@code long}：page 没有上界（只校验了 ≥ 1），
+     * {@code int × int} 在 page 极大时会溢出成负数，守卫就形同虚设了。
+     */
+    private static void requireShallowPaging(NoteListQuery query) {
+        if ((long) query.getPage() * query.getSize() > MAX_PAGE_DEPTH) {
+            String message = "分页过深，最多前 " + MAX_PAGE_DEPTH + " 条";
+            throw new BusinessException(ErrorCode.PARAM_INVALID, message,
+                    List.of(new FieldViolation("page", message)));
+        }
     }
 
     /**

@@ -4,11 +4,16 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.wlf.entity.Favorite;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 /**
  * 收藏业务：仅 ONLINE 可收藏；列表按 note.status 渲染「已下架/已删除」占位。
  * 见《概要设计》§6.5。
  *
- * <p>目前只落地了读取侧的一个方法（详情页要它填 {@code isFavorited}）；
+ * <p>目前只落地了读取侧的两个方法（详情与列表页要它们填 {@code isFavorited}）；
  * 收藏 / 取消收藏 / 我的收藏随后续切片补上。
  */
 @Service
@@ -30,8 +35,9 @@ public class FavoriteService {
      * 若在这里顺手改成「非 ONLINE 一律 false」，就等于让数据去配合渲染，
      * 而关系实际还在，等笔记恢复上架时这个字段又会自己变回 true。
      *
-     * <p>用 {@code exists} 而非 {@code selectCount}：存在性判断不必知道有几行，
-     * 而 {@code uk_user_note} 保证至多一行。查询走该唯一索引的等值匹配。
+     * <p>实现上委托给 {@link #favoritedNoteIds}，而不是另写一条 {@code exists}：
+     * 两者回答的是同一个问题，只是批量与单条两种用法。写两遍谓词就意味着将来两处可能不一致，
+     * 而调用方一个看列表一个看详情，不一致时表现为「同一篇笔记收藏态对不上」，很难查。
      *
      * @param userId 当前登录者，取自 JWT
      * @param noteId 任意笔记 id，<b>允许是不存在的 id</b>——「笔记不存在」与
@@ -42,11 +48,35 @@ public class FavoriteService {
      *         两者都不该为 null，真出现了也不值得让请求失败，返回 false 即可
      */
     public boolean isFavorited(Long userId, Long noteId) {
-        if (userId == null || noteId == null) {
-            return false;
+        return noteId != null && favoritedNoteIds(userId, List.of(noteId)).contains(noteId);
+    }
+
+    /**
+     * 一批笔记里，该用户收藏了哪些。列表页用它填 {@code isFavorited}（§5.4）。
+     *
+     * <p><b>批量而不是逐条</b>：一页 20 条就会变成 20 次往返（N+1）。这里一次
+     * {@code IN} 查询取回整页的收藏关系，条数与页大小无关。查询走 {@code uk_user_note}
+     * 唯一索引，命中行数至多等于入参个数。
+     *
+     * <p>返回 {@code Set} 而不是 {@code List}：调用方要的是「在不在集合里」，
+     * 不是顺序，也不是条数。用 Set 把这个意图写进返回值，顺带避免调用方写出
+     * {@code list.contains(...)} 这种 O(n) 的误用。
+     *
+     * @param userId  当前登录者，取自 JWT
+     * @param noteIds 待判定的笔记 id。空集合直接短路——{@code IN ()} 是语法错误，
+     *                不能让它流到 SQL
+     * @return 入参中已收藏的 id；未收藏的不出现。无收藏或无有效入参时返回空集合
+     */
+    public Set<Long> favoritedNoteIds(Long userId, Collection<Long> noteIds) {
+        if (userId == null || noteIds.isEmpty()) {
+            return Set.of();
         }
-        return favoriteMapper.exists(Wrappers.<Favorite>lambdaQuery()
-                .eq(Favorite::getUserId, userId)
-                .eq(Favorite::getNoteId, noteId));
+        return favoriteMapper.selectList(Wrappers.<Favorite>lambdaQuery()
+                        .select(Favorite::getNoteId)
+                        .eq(Favorite::getUserId, userId)
+                        .in(Favorite::getNoteId, noteIds))
+                .stream()
+                .map(Favorite::getNoteId)
+                .collect(Collectors.toSet());
     }
 }

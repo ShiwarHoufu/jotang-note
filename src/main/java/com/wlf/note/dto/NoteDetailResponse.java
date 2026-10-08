@@ -21,11 +21,9 @@ import java.util.List;
  *
  * @param status    {@link NoteStatus} 枚举而非裸字符串
  * @param course    复用了 §5.3 已发布的 {@link CourseResponse}，而不是在 note 侧另定一个
- *                  {@code {id, name}}。课程 / 标签的形状是 catalog 模块对外承诺的契约，
- *                  详情页把同一个东西再声明一遍，就成了「同一规则的两份副本」
+ *                  {@code {id, name}}
  * @param uploader  上传者。学院挂在这一层而不是顶层，因为它<b>不是笔记的属性</b>——
- *                  {@code note} 表不存学院，学院读的是上传者的 {@code user.college_id}（决策 D8，§3.3）。
- *                  放在这里，等于把「改学院会回溯改变该用户全部历史笔记的归属」这个事实写进了契约
+ *                  {@code note} 表不存学院，学院读的是上传者的 {@code user.college_id}
  * @param tags      复用了 {@link TagResponse}，理由同 {@code course}
  * @param viewCount 已经含本次浏览。递增走 §3.3 的原子
  *                  {@code UPDATE note SET view_count = view_count + 1 WHERE id = ? AND status = 'ONLINE'}，
@@ -40,7 +38,7 @@ public record NoteDetailResponse(
         String teacher,
         NoteStatus status,
         CourseResponse course,
-        Uploader uploader,
+        UploaderResponse uploader,
         List<TagResponse> tags,
         long viewCount,
         long downloadCount,
@@ -50,16 +48,6 @@ public record NoteDetailResponse(
         FileInfo file,
         boolean isFavorited
 ) {
-
-    /**
-     * 上传者。{@code avatarUrl} 是<b>拼好的完整公网 URL</b>，不是 OSS 对象键——
-     * §5.4 的统一约定：只要接口展示上传者信息就返回可直接 {@code <img src>} 的地址，
-     * 前端无需二次请求签名或走代理。对象键留在 {@code user.avatar} 里不外露。
-     *
-     * @param collegeName 上传者的学院，前端拿它渲染「计算机学院 · 离散数学」
-     */
-    public record Uploader(Long id, String nickname, String avatarUrl, String collegeName) {
-    }
 
     /**
      * 文件信息。非 ONLINE 时整个 {@link NoteDetailResponse#file()} 为 null，本记录不出现。

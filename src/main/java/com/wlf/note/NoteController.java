@@ -2,8 +2,11 @@ package com.wlf.note;
 
 import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;
+import com.wlf.common.PageResponse;
 import com.wlf.note.dto.NoteCreatedResponse;
 import com.wlf.note.dto.NoteDetailResponse;
+import com.wlf.note.dto.NoteListItemResponse;
+import com.wlf.note.dto.NoteListQuery;
 import com.wlf.note.dto.NoteUploadRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -16,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 笔记接口。见《概要设计》§5.4。
  *
- * <p>当前有上传与详情；列表 / 搜索 / 编辑 / 删除 / 预览 / 下载 / 我的上传随后续切片补上。
+ * <p>当前有上传、详情与列表；搜索 / 编辑 / 删除 / 预览 / 下载 / 我的上传随后续切片补上。
  * 全部接口都要求登录
  * {@code SecurityConfig} 的 {@code anyRequest().authenticated()} 已经覆盖。
  */
@@ -55,5 +58,21 @@ public class NoteController {
     public ApiResponse<NoteDetailResponse> detail(@AuthenticationPrincipal AuthenticatedUser user,
                                                   @PathVariable Long id) {
         return ApiResponse.ok(noteService.detail(id, user.userId()));
+    }
+
+    /**
+     * 笔记列表。见 §5.4。
+     *
+     * <p>参数收进 {@link NoteListQuery} 而不是一串 {@code @RequestParam}：校验与类型转换失败
+     * 才能落成 40001 加字段明细，而不是掉进兜底变成 50000（理由见该类的注释）。
+     *
+     * <p>登录者同样取自 JWT，只用于填 {@code isFavorited}——列表卡片上要显示收藏态。
+     */
+    // 多个查询参数收进一个对象用 @ModelAttribute；这条与 /{id} 的区别只是路径是否带变量
+    @GetMapping("/api/notes")
+    public ApiResponse<PageResponse<NoteListItemResponse>> list(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @ModelAttribute NoteListQuery query) {
+        return ApiResponse.ok(noteService.list(user.userId(), query));
     }
 }
