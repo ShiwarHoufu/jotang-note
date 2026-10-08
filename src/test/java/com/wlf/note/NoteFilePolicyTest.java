@@ -16,6 +16,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>这是预览型 XSS 的唯一防线（§8.3），用例按「白名单放行 / 白名单外拒绝 / 魔数不符 /
  * 文本降级 / 边界」分组，重点是那些<b>写错了也不会立刻暴露</b>的地方——
  * docx 与 zip 魔数同族、跨块边界被切开的多字节字符、藏在合法 UTF-8 里的 NUL。
+ *
+ * <p>几处「可内联预览 / 仅下载」的断言写成 {@code PreviewMode.of(decision.contentType())}：
+ * 预览方式已经不在上传判定里（理由见 {@link PreviewMode#of(String)}），而是读取侧由
+ * {@code content_type} 现推。这样写顺带锁住一件事——本表判出的 {@code content_type}
+ * 必须仍被那张映射认识，否则「传上去了却只能下载」会在详情页上静默发生。
+ * 映射本身的全量用例见 {@link PreviewModeTest}。
  */
 class NoteFilePolicyTest {
 
@@ -40,7 +46,7 @@ class NoteFilePolicyTest {
         FileDecision decision = inspect("课件.pdf", PDF);
 
         assertThat(decision.contentType()).isEqualTo("application/pdf");
-        assertThat(decision.previewMode()).isEqualTo(PreviewMode.PDF_INLINE);
+        assertThat(PreviewMode.of(decision.contentType())).isEqualTo(PreviewMode.PDF_INLINE);
         assertThat(decision.extension()).isEqualTo("pdf");
         assertThat(decision.originalName()).isEqualTo("课件.pdf");
     }
@@ -52,7 +58,7 @@ class NoteFilePolicyTest {
         assertThat(inspect("a.gif", GIF).contentType()).isEqualTo("image/gif");
         assertThat(inspect("a.webp", WEBP).contentType()).isEqualTo("image/webp");
 
-        assertThat(inspect("a.png", PNG).previewMode()).isEqualTo(PreviewMode.IMAGE_INLINE);
+        assertThat(PreviewMode.of(inspect("a.png", PNG).contentType())).isEqualTo(PreviewMode.IMAGE_INLINE);
     }
 
     /** jpg 与 jpeg 是两个常见写法，都要认；归一化后仍是各自的原始写法 */
@@ -78,12 +84,13 @@ class NoteFilePolicyTest {
         assertThat(inspect("资料.rar", RAR).contentType()).isEqualTo("application/vnd.rar");
         assertThat(inspect("资料.7z", SEVEN_Z).contentType()).isEqualTo("application/x-7z-compressed");
 
-        assertThat(inspect("论文.docx", ZIP).previewMode()).isEqualTo(PreviewMode.DOWNLOAD_ONLY);
+        assertThat(PreviewMode.of(inspect("论文.docx", ZIP).contentType())).isEqualTo(PreviewMode.DOWNLOAD_ONLY);
     }
 
     @Test
     void markdownAndTextGoThroughBackendProxy() {
-        assertThat(inspect("笔记.md", text("# 标题\n正文")).previewMode()).isEqualTo(PreviewMode.TEXT_PROXY);
+        assertThat(PreviewMode.of(inspect("笔记.md", text("# 标题\n正文")).contentType()))
+                .isEqualTo(PreviewMode.TEXT_PROXY);
         assertThat(inspect("笔记.md", text("# 标题")).contentType()).isEqualTo("text/markdown");
         assertThat(inspect("说明.txt", text("正文")).contentType()).isEqualTo("text/plain");
     }

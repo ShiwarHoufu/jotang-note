@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  note 模块的跨表检索语句。
+
+  为什么只有几个方法却单独开一份 XML：§1.1 约定单表 CRUD 走 MyBatis-Plus（BaseMapper），
+  多表 JOIN 走 XML。本文件目前只有详情接口在用，列表 / 搜索随后续切片加进来。
+
+  为什么全部是 INNER JOIN：这五条连接关系在建表语句里都有外键约束兜着——
+  note.course_id / note.uploader_id 非空且各自指向 course / user，user.college_id 非空指向 college，
+  note_file.note_id 上还有 uk_note_id 唯一键。也就是说「连接不上」这种情形在库里不可能出现，
+  用 LEFT JOIN 反而会把数据损坏伪装成「某一列恰好为 null」，让问题更难发现。
+-->
+<mapper namespace="com.wlf.note.NoteMapper">
+
+    <!--
+      详情主干：五张 to-one 的表一次连接出一行。
+
+      别名是必需的，不是风格问题：note / note_file / course / user / college 每张都有 id 列，
+      course 与 college 都有 name 列。不显式改名的话，MyBatis 按列名回填时后出现的会覆盖先出现的，
+      而 mapUnderscoreToCamelCase 会把 course_id / college_name 这类别名再转成驼峰属性。
+
+      这里刻意不筛 status：已下架的笔记也要能查出来（§4.1 的详情页要渲染「已下架」提示），
+      状态该怎么用是 Service 的事。
+    -->
+    <select id="selectDetail" resultType="com.wlf.note.NoteDetailRow">
+        SELECT n.id,
+               n.title,
+               n.summary,
+               n.teacher,
+               n.status,
+               n.view_count,
+               n.download_count,
+               n.favorite_count,
+               n.created_at,
+               n.updated_at,
+               f.original_name,
+               f.size,
+               f.content_type,
+               c.id   AS course_id,
+               c.name AS course_name,
+               u.id   AS uploader_id,
+               u.nickname,
+               u.avatar,
+               g.name AS college_name
+        FROM note n
+                 JOIN note_file f ON f.note_id = n.id
+                 JOIN course c ON c.id = n.course_id
+                 JOIN `user` u ON u.id = n.uploader_id
+                 JOIN college g ON g.id = u.college_id
+        WHERE n.id = #{id}
+    </select>
+
+    <!--
+      标签：与笔记是 to-many，所以不并进主干——并进去就是「有几个标签就几行」，
+      note 那十几列跟着重复，取回来还要靠 <collection> 折叠。
+
+      排序按 tag.id 升序：note_tag 上只有 (note_id, tag_id) 两列，没有「第几个标签」这种
+      顺序信息，上传时用户敲的顺序留不下来。id 升序至少是确定的，也与 TagService#list
+      的排序口径一致。按 name 排没有意义——默认排序规则对中文是按 Unicode 码点而非拼音。
+    -->
+    <select id="selectTagRefs" resultType="com.wlf.catalog.dto.TagResponse">
+        SELECT t.id,
+               t.name
+        FROM note_tag nt
+                 JOIN tag t ON t.id = nt.tag_id
+        WHERE nt.note_id = #{noteId}
+        ORDER BY t.id
+    </select>
+
+</mapper>

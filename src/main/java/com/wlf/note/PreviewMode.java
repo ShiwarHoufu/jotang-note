@@ -1,5 +1,7 @@
 package com.wlf.note;
 
+import java.util.Set;
+
 /**
  * 笔记的预览方式，由扩展名决定（§6.1 的「预览方式」列）。见《概要设计》§6.2。
  *
@@ -24,5 +26,55 @@ public enum PreviewMode {
     TEXT_PROXY,
 
     /** Office / 压缩包：不进浏览器渲染，只签发下载 URL（附件形式并还原文件名） */
-    DOWNLOAD_ONLY
+    DOWNLOAD_ONLY;
+
+    /**
+     * 可能落进 {@code note_file.content_type} 的光栅图类型。
+     *
+     * <p>逐项列举而<b>不是</b>用 {@code image/} 前缀匹配：前缀会顺手把 {@code image/svg+xml}
+     * 也判成内联，而 svg 正是 §6.1 / §8.3 点名要拒的可注入类型。它当然进不了库
+     * （写入侧闸门是唯一入口），但这里逐项列举等于再上一道保险，且与写入侧同为白名单语义。
+     */
+    private static final Set<String> INLINE_IMAGES =
+            Set.of("image/jpeg", "image/png", "image/gif", "image/webp");
+
+    /**
+     * 由 {@code note_file.content_type} 推导渲染意图。
+     *
+     * <p><b>为什么输入是 content_type 而不是扩展名</b>：扩展名没有落库——{@code note_file}
+     * 只存 {@code storage_key} 与 {@code original_name}，要从前者尾段抠回来既绕又脆；
+     * 而 {@code content_type} 是上传时由 {@link NoteFilePolicy} 判定并写入对象元数据的服务端值
+     * （§6.2：读取时不再覆写，故它即是最终值），读取侧手上正好有它。
+     *
+     * <p><b>为什么不把它当第 4 个字段落库</b>：预览方式是 {@code content_type} 的纯函数，
+     * 而 {@code content_type} 已在入口钉死；落库只是把函数值再抄一份，换不到什么，
+     * 反倒多一处可能与 {@code content_type} 不一致的地方。
+     *
+     * <p><b>因此本方法与 {@link NoteFilePolicy} 的类型白名单是一对必须同步的规则</b>，
+     * 故刻意做成对 {@code content_type} 的<b>全函数</b>：不抛异常、不返回 null，
+     * 认不出来的一律落到 {@link #DOWNLOAD_ONLY}——失败方向是「少一个内联预览」，
+     * 而不是「放行了不该内联的类型」。新增受支持类型时若漏改这里，后果同样只是降级为仅下载，
+     * 不构成安全洞。
+     *
+     * <p><b>不要改成「抠出扩展名再查 NoteFilePolicy 的 FORMATS」</b>：那张表是写入侧的准入闸门，
+     * 拿它做读取侧推导，会在将来从白名单里摘掉某个类型时让历史行读不出来（{@code FORMATS.get}
+     * 返 null）；读取侧本就不该执行写入侧的准入策略。
+     *
+     * @param contentType 服务端判定值；{@code null} 与任何未知值同等对待
+     */
+    public static PreviewMode of(String contentType) {
+        if (contentType == null) {
+            return DOWNLOAD_ONLY;
+        }
+        if (INLINE_IMAGES.contains(contentType)) {
+            return IMAGE_INLINE;
+        }
+        if ("application/pdf".equals(contentType)) {
+            return PDF_INLINE;
+        }
+        if ("text/markdown".equals(contentType) || "text/plain".equals(contentType)) {
+            return TEXT_PROXY;
+        }
+        return DOWNLOAD_ONLY;
+    }
 }

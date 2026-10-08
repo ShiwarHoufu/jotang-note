@@ -2,12 +2,15 @@ package com.wlf.note;
 
 import com.wlf.catalog.CourseService;
 import com.wlf.catalog.TagService;
+import com.wlf.catalog.dto.CourseResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
 import com.wlf.entity.Note;
 import com.wlf.entity.NoteFile;
+import com.wlf.favorite.FavoriteService;
 import com.wlf.note.dto.NoteCreatedResponse;
+import com.wlf.note.dto.NoteDetailResponse;
 import com.wlf.note.dto.NoteUploadRequest;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
@@ -23,9 +26,9 @@ import java.io.InputStream;
 import java.util.List;
 
 /**
- * 笔记核心业务。见《概要设计》§6.1（上传）、§6.2（预览与下载）。
+ * 笔记核心业务。见《概要设计》§6.1（上传）、§6.2（预览与下载）、§5.4（详情）。
  *
- * <p>当前只落地了上传链路，列表 / 搜索 / 详情 / 编辑 / 删除待后续切片。
+ * <p>当前只落地了上传与详情两条链路，列表 / 搜索 / 编辑 / 删除 / 预览 / 下载待后续切片。
  */
 @Slf4j
 @Service
@@ -36,6 +39,15 @@ public class NoteService {
     private final NoteTagMapper noteTagMapper;
     private final CourseService courseService;
     private final TagService tagService;
+    /**
+     * 详情页要填「是否已收藏」，这是 note 模块第一次反向依赖 favorite 模块。
+     *
+     * <p><b>这个方向不能反过来。</b>{@code FavoriteService} 判笔记状态时走它自己的 SQL
+     * （§6.5 的收藏列表本来就是 {@code favorite JOIN note}），不调本类；哪天有人图省事
+     * 让它注入 {@code NoteService} 来「复用一下状态判断」，两边就成了构造器循环依赖，
+     * 应用连启动都起不来。
+     */
+    private final FavoriteService favoriteService;
     private final NoteFilePolicy filePolicy;
     private final StorageService storageService;
     private final TransactionTemplate transactionTemplate;
@@ -45,6 +57,7 @@ public class NoteService {
                        NoteTagMapper noteTagMapper,
                        CourseService courseService,
                        TagService tagService,
+                       FavoriteService favoriteService,
                        NoteFilePolicy filePolicy,
                        StorageService storageService,
                        PlatformTransactionManager transactionManager) {
@@ -53,6 +66,7 @@ public class NoteService {
         this.noteTagMapper = noteTagMapper;
         this.courseService = courseService;
         this.tagService = tagService;
+        this.favoriteService = favoriteService;
         this.filePolicy = filePolicy;
         this.storageService = storageService;
         // 自己 new 而不依赖 Spring Boot 的自动配置：本类要的是「一段明确可控的事务边界」，
@@ -93,6 +107,87 @@ public class NoteService {
             purgeQuietly(stored.key());
             throw e;
         }
+    }
+
+    /**
+     * 详情：读取元数据与标签、判断是否已收藏，并在 ONLINE 时把浏览量 +1。见 §5.4、§4.1。
+     *
+     * <p><b>非 ONLINE 的笔记照常返回，不抛 40301。</b>§4.1 的表把「详情页」与
+     * 「预览 / 下载 / 收藏」分成了两列：已下架的笔记在详情页是「提示已下架」，
+     * 只有预览 / 下载 / 收藏才禁止。所以本方法把 {@code status} 原样带出去，
+     * 由前端渲染提示条；但**文件那三个字段会被丢掉**——已下架笔记的文件名不该再从任何路径露出去。
+     *
+     * <p>三条查询的顺序是有意的：<b>先自增、后读取</b>，这样 SELECT 拿到的就是已含本次浏览的值。
+     * 反过来写的话，要么得在 Java 里再算一次加法（多一处可能与库不一致的算术），
+     * 要么只能返回一个不含自己的旧值。
+     *
+     * <p><b>本方法刻意不开事务。</b>里面的写语句只有浏览量自增一条，而把它圈进事务的后果是：
+     * {@code note} 那一行的排他锁会一直持有到方法返回——这中间还夹着标签查询、收藏查询与响应体装配。
+     * 详情页是最热的读接口，为一个统计计数把行锁按住整个请求时长，代价远大于收益；
+     * 不圈事务则 UPDATE 立即提交、锁立即释放。代价是「自增」与「读取」之间可能插进别人的自增，
+     * 于是返回的 {@code viewCount} 可能略大于自己那一次 +1——计数本身就没有去重
+     * （D2 对下载量也是这个口径），多算一两次不改变它的性质。
+     *
+     * @param viewerId 当前登录者，只用于判断「他收藏过没有」；取自 JWT
+     * @throws BusinessException 40400 笔记不存在
+     */
+    public NoteDetailResponse detail(Long noteId, Long viewerId) {
+        // 状态由调用方传入：'ONLINE' 这个字面量属于 NoteStatus，不该在 SQL 里再写一份。
+        // id 不存在时这条 UPDATE 影响 0 行，无害；真正的 404 判定交给下面的 selectDetail。
+        noteMapper.incrementViewCount(noteId, NoteStatus.ONLINE.name());
+
+        NoteDetailRow row = noteMapper.selectDetail(noteId);
+        if (row == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND);
+        }
+
+        NoteStatus status = NoteStatus.valueOf(row.getStatus());
+        boolean online = status == NoteStatus.ONLINE;
+
+        return new NoteDetailResponse(
+                row.getId(),
+                row.getTitle(),
+                row.getSummary(),
+                row.getTeacher(),
+                status,
+                new CourseResponse(row.getCourseId(), row.getCourseName()),
+                new NoteDetailResponse.Uploader(
+                        row.getUploaderId(), row.getNickname(),
+                        avatarUrl(row.getAvatar()), row.getCollegeName()),
+                noteMapper.selectTagRefs(noteId),
+                row.getViewCount(),
+                row.getDownloadCount(),
+                row.getFavoriteCount(),
+                row.getCreatedAt(),
+                row.getUpdatedAt(),
+                // 非 ONLINE 时整个 file 置空，而不是把三个字段各自置 null：
+                // 「这条笔记此刻没有可展示的文件」是一个整体事实，前端一个 truthy 判断就能收工
+                online ? fileInfoOf(row) : null,
+                // 非 ONLINE 也照查：§6.5 说收藏关系不因下架而解除（详见 FavoriteService#isFavorited）
+                favoriteService.isFavorited(viewerId, noteId));
+    }
+
+    /**
+     * 文件字段的装配。{@code previewMode} 不在库里，由 {@code contentType} 现推（§6.2）——
+     * 它是类型的纯函数，落库等于把函数值再抄一份。
+     */
+    private static NoteDetailResponse.FileInfo fileInfoOf(NoteDetailRow row) {
+        return new NoteDetailResponse.FileInfo(
+                row.getOriginalName(),
+                row.getSize(),
+                row.getContentType(),
+                PreviewMode.of(row.getContentType()));
+    }
+
+    /**
+     * 头像对象键 → 公网直连 URL（§6.7）。
+     *
+     * <p>空值必须在这里短路：{@code StorageService#publicUrl} 是裸字符串拼接，
+     * 喂个 null 会拼出一个以 {@code /null} 结尾、看着像 URL 的东西——
+     * 前端会安心地拿它去 {@code <img src>}，然后拿到一个 404。
+     */
+    private String avatarUrl(String avatarKey) {
+        return avatarKey == null ? null : storageService.publicUrl(Bucket.AVATAR, avatarKey);
     }
 
     /**

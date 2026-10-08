@@ -7,6 +7,7 @@ import com.wlf.common.JwtTokenProvider;
 import com.wlf.entity.College;
 import com.wlf.entity.Course;
 import com.wlf.entity.Note;
+import com.wlf.entity.NoteFile;
 import com.wlf.entity.User;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
@@ -23,21 +24,25 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * {@code POST /api/notes} 的 HTTP 层验证：路由、multipart 绑定、鉴权与校验的响应形状。
+ * 笔记接口的 HTTP 层验证：路由、参数绑定、鉴权与响应形状。
  *
- * <p>与 {@link NoteServiceTest} 分工：那边验业务结果与补偿逻辑，这边只验「请求进来之后
- * 变成了什么响应」——落库细节不在这里重复断言。
+ * <p>与 {@link NoteServiceTest} / {@link NoteDetailServiceTest} 分工：那边验业务结果与补偿逻辑，
+ * 这边只验「请求进来之后变成了什么响应」——落库与装配细节不在这里重复断言。
  *
  * <p>用例随事务回滚；上传者自造，不依赖开发库里的用户。
  */
@@ -58,6 +63,9 @@ class NoteControllerTest {
 
     @Autowired
     private NoteMapper noteMapper;
+
+    @Autowired
+    private NoteFileMapper noteFileMapper;
 
     @Autowired
     private CourseMapper courseMapper;
@@ -151,6 +159,62 @@ class NoteControllerTest {
         Note note = noteMapper.selectById(noteId);
         assertThat(note.getUploaderId()).isEqualTo(uploaderId);
         assertThat(note.getTitle()).isEqualTo("期中复习提纲");
+    }
+
+    // ==================== GET /api/notes/{id} ====================
+
+    @Test
+    void detailRequiresLogin() throws Exception {
+        mockMvc.perform(get("/api/notes/1"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+    }
+
+    @Test
+    void detailReturnsUnknownNoteAsNotFound() throws Exception {
+        mockMvc.perform(get("/api/notes/999999999").header("Authorization", token()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    /**
+     * §4.1 那条边界在 HTTP 层的样子：已下架的笔记是 <b>200 + status=OFFLINE</b>，
+     * 不是 40301——40301 只发给预览 / 下载 / 收藏。同时文件字段整体为 null。
+     *
+     * <p>{@code file} 断言用 {@code nullValue()} 而不是 {@code doesNotExist()}：
+     * 这个键是<b>存在且为 null</b>，不是从响应里消失，两者对前端不是一回事。
+     */
+    @Test
+    void detailServesOfflineNoteWithNullFile() throws Exception {
+        Long noteId = insertNote(NoteStatus.OFFLINE);
+
+        mockMvc.perform(get("/api/notes/" + noteId).header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.status").value("OFFLINE"))
+                .andExpect(jsonPath("$.data.title").value(MARKER + "已下架"))
+                .andExpect(jsonPath("$.data.file").value(nullValue()))
+                .andExpect(jsonPath("$.data.isFavorited").value(false));
+    }
+
+    /** 直接插库造一篇笔记，避开上传流程——这里验的是读路径的路由与响应形状 */
+    private Long insertNote(NoteStatus status) {
+        Note note = new Note();
+        note.setUploaderId(uploaderId);
+        note.setCourseId(courseId);
+        note.setTitle(MARKER + "已下架");
+        note.setStatus(status.name());
+        noteMapper.insert(note);
+
+        NoteFile file = new NoteFile();
+        file.setNoteId(note.getId());
+        file.setStorageKey("notes/2026/10/" + UUID.randomUUID() + ".pdf");
+        file.setOriginalName("课件.pdf");
+        file.setSize(1024L);
+        file.setContentType("application/pdf");
+        noteFileMapper.insert(file);
+
+        return note.getId();
     }
 
     private MockMultipartFile pdf() {

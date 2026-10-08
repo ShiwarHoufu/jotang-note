@@ -90,49 +90,54 @@ public class NoteFilePolicy {
      * 扩展名 → 判定格式。键是小写扩展名（不含点），值为该类型的元信息。
      *
      * <p>用 LinkedHashMap 只为让表在源码里保持人类录入的顺序，运行时不依赖顺序。
+     *
+     * <p>表里只放<b>写入侧闸门</b>需要的两样东西——「类型是什么」与「凭什么认它」。
+     * 预览方式不在这里：它是 {@code contentType} 的纯函数，归读取侧，
+     * 由 {@link PreviewMode#of(String)} 推导（§6.1 那张表的「预览方式」列即该映射的出处）。
+     * 两处都写会变成同一规则的两份副本。注意这两处<b>必须同步</b>：新增受支持类型时
+     * 除了往本表加一行，还要看 {@code PreviewMode.of} 是否认得这个新的 {@code contentType}。
      */
     private static final Map<String, Format> FORMATS = buildFormats();
 
     /**
-     * 一种受支持的文件类型。
+     * 一种受支持的文件类型，只保留写入侧闸门需要的两样东西。
      *
      * @param contentType 服务端判定值
-     * @param previewMode 预览方式
      * @param magic       文件头判定；<b>null 表示该类型没有魔数</b>（只有 md / txt），
      *                    此时降级为 UTF-8 文本校验。空安全靠调用方判 null，而不是塞个恒真谓词——
      *                    「没有魔数」和「任何字节都算通过」是两件事，后者会让校验形同虚设
      */
-    private record Format(String contentType, PreviewMode previewMode, Predicate<byte[]> magic) {
+    private record Format(String contentType, Predicate<byte[]> magic) {
     }
 
     private static Map<String, Format> buildFormats() {
         Map<String, Format> formats = new LinkedHashMap<>();
 
         // 无魔数，靠降级校验（见类注释）
-        formats.put("md", new Format("text/markdown", PreviewMode.TEXT_PROXY, null));
-        formats.put("txt", new Format("text/plain", PreviewMode.TEXT_PROXY, null));
+        formats.put("md", new Format("text/markdown", null));
+        formats.put("txt", new Format("text/plain", null));
 
-        // 可内联预览
-        formats.put("pdf", new Format("application/pdf", PreviewMode.PDF_INLINE, head -> startsWith(head, MAGIC_PDF)));
-        formats.put("jpg", new Format("image/jpeg", PreviewMode.IMAGE_INLINE, head -> startsWith(head, MAGIC_JPEG)));
-        formats.put("jpeg", new Format("image/jpeg", PreviewMode.IMAGE_INLINE, head -> startsWith(head, MAGIC_JPEG)));
-        formats.put("png", new Format("image/png", PreviewMode.IMAGE_INLINE, head -> startsWith(head, MAGIC_PNG)));
-        formats.put("gif", new Format("image/gif", PreviewMode.IMAGE_INLINE, head -> startsWith(head, MAGIC_GIF)));
-        formats.put("webp", new Format("image/webp", PreviewMode.IMAGE_INLINE, NoteFilePolicy::isWebp));
+        // 浏览器可内联渲染的单一格式
+        formats.put("pdf", new Format("application/pdf", head -> startsWith(head, MAGIC_PDF)));
+        formats.put("jpg", new Format("image/jpeg", head -> startsWith(head, MAGIC_JPEG)));
+        formats.put("jpeg", new Format("image/jpeg", head -> startsWith(head, MAGIC_JPEG)));
+        formats.put("png", new Format("image/png", head -> startsWith(head, MAGIC_PNG)));
+        formats.put("gif", new Format("image/gif", head -> startsWith(head, MAGIC_GIF)));
+        formats.put("webp", new Format("image/webp", NoteFilePolicy::isWebp));
 
         // 仅下载。注意四者的魔数完全相同，类型只能由扩展名区分
         formats.put("docx", new Format(
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                PreviewMode.DOWNLOAD_ONLY, head -> startsWith(head, MAGIC_ZIP)));
+                head -> startsWith(head, MAGIC_ZIP)));
         formats.put("xlsx", new Format(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                PreviewMode.DOWNLOAD_ONLY, head -> startsWith(head, MAGIC_ZIP)));
+                head -> startsWith(head, MAGIC_ZIP)));
         formats.put("pptx", new Format(
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                PreviewMode.DOWNLOAD_ONLY, head -> startsWith(head, MAGIC_ZIP)));
-        formats.put("zip", new Format("application/zip", PreviewMode.DOWNLOAD_ONLY, head -> startsWith(head, MAGIC_ZIP)));
-        formats.put("rar", new Format("application/vnd.rar", PreviewMode.DOWNLOAD_ONLY, head -> startsWith(head, MAGIC_RAR)));
-        formats.put("7z", new Format("application/x-7z-compressed", PreviewMode.DOWNLOAD_ONLY, head -> startsWith(head, MAGIC_7Z)));
+                head -> startsWith(head, MAGIC_ZIP)));
+        formats.put("zip", new Format("application/zip", head -> startsWith(head, MAGIC_ZIP)));
+        formats.put("rar", new Format("application/vnd.rar", head -> startsWith(head, MAGIC_RAR)));
+        formats.put("7z", new Format("application/x-7z-compressed", head -> startsWith(head, MAGIC_7Z)));
 
         return Map.copyOf(formats);
     }
@@ -175,7 +180,7 @@ public class NoteFilePolicy {
             throw new BusinessException(ErrorCode.FILE_INVALID, "文件内容与扩展名 ." + extension + " 不符");
         }
 
-        return new FileDecision(safeName, extension, format.contentType(), format.previewMode());
+        return new FileDecision(safeName, extension, format.contentType());
     }
 
     /**
