@@ -135,6 +135,51 @@
     </select>
 
     <!--
+      「我的上传」主干。见 §5.4、§4.1。
+
+      ① DELETED 无条件排除——本列表的定义就是「我还留着的笔记」。§4.1 的表里「我的上传」
+         这一列对 DELETED 现在是「不可见」（此前是「可见并标注」，已按实测口径改过）。
+         排除要落在 SQL 而不是 Service 里过滤：不然 total 会把已删除的也数进去，
+         前端会算出一堆点进去是空的页。要排除的状态由调用方传，不写死字面量。
+
+      ② 不 JOIN user / college。上传者恒等于调用方自己，昵称 / 头像 / 学院三项都不返回，
+         所以这条比 selectListPage 还少两次 JOIN。注意这跟「上传者信息该不该给」是两件事：
+         公开列表给，是因为那里看的是别人的笔记；这里给就是把自己再报一遍。
+
+      ③ 标签不并进来，理由同 selectListPage：它与笔记是 to-many，JOIN 进带 LIMIT 的语句
+         会让 LIMIT 切在 JOIN 之后的行上。另起一条 IN 查询（selectTagRefsByNoteIds）装配。
+
+      ④ 排序 created_at DESC + id DESC。
+         次级键不是洁癖：created_at 是秒精度的 DATETIME，批量上传或脚本造数据时同秒并列很常见，
+         没有确定的次级键时翻页会看到重复或漏掉的笔记（与公开列表那三条排序同规矩）。
+
+         索引：idx_uploader_status (uploader_id, status) 能吃下两个 WHERE 条件，
+         但 status 是不等值、且 created_at 不在该索引里，所以这条排序要走 filesort。
+         眼下不加索引——单个用户的上传数是几十量级，而分页深度上限（Paging.MAX_PAGE_DEPTH）
+         把最坏情况也兜住了；本项目的习惯是加索引先有 EXPLAIN 实测证据（§3.3 那三条排序键即如此），
+         没有测量就加，只会多一处需要维护却没人知道它管不管用的东西。
+
+      ⑤ 用 != 而不是 <>：本文件是 XML，字面量的 '<' 是非法字符，写成 <> 得转义成 &lt;&gt;，
+         反而更难读。MySQL 里两者完全等价，status 列又是 NOT NULL，不存在 NULL 比较的歧义。
+    -->
+    <select id="selectMyNotePage" resultType="com.wlf.note.MyNoteRow">
+        SELECT n.id,
+               n.status,
+               n.title,
+               n.view_count,
+               n.download_count,
+               n.favorite_count,
+               n.created_at,
+               c.id   AS course_id,
+               c.name AS course_name
+        FROM note n
+                 JOIN course c ON c.id = n.course_id
+        WHERE n.uploader_id = #{uploaderId}
+          AND n.status != #{excludedStatus}
+        ORDER BY n.created_at DESC, n.id DESC
+    </select>
+
+    <!--
       一整页笔记的标签，一次取回（N+1 的解法）。
 
       调用方保证 noteIds 非空：IN () 是语法错误，空页应当在 Service 里直接短路。

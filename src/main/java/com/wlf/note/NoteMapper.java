@@ -85,6 +85,34 @@ public interface NoteMapper extends BaseMapper<Note> {
     List<NoteTagRef> selectTagRefsByNoteIds(@Param("noteIds") Collection<Long> noteIds);
 
     /**
+     * 「我的上传」的一页，按上传时间倒序。见 §5.4、§4.1。
+     *
+     * <p>第一个参数必须是 {@code IPage}：分页插件靠它识别出这是分页查询，并自动改写出一条
+     * count 语句（{@code optimizeCountSql} 会顺手去掉 {@code ORDER BY}）。
+     *
+     * <p><b>{@code DELETED} 被无条件排除</b>（§4.1 的表里「我的上传」这一列对它是「不可见」）。
+     * 排除而不是让 Service 过滤：那样 {@code total} 会把已删除的也数进去，
+     * 前端会算出一堆点进去是空的页。
+     *
+     * <p><b>{@code excludedStatus} 由调用方传入而不是在 SQL 里写死 {@code 'DELETED'}</b>：
+     * 那是 {@link NoteStatus} 的取值，写死在 SQL 字符串里就成了同一规则的又一份副本
+     * （与 {@link #incrementViewCount} / {@link #selectListPage} 同规矩）。
+     * 传「要排除的那个」而不是「要保留的那些」，是因为保留下来的状态将来可能增加
+     * （§4.2 之外还可能有新状态），而「删除是终态、不再展示」这条不会变。
+     *
+     * <p><b>不 JOIN {@code user} / {@code college}</b>：本列表里上传者恒等于调用方自己，
+     * 昵称 / 头像 / 学院三项都不返回。这是本查询比 {@link #selectListPage} 还便宜的原因。
+     *
+     * <p>入参是「谁在看」而不是「看谁」：这个列表只有本人能看，用户 id 取自 JWT，
+     * 绝不能由请求参数传入——否则任何人都能翻别人的上传。
+     *
+     * @return 一页数据，按上传时间倒序；{@code total} 由插件回填到返回的 {@code IPage} 上
+     */
+    IPage<MyNoteRow> selectMyNotePage(IPage<MyNoteRow> page,
+                                      @Param("uploaderId") Long uploaderId,
+                                      @Param("excludedStatus") String excludedStatus);
+
+    /**
      * 浏览量原子自增，<b>仅当笔记处于传入的状态</b>。
      *
      * <p>写成「自增 + 守卫」合一的语句，而不是「先判断再自增」：§3.3 要求计数一律用
@@ -168,25 +196,35 @@ public interface NoteMapper extends BaseMapper<Note> {
     String selectStatusForUpdate(@Param("id") Long id);
 
     /**
-     * 锁住笔记行并读出「谁的」与「什么状态」，供删除做归属校验与迁移判断。
+     * 锁住笔记行并读出「谁的」与「什么状态」，供<b>删除与编辑</b>做归属校验与状态判断。
+     *
+     * <p><b>两个流程共用一条语句，不是图省事。</b>删除与编辑要做的第一步完全相同：锁住该行、
+     * 确认是本人的、看清当前状态。差别只在第四步——删除拿状态去问 {@link NoteStateMachine}
+     * 能不能迁到 {@code DELETED}，编辑拿状态去挡已经 {@code DELETED} 的笔记。判据不同，
+     * 但要读的列一字不差，复制成两条就是同一件事的两份副本：将来谁要在这行上再加一列
+     * （比如乐观锁版本号），两处都得改，而漏掉一处不会报错，只会让一条路径读到过期数据。
      *
      * <p><b>只为这两列开一条语句，不复用 {@code BaseMapper#selectById}</b>：后者会拖回十几列。
      * 也<b>不复用 {@link #selectStatusForUpdate}</b>：它不带 {@code uploader_id}，
      * 而且它在那边的注释里被钉成了收藏切片的锁序原语，借过来用会让两处语义混在一起。
      *
-     * <p><b>为什么删除也要 {@code FOR UPDATE}</b>：删除是「读状态 → 判迁移 → 写状态」三步，
-     * 而迁移的合法性依赖读到的那个状态。不加锁的话这三步之间存在窗口——读完之后管理员把笔记改成
-     * OFFLINE，写时依据的就是一个已经过期的状态。加了锁，状态在提交前不可能变，
-     * 于是那条「写语句要不要再带一次状态守卫」的问题根本不存在
+     * <p><b>为什么删除与编辑都要 {@code FOR UPDATE}</b>：两者都是「读状态 → 判 → 写」三步，
+     * 而判断的合法性依赖读到的那个状态。不加锁的话这三步之间存在窗口——读完之后管理员把笔记改成
+     * OFFLINE 或上传者在另一个请求里把它删了，写时依据的就是一个已经过期的状态。加了锁，
+     * 状态在提交前不可能变，于是那条「写语句要不要再带一次状态守卫」的问题根本不存在
      * （与 {@link #incrementFavoriteCount} 刻意不带守卫是同一个道理）。
      *
+     * <p><b>全站锁序：note 一律先于其它表。</b>收藏是 note → favorite，编辑是 note → tag
+     * （{@link NoteTagMapper#deleteByNoteId} 与随后的插入）。同向的锁序是死锁的防线，
+     * 谁要在这些流程里新增第二张表，接在 note 之后即可。
+     *
      * <p>代价与收藏那边相同：X 锁持到提交，期间同一行的 {@link #incrementViewCount} 会等。
-     * 删除事务只有两次读 + 一次写、没有任何 I/O，等待是毫秒级。
+     * 删除与编辑的事务都只有几次读 + 两次写、没有任何 I/O，等待是毫秒级。
      *
      * @return 该笔记的归属与状态；id 不存在时为 {@code null}——调用方据此报 40400
      */
     @Select("SELECT uploader_id, status FROM note WHERE id = #{id} FOR UPDATE")
-    NoteDeleteRow selectForDelete(@Param("id") Long id);
+    NoteOwnershipRow selectOwnershipForUpdate(@Param("id") Long id);
 
     /**
      * 软删除：把状态置为传入值并写下删除时刻。见 §4.1、§3.3。
@@ -201,10 +239,51 @@ public interface NoteMapper extends BaseMapper<Note> {
      *       「已删除」占位），删笔记去减收藏数会把两者弄得不一致。</li>
      * </ul>
      *
-     * <p>不带 {@code status} 守卫，理由见 {@link #selectForDelete}：调用方在同一事务里
+     * <p>不带 {@code status} 守卫，理由见 {@link #selectOwnershipForUpdate}：调用方在同一事务里
      * 已经持有该行的 X 锁。状态字面量仍由调用方传（{@code NoteStatus} 的取值不写死在 SQL 里），
      * 与 {@link #incrementViewCount} 同规矩。
      */
     @Update("UPDATE note SET status = #{status}, deleted_at = NOW() WHERE id = #{id}")
     int markDeleted(@Param("id") Long id, @Param("status") String status);
+
+    /**
+     * 编辑元数据：改写四个可编辑字段，并把 {@code updated_at} 推到当下。见 §5.4、§3.3。
+     *
+     * <p><b>这条语句的列清单是全项目最该被钉死的一处：{@code updated_at} 是整个系统里
+     * 唯一会写它的地方。</b>§3.3 明写「只有编辑接口显式写 {@code updated_at = NOW()}」，
+     * 建表语句因此刻意不带 {@code ON UPDATE CURRENT_TIMESTAMP}，删除与管理员的下架 / 恢复
+     * 都刻意不碰它，守卫用例 {@code NoteDetailServiceTest#viewingDoesNotTouchUpdatedAt}
+     * 盯着的是这件事的另一面。反过来说，这里若漏写 {@code updated_at}，
+     * {@code sort=latest} 的列表顺序就再也不动——而「编辑完时间没变」从数据上完全看不出来。
+     *
+     * <p>同样地，下面这些列<b>一个都不能出现在 {@code SET} 里</b>：
+     * <ul>
+     *   <li>{@code status}——编辑不迁移状态。OFFLINE 的笔记改完仍是 OFFLINE，
+     *       这正是「允许编辑下架笔记」这条规则能成立的原因：改元数据不会让它重新可见。
+     *       要改状态请走 {@link NoteStateMachine} 与各自的接口。</li>
+     *   <li>三个计数列——它们是别处的派生值，编辑元数据与它们无关。</li>
+     *   <li>{@code created_at} / {@code deleted_at}——前者是发布时刻，后者只属于删除。</li>
+     * </ul>
+     *
+     * <p><b>不带 {@code status} 守卫，也不带归属条件</b>，理由同 {@link #markDeleted}：
+     * 调用方在同一事务里已用 {@link #selectOwnershipForUpdate} 持有该行的 X 锁，
+     * 归属与状态在提交前不可能变，再写一遍只是把同一条规则说两遍。
+     *
+     * <p>用五个 {@code @Param} 而不是收进一个参数对象：{@link #selectListPage} 已有同样多的入参，
+     * 为一个只在两处出现的调用多开一个类不划算。
+     */
+    @Update("""
+            UPDATE note
+            SET title      = #{title},
+                summary    = #{summary},
+                teacher    = #{teacher},
+                course_id  = #{courseId},
+                updated_at = NOW()
+            WHERE id = #{id}
+            """)
+    int updateMetadata(@Param("id") Long id,
+                       @Param("title") String title,
+                       @Param("summary") String summary,
+                       @Param("teacher") String teacher,
+                       @Param("courseId") Long courseId);
 }

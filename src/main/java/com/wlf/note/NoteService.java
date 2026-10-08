@@ -15,10 +15,13 @@ import com.wlf.common.Paging;
 import com.wlf.entity.Note;
 import com.wlf.entity.NoteFile;
 import com.wlf.favorite.FavoriteService;
+import com.wlf.note.dto.MyNoteItemResponse;
+import com.wlf.note.dto.MyNoteListQuery;
 import com.wlf.note.dto.NoteCreatedResponse;
 import com.wlf.note.dto.NoteDetailResponse;
 import com.wlf.note.dto.NoteListItemResponse;
 import com.wlf.note.dto.NoteListQuery;
+import com.wlf.note.dto.NoteUpdateRequest;
 import com.wlf.note.dto.NoteUploadRequest;
 import com.wlf.note.dto.UploaderResponse;
 import com.wlf.storage.Bucket;
@@ -39,9 +42,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 笔记核心业务。见《概要设计》§6.1（上传）、§6.2（预览与下载）、§5.4（详情）。
+ * 笔记核心业务。见《概要设计》§6.1（上传）、§6.2（预览与下载）、§5.4（详情 / 编辑 / 删除）。
  *
- * <p>当前只落地了上传与详情两条链路，列表 / 搜索 / 编辑 / 删除 / 预览 / 下载待后续切片。
+ * <p>当前已落地上传、详情、列表、我的上传、编辑、删除；搜索 / 预览 / 下载待后续切片。
  */
 @Slf4j
 @Service
@@ -247,12 +250,7 @@ public class NoteService {
         }
         List<Long> noteIds = rows.stream().map(NoteListRow::getId).toList();
 
-        // groupingBy 的下游是 toList（ArrayList），组内保持查询的 encounter order，
-        // 于是每篇笔记的标签仍是 tag.id 升序——与详情页那条查询的口径一致
-        Map<Long, List<TagResponse>> tagsByNote = noteMapper.selectTagRefsByNoteIds(noteIds).stream()
-                .collect(Collectors.groupingBy(NoteTagRef::getNoteId,
-                        Collectors.mapping(ref -> new TagResponse(ref.getTagId(), ref.getTagName()),
-                                Collectors.toList())));
+        Map<Long, List<TagResponse>> tagsByNote = tagsGroupedByNote(noteIds);
 
         Set<Long> favoritedNoteIds = favoriteService.favoritedNoteIds(viewerId, noteIds);
 
@@ -272,6 +270,167 @@ public class NoteService {
                         row.getUpdatedAt(),
                         favoritedNoteIds.contains(row.getId())))
                 .toList();
+    }
+
+    /**
+     * 一页笔记的标签，按 {@code noteId} 归位。公开列表与「我的上传」共用。
+     *
+     * <p>入参必须非空：{@code IN ()} 是语法错误，调用方要在空页时先短路。
+     *
+     * <p>抽成方法而不是各写一遍：两条列表的标签口径必须完全一致（排序、别名、归位键），
+     * 而这段代码里没有任何一处是某一条列表独有的——复制一份只会让「两处排序口径悄悄分叉」
+     * 成为可能，而那种分叉在页面上表现为「同几篇笔记在两个列表里标签顺序不同」，
+     * 极难被发现。
+     */
+    private Map<Long, List<TagResponse>> tagsGroupedByNote(List<Long> noteIds) {
+        // groupingBy 的下游是 toList（ArrayList），组内保持查询的 encounter order，
+        // 于是每篇笔记的标签仍是 tag.id 升序——与详情页那条查询的口径一致
+        return noteMapper.selectTagRefsByNoteIds(noteIds).stream()
+                .collect(Collectors.groupingBy(NoteTagRef::getNoteId,
+                        Collectors.mapping(ref -> new TagResponse(ref.getTagId(), ref.getTagName()),
+                                Collectors.toList())));
+    }
+
+    /**
+     * 我的上传：本人传过的笔记，按上传时间倒序分页。见 §5.4、§4.1。
+     *
+     * <p><b>已删除的不出</b>——{@code DELETED} 由 SQL 无条件排除。§4.1 的表里「我的上传」
+     * 这一列对 {@code DELETED} 是「不可见」：这份列表的语义是「我还留着的笔记」。
+     * 排除放在 SQL 而不是这里过滤，是为了让 {@code total} 也是筛过的数，
+     * 否则前端会算出一堆点进去是空的页（与公开列表只出 ONLINE 同一条理由）。
+     *
+     * <p><b>已下架的照出</b>，靠 {@code status} 让前端加「已下架」角标。它与「已删除」的区别
+     * 在这里正对应 §4.1 表格里那一列的两档：{@code OFFLINE} 是「可见并标注」，
+     * {@code DELETED} 是不可见。
+     *
+     * <p>与 {@link #list} 一样，一页只有三次数据库交互：主干分页 + 插件改写出的 count
+     * + 标签批量查询。<b>没有第四次</b>——本列表不带 {@code isFavorited}，
+     * 所以不需要 {@code FavoriteService} 那一次批量查询。
+     *
+     * @param uploaderId 当前登录者，取自 JWT。本列表只有本人能看，绝不接受请求参数传入
+     * @throws BusinessException 40001 分页过深（{@code page × size > 1000}，见 {@link Paging#MAX_PAGE_DEPTH}）
+     */
+    public PageResponse<MyNoteItemResponse> listMyNotes(Long uploaderId, MyNoteListQuery query) {
+        Paging.requireShallow(query.getPage(), query.getSize());
+
+        IPage<MyNoteRow> result = noteMapper.selectMyNotePage(
+                new Page<>(query.getPage(), query.getSize()),
+                uploaderId,
+                // 「要排除的那个」由调用方传入，不写死在 SQL 里
+                NoteStatus.DELETED.name());
+
+        return new PageResponse<>(
+                assembleMyNotes(result.getRecords()),
+                result.getTotal(),
+                query.getPage(),
+                query.getSize());
+    }
+
+    /**
+     * 把一页的行装配成出参：一次批量查询取回整页的标签，再在内存里按 {@code noteId} 归位。
+     *
+     * <p>空页要在这里短路——{@code IN ()} 是语法错误，标签查询吃不下空集合
+     * （与 {@link #assemble} 同一处守卫，两处都不能省）。
+     */
+    private List<MyNoteItemResponse> assembleMyNotes(List<MyNoteRow> rows) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<Long> noteIds = rows.stream().map(MyNoteRow::getId).toList();
+        Map<Long, List<TagResponse>> tagsByNote = tagsGroupedByNote(noteIds);
+
+        return rows.stream()
+                .map(row -> new MyNoteItemResponse(
+                        row.getId(),
+                        NoteStatus.valueOf(row.getStatus()),
+                        row.getTitle(),
+                        new CourseResponse(row.getCourseId(), row.getCourseName()),
+                        // 没有标签时给空列表：默认值必须是不可变的 List.of()，
+                        // 而不是 null——前端可以无条件遍历
+                        tagsByNote.getOrDefault(row.getId(), List.of()),
+                        row.getViewCount(),
+                        row.getDownloadCount(),
+                        row.getFavoriteCount(),
+                        row.getCreatedAt()))
+                .toList();
+    }
+
+    /**
+     * 编辑元数据：上传者本人改写标题 / 简介 / 教师 / 课程 / 标签。见 §5.4、§4.1。
+     *
+     * <p><b>整条链路不碰 OSS，也不碰 {@code note_file}。</b>附件只在首次上传时确定，
+     * 编辑时既不能新增也不能删除（§4.1）。这不是「本轮没做」，而是契约本身的一部分——
+     * 一旦允许在编辑里换文件，就要同时处理「新对象传了、事务回滚了」（上传的补偿删除）
+     * 与「旧对象删了、事务回滚了」（删除的对象清理）这两个窗口，它们各自都需要
+     * 「事务外做网络调用 + 提交后清理」的编排。而本方法只需要一个普通的短事务。
+     *
+     * <p><b>标签是全量替换</b>：{@code request.getTags()} 是「编辑之后应有的全部标签」，
+     * 传 null 或空数组即清空，不是「不动」。见 {@link NoteUpdateRequest}。
+     *
+     * @param uploaderId 当前登录者，取自 JWT；非本人一律 40300
+     * @throws BusinessException 40400 笔记不存在；40300 非上传者本人；
+     *                           40301 笔记已删除；40001 课程不存在
+     */
+    public void update(Long noteId, Long uploaderId, NoteUpdateRequest request) {
+        transactionTemplate.executeWithoutResult(
+                status -> applyUpdate(noteId, uploaderId, request));
+    }
+
+    /**
+     * 事务内的那一段：校验 → 改写两份数据。
+     *
+     * <p><b>三步的顺序是有意的：</b>
+     * <ol>
+     *   <li>先锁行读归属与状态——这是唯一一次能确认「这行确实是我的、且此刻还能改」的机会，
+     *       后面所有写入都建立在它之上。用 {@code selectOwnershipForUpdate} 而非普通读，
+     *       是因为紧接着就要写，且判断本身（状态是不是 DELETED）依赖读到的值不变</li>
+     *   <li>再校验课程、解析标签。放在锁之后，是为了让一个注定被拒的请求（非本人 / 已删除）
+     *       不去 {@code tag} 表建新标签</li>
+     *   <li>最后写 note 与 note_tag。{@code updated_at} 由 {@code updateMetadata} 写，
+     *       这是全系统唯一写它的地方（§3.3）</li>
+     * </ol>
+     *
+     * <p><b>{@code resolveIds} 这次在事务内</b>，与上传刻意放在事务外正相反。上传是因为它后面
+     * 还跟着一次上百 MB 的 OSS 传输，不能让事务被网络等待占住；这里没有 OSS，
+     * 放进来反而让「本次编辑顺手新建的标签」跟着编辑一起回滚——请求没成功，
+     * 却往 {@code tag} 表留了几个没人引用的词，没有道理。
+     *
+     * <p><b>状态门只挡 {@code DELETED}，放行 {@code OFFLINE}。</b>编辑不迁移状态，
+     * 一篇被管理员下架的笔记改完仍是下架的（{@code updateMetadata} 的 {@code SET} 里
+     * 根本没有 {@code status} 这一列），所以「允许编辑下架笔记」不会让它重新可见。
+     * 反过来说，禁止编辑的后果是上传者只能删了重传——{@code note.id} 变了，
+     * 浏览与收藏数清零，别人收藏列表里的关系全断。删除那条链路本来就允许 {@code OFFLINE}
+     * （§4.1 有 {@code OFFLINE→DELETED} 这条边），编辑没理由比删除更严。
+     *
+     * <p><b>这里用普通比较判 {@code DELETED}，不走 {@link NoteStateMachine}。</b>
+     * 状态机回答的是「能不能从 A 迁到 B」，而编辑根本不发生迁移——拿它判门是误用，
+     * 它不知道自己的答案会被用来决定「能不能写元数据」。
+     */
+    private void applyUpdate(Long noteId, Long uploaderId, NoteUpdateRequest request) {
+        NoteOwnershipRow row = noteMapper.selectOwnershipForUpdate(noteId);
+        if (row == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND);
+        }
+        // 先判存在、再判归属：与删除同序，理由见 softDelete
+        if (!Objects.equals(row.getUploaderId(), uploaderId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        if (NoteStatus.valueOf(row.getStatus()) == NoteStatus.DELETED) {
+            throw new BusinessException(ErrorCode.NOTE_UNAVAILABLE);
+        }
+
+        requireCourse(request.getCourseId());
+        List<Long> tagIds = tagService.resolveIds(request.getTags());
+
+        noteMapper.updateMetadata(noteId, request.getTitle().trim(),
+                trimToNull(request.getSummary()), trimToNull(request.getTeacher()),
+                request.getCourseId());
+
+        // 标签全量替换：先删净再插回。空集合时跳过插入——insertBatch 拼不出合法语句
+        noteTagMapper.deleteByNoteId(noteId);
+        if (!tagIds.isEmpty()) {
+            noteTagMapper.insertBatch(noteId, tagIds);
+        }
     }
 
     /**
@@ -317,7 +476,7 @@ public class NoteService {
      * 那个码管的是预览 / 下载 / 收藏。
      */
     private String softDelete(Long noteId, Long uploaderId) {
-        NoteDeleteRow row = noteMapper.selectForDelete(noteId);
+        NoteOwnershipRow row = noteMapper.selectOwnershipForUpdate(noteId);
         if (row == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND);
         }
@@ -335,7 +494,7 @@ public class NoteService {
             return pendingKey;
         }
 
-        // 状态在提交前不会再变：上面那条 selectForDelete 已经持有该行的 X 锁
+        // 状态在提交前不会再变：上面那条 selectOwnershipForUpdate 已经持有该行的 X 锁
         stateMachine.requireTransition(from, NoteStatus.DELETED);
         noteMapper.markDeleted(noteId, NoteStatus.DELETED.name());
         return pendingKey;

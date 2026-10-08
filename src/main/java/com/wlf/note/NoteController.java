@@ -3,10 +3,13 @@ package com.wlf.note;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;
 import com.wlf.common.PageResponse;
+import com.wlf.note.dto.MyNoteItemResponse;
+import com.wlf.note.dto.MyNoteListQuery;
 import com.wlf.note.dto.NoteCreatedResponse;
 import com.wlf.note.dto.NoteDetailResponse;
 import com.wlf.note.dto.NoteListItemResponse;
 import com.wlf.note.dto.NoteListQuery;
+import com.wlf.note.dto.NoteUpdateRequest;
 import com.wlf.note.dto.NoteUploadRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -15,12 +18,14 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 笔记接口。见《概要设计》§5.4。
  *
- * <p>当前有上传、详情与列表；搜索 / 编辑 / 删除 / 预览 / 下载 / 我的上传随后续切片补上。
+ * <p>当前有上传、详情、列表、我的上传、编辑与删除；搜索 / 预览 / 下载随后续切片补上。
  * 全部接口都要求登录
  * {@code SecurityConfig} 的 {@code anyRequest().authenticated()} 已经覆盖。
  */
@@ -78,12 +83,43 @@ public class NoteController {
     }
 
     /**
+     * 我的上传，按上传时间倒序分页。见 §5.4、§4.1。
+     *
+     * <p><b>已删除的不展示</b>（§4.1 的表里这一列对 {@code DELETED} 是不可见）；
+     * 已下架的照常返回，由 {@code status} 让前端标注。
+     *
+     * <p>路径在 {@code /api/users/me} 下但实现在本类，与「我的收藏」在
+     * {@code FavoriteController} 同例：前缀归 users，资源归各自的模块。
+     *
+     * <p>登录者取自 JWT：这是「我的」列表，绝不接受请求参数传入，否则可以翻别人的上传。
+     */
+    @GetMapping("/api/users/me/notes")
+    public ApiResponse<PageResponse<MyNoteItemResponse>> listMyNotes(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @ModelAttribute MyNoteListQuery query) {
+        return ApiResponse.ok(noteService.listMyNotes(user.userId(), query));
+    }
+
+    /**
+     * 编辑笔记元数据。
+     *
+     * <p><b>请求体是 JSON，不是 multipart</b>
+     *
+     * <p><b>PUT 的语义是全量替换</b>：没传的字段等于清空。前端编辑表单本就该回填全部字段再整体提交。
+     * <p>编辑者取自 JWT 而非请求体：否则可以改别人的笔记。
+     * <p>已删除的笔记报 40301；已下架的可以编辑（改完仍是下架状态）。
+     */
+    @PutMapping("/api/notes/{id}")
+    public ApiResponse<Void> update(@AuthenticationPrincipal AuthenticatedUser user,
+                                    @PathVariable Long id,
+                                    @Valid @RequestBody NoteUpdateRequest request) {
+        noteService.update(id, user.userId(), request);
+        return ApiResponse.ok();
+    }
+
+    /**
      * 软删除自己的笔记。见 §5.4、§4.1。
-     *
-     * <p>出参是「无数据的成功」——与退出登录同款。前端需要的是「成了没有」这一个事实，
-     * 而删除之后那篇笔记的详情页还可以正常打开（返回 200 且 {@code status=DELETED}），
-     * 想拿什么自己再查一次即可。
-     *
+     * 删除之后那篇笔记的详情页还可以正常打开（返回 200 且 {@code status=DELETED}），
      * <p>删除者取自 JWT 而非请求参数：否则可以删别人的笔记。
      */
     @DeleteMapping("/api/notes/{id}")

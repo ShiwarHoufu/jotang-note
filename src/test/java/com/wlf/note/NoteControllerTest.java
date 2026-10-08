@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -27,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -36,6 +38,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -332,6 +335,171 @@ class NoteControllerTest {
         mockMvc.perform(delete("/api/notes/{id}", 999_999_999L).header("Authorization", token()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    // ==================== 编辑 ====================
+
+    @Test
+    void updateRequiresLogin() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "未登录改", NoteStatus.ONLINE);
+
+        mockMvc.perform(put("/api/notes/{id}", noteId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("标题", courseId)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+    }
+
+    /**
+     * 编辑成功是「无数据的成功」（{@code data} 为 null），与删除同款；
+     * 而改完之后详情页照常打开、拿到的就是新值——这就是出参不给数据的原因。
+     */
+    @Test
+    void updateReturnsNoDataAndTheDetailReflectsTheChange() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "改前", NoteStatus.ONLINE);
+
+        mockMvc.perform(put("/api/notes/{id}", noteId)
+                        .header("Authorization", token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(MARKER + "改后", courseId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data").value(nullValue()));
+
+        mockMvc.perform(get("/api/notes/{id}", noteId).header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.title").value(MARKER + "改后"))
+                .andExpect(jsonPath("$.data.status").value("ONLINE"));
+    }
+
+    @Test
+    void updateRejectsBlankTitle() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "空标题", NoteStatus.ONLINE);
+
+        mockMvc.perform(put("/api/notes/{id}", noteId)
+                        .header("Authorization", token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("   ", courseId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001))
+                .andExpect(jsonPath("$.data[0].field").value("title"));
+    }
+
+    /**
+     * <b>已下架的笔记可以编辑，且改完仍是 OFFLINE。</b>这是本接口与预览 / 下载 / 收藏
+     * 在 §4.1 那张表上的分歧点：那三个动作对 OFFLINE 一律 40301，编辑只挡 DELETED。
+     * 理由是编辑不迁移状态——改完不会让它重新可见，而禁止编辑只会逼上传者删了重传。
+     */
+    @Test
+    void updateSucceedsOnAnOfflineNoteAndLeavesItOffline() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "下架待改", NoteStatus.OFFLINE);
+
+        mockMvc.perform(put("/api/notes/{id}", noteId)
+                        .header("Authorization", token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(MARKER + "下架改后", courseId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(get("/api/notes/{id}", noteId).header("Authorization", token()))
+                .andExpect(jsonPath("$.data.title").value(MARKER + "下架改后"))
+                .andExpect(jsonPath("$.data.status").value("OFFLINE"));
+    }
+
+    /** 已删除是终态：40301，与预览 / 下载 / 收藏同一口径 */
+    @Test
+    void updateRejectsADeletedNoteWithNoteUnavailable() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "已删除", NoteStatus.DELETED);
+
+        mockMvc.perform(put("/api/notes/{id}", noteId)
+                        .header("Authorization", token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(MARKER + "改不动", courseId)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40301));
+    }
+
+    @Test
+    void updateRejectsSomebodyElseWithForbidden() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "别人的笔记", NoteStatus.ONLINE);
+        Long intruderId = insertStranger();
+
+        mockMvc.perform(put("/api/notes/{id}", noteId)
+                        .header("Authorization", tokenOf(intruderId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(MARKER + "越权改", courseId)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40300));
+    }
+
+    @Test
+    void updatingAnUnknownNoteIsNotFound() throws Exception {
+        mockMvc.perform(put("/api/notes/{id}", 999_999_999L)
+                        .header("Authorization", token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(MARKER + "不存在", courseId)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    // ==================== GET /api/users/me/notes ====================
+
+    @Test
+    void myNotesRequiresLogin() throws Exception {
+        mockMvc.perform(get("/api/users/me/notes"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+    }
+
+    /**
+     * 只出自己<b>未删除</b>的笔记，已下架的照常返回并带着 {@code OFFLINE}。
+     * 同时验证响应体里<b>没有 {@code uploader} 与 {@code isFavorited}</b>——
+     * 上传者恒等于自己、收藏自己的笔记没有意义，恒等于一个值的字段不给。
+     */
+    @Test
+    void myNotesReturnsOwnUndeltedNotesAndOmitsConstantFields() throws Exception {
+        insertNote(courseId, MARKER + "在线的", NoteStatus.ONLINE);
+        insertNote(courseId, MARKER + "已下架的", NoteStatus.OFFLINE);
+        insertNote(courseId, MARKER + "已删除的", NoteStatus.DELETED);
+
+        mockMvc.perform(get("/api/users/me/notes").header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(2))
+                // 按标题集合断言而不是按下标：两条笔记的 created_at 落在同一秒，
+                // 先后由次级键 id 决定，拿下标断言会把顺序写死进用例
+                .andExpect(jsonPath("$.data.items[*].title",
+                        containsInAnyOrder(MARKER + "在线的", MARKER + "已下架的")))
+                .andExpect(jsonPath("$.data.items[*].status",
+                        containsInAnyOrder("ONLINE", "OFFLINE")))
+                .andExpect(jsonPath("$.data.items[0].course.id").value(courseId))
+                .andExpect(jsonPath("$.data.items[0].tags").isArray())
+                .andExpect(jsonPath("$.data.items[0].uploader").doesNotExist())
+                .andExpect(jsonPath("$.data.items[0].isFavorited").doesNotExist());
+    }
+
+    /** 分页外壳与参数守卫，与其余列表同一套（§3.3 的上限对所有列表统一生效） */
+    @Test
+    void myNotesRejectsDeepPagination() throws Exception {
+        mockMvc.perform(get("/api/users/me/notes").param("page", "51").header("Authorization", token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001))
+                .andExpect(jsonPath("$.data[0].field").value("page"));
+    }
+
+    @Test
+    void myNotesRejectsPageBelowOne() throws Exception {
+        mockMvc.perform(get("/api/users/me/notes").param("page", "0").header("Authorization", token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001))
+                .andExpect(jsonPath("$.data[0].field").value("page"));
+    }
+
+    /** 编辑请求体：只含元数据，没有任何文件相关字段（附件在编辑时不可增删） */
+    private String json(String title, Long courseId) {
+        return """
+                {"title":"%s","summary":"简介","teacher":"张老师","courseId":%d,"tags":["%s标签"]}
+                """.formatted(title, courseId, MARKER);
     }
 
     /** 直接插库造一篇笔记（含文件行），避开上传流程——这里验的是读路径的路由与响应形状 */
