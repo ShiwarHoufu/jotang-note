@@ -61,7 +61,7 @@ public class FavoriteController {
      * 我的收藏，按收藏时间倒序分页。
      *
      * <p>参数收进 {@link FavoriteListQuery} 而不是散装 {@code @RequestParam}，
-     * 否则校验失败会掉进兜底变成 50000（理由见该类注释）。
+     * 否则校验失败会掉进兜底变成 50000
      */
     @GetMapping("/api/users/me/favorites")
     public ApiResponse<PageResponse<FavoriteItemResponse>> listFavorites(

@@ -122,9 +122,6 @@ public interface NoteMapper extends BaseMapper<Note> {
      * <p>状态由调用方传入而不是在 SQL 里写死 {@code 'ONLINE'}：那是 {@link NoteStatus}
      * 的取值，写死在 SQL 字符串里就成了同一规则的又一份副本。
      *
-     * <p>用注解而不是 XML：本语句不参与多表 JOIN，也没有动态分支，为它开一段 XML 不划算——
-     * 与 {@link NoteTagMapper} 的分工一致。
-     *
      * @param status 只有处于该状态的笔记才计数；详情页传 {@link NoteStatus#ONLINE}，
      *               于是「已下架 / 已删除不算浏览」这条规则由 SQL 自己保证
      * @return 受影响行数。0 表示笔记不存在、或状态不符、或另一个事务刚改过状态——
@@ -179,7 +176,12 @@ public interface NoteMapper extends BaseMapper<Note> {
     Long selectFavoriteCount(@Param("id") Long id);
 
     /**
-     * 锁住笔记行并读出状态，供收藏 / 取消收藏把「存在性 + 状态 + 排他锁」一次拿到。
+     * 锁住笔记行并读出状态，把「存在性 + 状态 + 排他锁」一次拿到。
+     *
+     * <p><b>三个调用方共用</b>：收藏、取消收藏、管理员的下架 / 恢复。它们的共同需求正是这三件事，
+     * 差别只在拿到状态之后干什么——收藏判它是不是 {@code ONLINE}，管理员判该迁到哪。
+     * 管理员那条路径只碰 {@code note} 一张表、不需要 {@code uploader_id}，
+     * 所以不与 {@link #selectOwnershipForUpdate} 合并（那条多带一列，是给删除 / 编辑做归属校验的）。
      *
      * <p><b>这里的 {@code FOR UPDATE} 不是顺手加的，取锁顺序是收藏接口唯一的死锁防线。</b>
      * InnoDB 在检查 {@code fk_fav_note} 时会对父行 {@code note} 取隐式<b>共享</b>锁，
@@ -189,6 +191,10 @@ public interface NoteMapper extends BaseMapper<Note> {
      *
      * <p>因此收藏与取消收藏<b>都先走这一条</b>拿到 X 锁，全站锁序统一为 note → favorite。
      * 取消收藏那里只用它的「行存在吗」，不用返回值——但要的正是同一把锁、同一个先后。
+     * 管理员的下架 / 恢复则只锁 {@code note} 一行、不涉及其它表，天然不参与那条锁序。
+     *
+     * <p>对管理员这一路来说，{@code FOR UPDATE} 的作用与删除那边一样：下架是「读状态 → 判迁移 → 写状态」
+     * 三步，不加锁的话读完之后状态可能被别人改掉，写时依据的就是一个已经过期的值。
      *
      * @return 状态字符串；<b>笔记不存在时为 {@code null}</b>——调用方据此报 40400
      */
@@ -225,6 +231,26 @@ public interface NoteMapper extends BaseMapper<Note> {
      */
     @Select("SELECT uploader_id, status FROM note WHERE id = #{id} FOR UPDATE")
     NoteOwnershipRow selectOwnershipForUpdate(@Param("id") Long id);
+
+    /**
+     * 只改状态：供管理员的下架 / 恢复使用。见 §5.6、§4.1、§3.3。
+     *
+     * <p><b>这条语句的列清单只有一个 {@code status}，一个都不能多。</b>§3.3 明写管理员的
+     * 「下架 / 恢复」只改 {@code status}、不动 OSS 对象；同理也<b>不碰 {@code updated_at}</b>——
+     * 那一列的语义是「用户最后编辑笔记的时间」，管理员下架不是用户编辑，
+     * 建表语句刻意不挂 {@code ON UPDATE CURRENT_TIMESTAMP} 正是为了这个（§3.3）。
+     * 下架过的笔记不该因为被下架而排到「最近更新」列表的最前面。
+     *
+     * <p><b>也不写 {@code deleted_at}</b>：那是删除专用的（见 {@link #markDeleted}），
+     * 下架不是删除。两条语句因此不能合并成一条通用的「改状态」——那会诱使调用方
+     * 在下架时顺手写一个 {@code deleted_at}，或在删除时漏掉它。
+     *
+     * <p><b>不带 {@code status} 守卫</b>，理由见 {@link #selectOwnershipForUpdate}：
+     * 调用方在同一事务里已用 {@link #selectStatusForUpdate} 持有该行的 X 锁，
+     * 状态在提交前不可能变。状态字面量仍由调用方传（{@code NoteStatus} 的取值不写死在 SQL 里）。
+     */
+    @Update("UPDATE note SET status = #{status} WHERE id = #{id}")
+    int updateStatus(@Param("id") Long id, @Param("status") String status);
 
     /**
      * 软删除：把状态置为传入值并写下删除时刻。见 §4.1、§3.3。

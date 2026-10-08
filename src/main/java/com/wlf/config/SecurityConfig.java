@@ -37,8 +37,6 @@ public class SecurityConfig {
     /**
      * 免登录接口（§5.1、§5.3）。
      *
-     * <p>密码找回的两个接口必须放行——用户正是登不上才要找回。
-     *
      * <p>{@code /api/colleges} 也必须放行，理由与密码找回同源：注册页要拿它填学院下拉框，
      * 而注册发生在登录之前。不放行则下拉框取不到数据，谁也注册不了。
      *
@@ -70,7 +68,12 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
-                        // MVP 外的接口一律要求登录（§5：全部内容需登录）
+                        // 管理端（§5.6）。JwtAuthFilter 已把 JWT 里的 role 包成 ROLE_ 前缀的权限，
+                        // hasRole("ADMIN") 正好对上，不需要在这里再解一次 token。
+                        // 两条失败路径都是现成的：未登录 → AuthenticationEntryPoint 出 40100，
+                        // 已登录但非管理员 → AccessDeniedHandler 出 40300（§5.7）
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // 其余接口一律要求登录（§5：全部内容需登录）
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(unauthorizedEntryPoint())

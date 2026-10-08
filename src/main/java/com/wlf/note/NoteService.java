@@ -434,6 +434,77 @@ public class NoteService {
     }
 
     /**
+     * 管理员下架：{@code ONLINE → OFFLINE}。见 §5.6、§4.1。
+     *
+     * <p><b>刻意不做归属校验</b>——管理员可以下架任何人的笔记，这与本类其余写方法
+     * 「一律本人」的口径正相反。方法名带 {@code admin} 前缀就是为了让这件事在<b>调用点</b>
+     * 就看得见：谁想在用户路径上复用它，应当立刻意识到这里没有 40300。
+     * 「谁能调到这里」由 {@code SecurityConfig} 的 {@code /api/admin/**} 规则保证，
+     * 40300 在那条链上产出，不在本类里判。
+     *
+     * <p><b>下架是可逆的，所以不动 OSS 对象</b>：对象必须留着，否则恢复之后笔记就打不开了
+     * （这与删除那个不可逆的操作正相反）。
+     *
+     * @throws BusinessException 40400 笔记不存在；40301 笔记已删除
+     */
+    public void adminOffline(Long noteId) {
+        transition(noteId, NoteStatus.OFFLINE);
+    }
+
+    /** 管理员恢复：{@code OFFLINE → ONLINE}。见 {@link #adminOffline}，除目标状态外完全同构。 */
+    public void adminRestore(Long noteId) {
+        transition(noteId, NoteStatus.ONLINE);
+    }
+
+    /**
+     * 事务内的那一段：锁行读状态 → 把三种情形各自收口 → 迁移。
+     *
+     * <p><b>三种情形一步都不能省，而且都不能丢给状态机：</b>
+     * <ol>
+     *   <li><b>不存在</b> → 40400</li>
+     *   <li><b>已是 {@code DELETED}</b> → 40301。{@code DELETED} 是终态，在
+     *       {@link NoteStateMachine} 的表里是空集，它抛的是 {@code IllegalStateException}，
+     *       最终会翻成 50000——把「这篇笔记已经删了」伪装成「服务器内部错误」。
+     *       状态机自己的注释里就预留了这个警告：它的异常不是被承诺的契约，
+     *       调用方要先读状态、把自己认识的情形处理掉</li>
+     *   <li><b>已经在目标状态</b> → 幂等返回，不写库。与删除、取消收藏同口径：
+     *       前端连点两次不该有一次报错，两个人同时操作也不该让后者撞上异常。
+     *       同理，{@code from == to} 在状态机那里也是非法迁移</li>
+     * </ol>
+     *
+     * <p>收掉这三支之后，走到状态机的必然是一次真实的 {@code ONLINE ↔ OFFLINE} 迁移，
+     * 于是 {@code requireTransition} 退化成一道纯粹的安全网——它再抛异常就一定是代码缺陷，
+     * 而不是某个用户的动作。这正是 {@code NoteStateMachine} 想要的用法。
+     *
+     * <p><b>不碰 {@code updated_at}</b>：写语句里根本没有这一列（见
+     * {@link NoteMapper#updateStatus}），§3.3 要求管理员的「下架 / 恢复」与删除一样不刷新它。
+     *
+     * <p>用 {@code transactionTemplate} 而不是 {@code @Transactional}，与
+     * {@link #update} 保持一致：本类所有写方法都显式持有事务边界，读起来不必去猜
+     * 注解在哪一层生效。这里没有提交后要做的事，所以用 {@code executeWithoutResult}。
+     */
+    private void transition(Long noteId, NoteStatus target) {
+        transactionTemplate.executeWithoutResult(status -> {
+            String current = noteMapper.selectStatusForUpdate(noteId);
+            if (current == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND);
+            }
+
+            NoteStatus from = NoteStatus.valueOf(current);
+            if (from == NoteStatus.DELETED) {
+                throw new BusinessException(ErrorCode.NOTE_UNAVAILABLE);
+            }
+            if (from == target) {
+                return;
+            }
+
+            // 走到这里必然是一次真实迁移；上面三支已经把「不存在 / 终态 / 原地不动」都收掉了
+            stateMachine.requireTransition(from, target);
+            noteMapper.updateStatus(noteId, target.name());
+        });
+    }
+
+    /**
      * 软删除：上传者本人把自己的笔记置为 {@code DELETED}。见 §5.4、§4.1、§3.3。
      *
      * <p><b>本方法必须是最外层事务边界，不要从别的 {@code @Transactional} 方法里调用。</b>
