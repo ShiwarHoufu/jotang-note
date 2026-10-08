@@ -23,6 +23,20 @@ public class CourseService {
     }
 
     /**
+     * 课程是否存在。笔记上传时用它校验 {@code courseId} 合法性（§6.1 的「课程合法性」）。
+     *
+     * <p>先查一次是为了给出可读的 40001，而不是让外键 {@code fk_note_course} 抛
+     * {@code DataIntegrityViolation} 变成 50000——前者前端能定位到具体字段，后者只能看到「服务器错误」。
+     * 这也与本模块「跨模块业务操走对方 Service」的约定一致（§1.1）。
+     *
+     * @param courseId null 视为不存在，省得调用方再判一次
+     */
+    public boolean exists(Long courseId) {
+        return courseId != null && courseMapper.exists(
+                Wrappers.<Course>lambdaQuery().eq(Course::getId, courseId));
+    }
+
+    /**
      * 课程列表, 不分页;
      * @param keyword 匹配课程名；null / 空白视为不过滤
      */

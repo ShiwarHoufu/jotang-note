@@ -2,6 +2,20 @@ spring:
   application:
     name: jotang-note
 
+  # multipart 上传参数，取值与 Nginx 侧必须对齐（§6.1）：
+  #   Nginx 的 client_max_body_size 必须 ≥ 这里的 max-request-size。请求体 = 100MB 文件
+  #   + multipart 边界与元数据 > 100MB，把 Nginx 也设成 100m 会让请求在 Nginx 就被 413 拦下，
+  #   后端这个 110MB 形同虚设。这两处是同一个限制的两个副本，改一个必须改另一个。
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 110MB
+      # 超过 1MB 的部件落磁盘而不是留在堆里：单文件可达 100MB，全压在堆上会打爆内存
+      file-size-threshold: 1MB
+      # 专用中转目录，便于定期清理残留（§6.1）。默认取系统临时目录下的子目录，
+      # 部署时可用 JOTANG_UPLOAD_TMP 指到独立分区——上传中转会吃磁盘，与数据盘分开更安全
+      location: ${JOTANG_UPLOAD_TMP:${java.io.tmpdir}/jotang-upload}
+
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:jotang_note}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:root}
