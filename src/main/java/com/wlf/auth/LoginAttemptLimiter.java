@@ -12,14 +12,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 登录限频：仅账号维度，连续失败 5 次锁定 10 分钟；本地内存实现。
- * 见《概要设计》§6.3（决策 D3）。
- *
- * <p>只按账号、不按 IP：按 IP 会误伤同一校园网出口的整批用户（D3）。
+ * 见《概要设计》§6.3。
  *
  * <p>不引入 Redis 与定时任务，靠 {@link ConcurrentHashMap} + 惰性过期（《技术选型》§5）。
  * 单实例部署，不存在多实例状态不一致问题。
- *
- * <p>已知限制（§8.4-4）：应用重启后锁定状态丢失，MVP 接受。
  */
 @Component
 public class LoginAttemptLimiter {

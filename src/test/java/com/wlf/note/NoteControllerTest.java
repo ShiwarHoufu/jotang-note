@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -269,6 +270,70 @@ class NoteControllerTest {
                 .andExpect(jsonPath("$.data.size").value(20));
     }
 
+    // ==================== 删除 ====================
+
+    @Test
+    void deleteRequiresLogin() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "未登录删", NoteStatus.ONLINE);
+
+        mockMvc.perform(delete("/api/notes/{id}", noteId))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+    }
+
+    /**
+     * 删除成功是「无数据的成功」（{@code data} 为 null），与退出登录同款；
+     * 而删完之后<b>详情页照常返回 200</b>——§4.1 说详情是唯一要把状态带出去的读接口，
+     * 前端据此渲染「已删除」提示，文件字段整体置空。
+     */
+    @Test
+    void deleteReturnsNoDataAndTheNoteStaysReadableAsDeleted() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "待删除", NoteStatus.ONLINE);
+
+        mockMvc.perform(delete("/api/notes/{id}", noteId).header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data").value(nullValue()));
+
+        mockMvc.perform(get("/api/notes/{id}", noteId).header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("DELETED"))
+                .andExpect(jsonPath("$.data.title").value(MARKER + "待删除"))
+                .andExpect(jsonPath("$.data.file").value(nullValue()));
+    }
+
+    /** 幂等：连点两次不该有一次报错 */
+    @Test
+    void deletingTwiceIsStillOk() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "删两次", NoteStatus.ONLINE);
+
+        mockMvc.perform(delete("/api/notes/{id}", noteId).header("Authorization", token()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/notes/{id}", noteId).header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    /** 非本人 40300——全项目第一处归属校验，走 HTTP 验一遍码与状态的映射 */
+    @Test
+    void deleteRejectsSomebodyElseWithForbidden() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "别人的笔记", NoteStatus.ONLINE);
+        Long intruderId = insertStranger();
+
+        mockMvc.perform(delete("/api/notes/{id}", noteId)
+                        .header("Authorization", tokenOf(intruderId)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40300));
+    }
+
+    @Test
+    void deletingAnUnknownNoteIsNotFound() throws Exception {
+        mockMvc.perform(delete("/api/notes/{id}", 999_999_999L).header("Authorization", token()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
     /** 直接插库造一篇笔记（含文件行），避开上传流程——这里验的是读路径的路由与响应形状 */
     private Long insertNote(Long noteCourseId, String title, NoteStatus status) {
         Note note = new Note();
@@ -307,6 +372,33 @@ class NoteControllerTest {
 
     private String token() {
         return "Bearer " + jwtTokenProvider.issue(uploaderId, MARKER + "uploader", "USER");
+    }
+
+    /** 签指定用户的 token。用于「非本人」这类要区分身份的用例 */
+    private String tokenOf(Long userId) {
+        return "Bearer " + jwtTokenProvider.issue(userId, MARKER + "stranger", "USER");
+    }
+
+    /**
+     * 造一个与上传者无关的用户。与 {@code insertUploader()} 分开而不是加个参数：
+     * 那个方法用的是固定的 {@code MARKER + "uploader"} 用户名，同一个用例里再调一次会撞
+     * {@code uk_username}，所以这里必须自带随机后缀。
+     */
+    private Long insertStranger() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+
+        College college = new College();
+        college.setName(MARKER + "他人学院-" + suffix);
+        collegeMapper.insert(college);
+
+        User user = new User();
+        user.setUsername(MARKER + "stranger-" + suffix);
+        user.setEmail(MARKER + "stranger-" + suffix + "@example.com");
+        user.setPasswordHash("$2a$10$test-only-not-a-real-bcrypt-hash");
+        user.setNickname(MARKER + "他人");
+        user.setCollegeId(college.getId());
+        userMapper.insert(user);
+        return user.getId();
     }
 
     private Long insertUploader() {

@@ -10,6 +10,7 @@ import com.wlf.note.dto.NoteListQuery;
 import com.wlf.note.dto.NoteUploadRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -74,5 +75,21 @@ public class NoteController {
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @ModelAttribute NoteListQuery query) {
         return ApiResponse.ok(noteService.list(user.userId(), query));
+    }
+
+    /**
+     * 软删除自己的笔记。见 §5.4、§4.1。
+     *
+     * <p>出参是「无数据的成功」——与退出登录同款。前端需要的是「成了没有」这一个事实，
+     * 而删除之后那篇笔记的详情页还可以正常打开（返回 200 且 {@code status=DELETED}），
+     * 想拿什么自己再查一次即可。
+     *
+     * <p>删除者取自 JWT 而非请求参数：否则可以删别人的笔记。
+     */
+    @DeleteMapping("/api/notes/{id}")
+    public ApiResponse<Void> delete(@AuthenticationPrincipal AuthenticatedUser user,
+                                    @PathVariable Long id) {
+        noteService.delete(id, user.userId());
+        return ApiResponse.ok();
     }
 }

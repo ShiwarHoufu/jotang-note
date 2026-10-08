@@ -1,6 +1,7 @@
 package com.wlf.note;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.wlf.catalog.CourseService;
 import com.wlf.catalog.TagService;
@@ -10,6 +11,7 @@ import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
 import com.wlf.common.PageResponse;
+import com.wlf.common.Paging;
 import com.wlf.entity.Note;
 import com.wlf.entity.NoteFile;
 import com.wlf.favorite.FavoriteService;
@@ -32,6 +34,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -43,18 +46,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class NoteService {
-
-    /**
-     * 分页深度上限：只能翻到前 1000 条（§3.3）。按默认 {@code size=20} 算就是最多 50 页。
-     *
-     * <p>管的是「页码」，不是「单页大小」——后者的守卫在 {@code NoteListQuery} 的
-     * {@code @Max(50)} 上。插件层的 {@code maxLimit} 只能截断单页，管不住页码，
-     * 所以这个校验必须落在 Service 里（{@code MybatisPlusConfig} 有同样的说明）。
-     *
-     * <p>为什么列表和搜索用同一个上限：搜索的深翻是全表扫，列表的深翻是 OFFSET 扫描后丢弃，
-     * 两者都不该放行，而分成两条规则只会让人记错哪条适用于哪里。
-     */
-    private static final int MAX_PAGE_DEPTH = 1000;
 
     private final NoteMapper noteMapper;
     private final NoteFileMapper noteFileMapper;
@@ -72,6 +63,8 @@ public class NoteService {
     private final FavoriteService favoriteService;
     private final NoteFilePolicy filePolicy;
     private final StorageService storageService;
+    /** 状态迁移的合法性判据。见 {@code NoteStateMachine}（删除与管理员的下架/恢复共用） */
+    private final NoteStateMachine stateMachine;
     private final TransactionTemplate transactionTemplate;
 
     public NoteService(NoteMapper noteMapper,
@@ -82,6 +75,7 @@ public class NoteService {
                        FavoriteService favoriteService,
                        NoteFilePolicy filePolicy,
                        StorageService storageService,
+                       NoteStateMachine stateMachine,
                        PlatformTransactionManager transactionManager) {
         this.noteMapper = noteMapper;
         this.noteFileMapper = noteFileMapper;
@@ -91,6 +85,7 @@ public class NoteService {
         this.favoriteService = favoriteService;
         this.filePolicy = filePolicy;
         this.storageService = storageService;
+        this.stateMachine = stateMachine;
         // 自己 new 而不依赖 Spring Boot 的自动配置：本类要的是「一段明确可控的事务边界」，
         // 而不是一个可被替换的托管 Bean，显式持有反而少一层「bean 从哪来」的疑问
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -219,10 +214,10 @@ public class NoteService {
      * <p>标签与收藏都在 Java 里按 {@code noteId} 归到各自的行上，而不是让 SQL 去关联。
      *
      * @param viewerId 当前登录者，只用于填 {@code isFavorited}；取自 JWT
-     * @throws BusinessException 40001 分页过深（{@code page × size > 1000}，见 {@link #MAX_PAGE_DEPTH}）
+     * @throws BusinessException 40001 分页过深（{@code page × size > 1000}，见 {@link Paging#MAX_PAGE_DEPTH}）
      */
     public PageResponse<NoteListItemResponse> list(Long viewerId, NoteListQuery query) {
-        requireShallowPaging(query);
+        Paging.requireShallow(query.getPage(), query.getSize());
 
         // Page 只携带「第几页、每页几条」，count 语句由分页插件改写生成，不在这里手写
         IPage<NoteListRow> result = noteMapper.selectListPage(
@@ -280,18 +275,125 @@ public class NoteService {
     }
 
     /**
-     * 分页深度守卫。超出时<b>报错而不是截断</b>：返回一页空白但 {@code total} 还写着很大的数，
-     * 用户分不清是「翻得太深」还是「这一页恰好没数据」，前端也无从把「下一页」置灰。
+     * 软删除：上传者本人把自己的笔记置为 {@code DELETED}。见 §5.4、§4.1、§3.3。
      *
-     * <p>乘法前把 {@code page} 提升为 {@code long}：page 没有上界（只校验了 ≥ 1），
-     * {@code int × int} 在 page 极大时会溢出成负数，守卫就形同虚设了。
+     * <p><b>本方法必须是最外层事务边界，不要从别的 {@code @Transactional} 方法里调用。</b>
+     * 清理对象那一步刻意放在 {@code transactionTemplate.execute(...)} <b>之后</b>，依赖
+     * {@code execute} 确实开了新事务、并在返回前提交。若被一个事务方法调用，{@code REQUIRED}
+     * 会加入外层事务，清理就跑到外层提交之前去了——一旦外层回滚，对象已经删掉而笔记还在，
+     * 那篇笔记就永远打不开了。
+     *
+     * <p><b>为什么不用 {@code @Transactional}</b>：同一个取舍的两面。业务上，删除要做的第二件事
+     * 是一次 OSS 网络调用，它不该被圈进数据库事务（§6.1 给上传定了同样的规矩）。工程上，
+     * 用 {@code @Transactional} 加 {@code afterCommit} 回调也能达到目的，但本项目所有服务测试
+     * 都跑在被 Spring 托管的测试事务里，挂在被加入事务上的 {@code afterCommit} 在测试中
+     * <b>永远不会触发</b>，清理逻辑将完全无法断言；{@code execute} 之后的普通代码没有这个问题。
+     *
+     * <p><b>删除已删除的笔记是幂等的（200）</b>，与取消收藏同口径：DELETE 本就该如此，
+     * 前端连点两次不该有一次报错。只有笔记不存在才是 40400。
+     *
+     * @param uploaderId 当前登录者，取自 JWT。本接口没有「管理员代删」的语义
+     *                   （§5.6 给管理员的是下架 / 恢复），所以这里不看 role，非本人一律 40300
+     * @throws BusinessException 40400 笔记不存在；40300 非上传者本人
      */
-    private static void requireShallowPaging(NoteListQuery query) {
-        if ((long) query.getPage() * query.getSize() > MAX_PAGE_DEPTH) {
-            String message = "分页过深，最多前 " + MAX_PAGE_DEPTH + " 条";
-            throw new BusinessException(ErrorCode.PARAM_INVALID, message,
-                    List.of(new FieldViolation("page", message)));
+    public void delete(Long noteId, Long uploaderId) {
+        // 返回非 null 表示「还有对象没清掉」，交给下面在事务外处理；null 表示这次无事可做
+        String storageKey = transactionTemplate.execute(status -> softDelete(noteId, uploaderId));
+        if (storageKey != null) {
+            purgeObjectThenMark(noteId, storageKey);
         }
+    }
+
+    /**
+     * 事务内的那一段：校验归属 → 走状态机 → 落库。返回「还没被物理清理的对象键」，没有则 null。
+     *
+     * <p><b>「已经删除」这一支也要返回 storageKey</b>，不能直接 return null——幂等 200 不等于
+     * 什么都不做。若上一次的清理失败了（{@code is_purged} 仍是 0），那个对象就再也没人管：
+     * {@link #purgeQuietly} 的注释一直说「残留由每日维护脚本对账」，而那只在 §7.3 补上之后才算数。
+     * 让这一支照常返回待清键，重复点删除就顺带成了清理的重试路径，兜底不必依赖一个外部脚本。
+     *
+     * <p>{@code OFFLINE} 的笔记<b>允许</b>删除（§4.1 的图里有 {@code OFFLINE→DELETED} 这条边）：
+     * 管理员下架过的笔记，上传者仍然有权把它删掉。这也是本流程绝不返回 40301 的原因——
+     * 那个码管的是预览 / 下载 / 收藏。
+     */
+    private String softDelete(Long noteId, Long uploaderId) {
+        NoteDeleteRow row = noteMapper.selectForDelete(noteId);
+        if (row == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND);
+        }
+        // 先判存在、再判归属：id 不存在就报不存在。这不泄露新信息——详情接口对任何存在的笔记
+        // 都返回 200，存在性本来就是登录用户可探测的
+        if (!Objects.equals(row.getUploaderId(), uploaderId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+
+        // 先取待清键再动状态：两支（正常删除、已经删过）都要用它
+        String pendingKey = pendingStorageKey(noteId);
+
+        NoteStatus from = NoteStatus.valueOf(row.getStatus());
+        if (from == NoteStatus.DELETED) {
+            return pendingKey;
+        }
+
+        // 状态在提交前不会再变：上面那条 selectForDelete 已经持有该行的 X 锁
+        stateMachine.requireTransition(from, NoteStatus.DELETED);
+        noteMapper.markDeleted(noteId, NoteStatus.DELETED.name());
+        return pendingKey;
+    }
+
+    /**
+     * 还没被物理清理的对象键；没有则 null。三种「没有」要分开对待：
+     * 已经清理过（正常，静默返回 null）、{@code note_file} 行缺失、{@code storage_key} 为空
+     * （后两种是数据不一致，记 warn 后照样放行）。
+     *
+     * <p>后两种只记日志不抛异常：用户要的是「这篇笔记别在站内出现了」，而状态那一步已经落库。
+     * 因为一条脏的 {@code note_file} 行把一次成功的删除变成失败，是拿次要的事顶掉主要的事。
+     * 而且 {@code StorageService#delete} 是裸字符串拼接，喂 null 会删到一个不存在的键，
+     * 所以这里必须在调用之前把空值挡掉。
+     */
+    private String pendingStorageKey(Long noteId) {
+        // uk_note_id 保证一篇笔记至多一个文件行，selectOne 不会拿到多行
+        NoteFile file = noteFileMapper.selectOne(Wrappers.<NoteFile>lambdaQuery()
+                .eq(NoteFile::getNoteId, noteId));
+        if (file == null) {
+            log.warn("笔记没有文件行，跳过对象清理 noteId={}", noteId);
+            return null;
+        }
+        if (file.getIsPurged() != null && file.getIsPurged() != 0) {
+            return null;
+        }
+        if (file.getStorageKey() == null || file.getStorageKey().isBlank()) {
+            log.warn("文件行没有 storage_key，跳过对象清理 noteId={}", noteId);
+            return null;
+        }
+        return file.getStorageKey();
+    }
+
+    /**
+     * 事务提交后清理 OSS 对象并记账。见 §3.3、§7.3。
+     *
+     * <p><b>顺序是先删对象、后置标记，不能反。</b>若先置 {@code is_purged = 1} 而随后的删除失败，
+     * 这一行就谎称「对象已清理」——而对象还在，且任何对账都救不回来（对账的判据正是这一列）。
+     * 先删后标，最坏只是「对象删了、标记没写上」，重跑一次即可；而
+     * {@code StorageService#delete} 对不存在的对象是 no-op，所以重跑安全。
+     *
+     * <p>标记带 {@code is_purged = 0} 的条件，让它在重复清理时也幂等。
+     *
+     * <p>失败只记日志、不往外抛：这一步只影响存储回收，不影响用户可见的结果——
+     * {@code status} 已是 {@code DELETED}，§6.2 之后不再为它签发任何 URL。
+     */
+    private void purgeObjectThenMark(Long noteId, String storageKey) {
+        try {
+            storageService.delete(Bucket.NOTE, storageKey);
+        } catch (RuntimeException e) {
+            // 残留对象由 §7.3 的每日维护脚本按 is_purged = 0 对账清理
+            log.error("清理笔记对象失败，is_purged 保持 0 待对账 noteId={} key={}", noteId, storageKey, e);
+            return;
+        }
+        noteFileMapper.update(null, Wrappers.<NoteFile>lambdaUpdate()
+                .eq(NoteFile::getNoteId, noteId)
+                .eq(NoteFile::getIsPurged, 0)
+                .set(NoteFile::getIsPurged, 1));
     }
 
     /**
@@ -370,7 +472,8 @@ public class NoteService {
      * 补偿删除：入库失败时刚上传的对象已无人引用。
      *
      * <p>删除失败只记日志、不再外抛——原始异常才是用户与排查者要看的那个，
-     * 用「OSS 删不掉」把它顶掉只会把排查方向带偏。残留对象由每日维护脚本对账清理。
+     * 用「OSS 删不掉」把它顶掉只会把排查方向带偏。残留对象由 §7.3 的每日维护脚本对账清理
+     * （那一步按 {@code note_file.is_purged = 0} 扫，仓外的脚本负责，见 §7.3）。
      */
     private void purgeQuietly(String key) {
         try {

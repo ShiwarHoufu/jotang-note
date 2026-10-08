@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  favorite 模块的跨表检索语句。
+
+  与 NoteMapper.xml 是同一套分工（§1.1）：单表 CRUD 走 MyBatis-Plus，多表 JOIN 走 XML。
+  这里只有一条——「我的收藏」。收藏 / 取消收藏是单表写，留在 BaseMapper 上。
+
+  为什么全部是 INNER JOIN：这几条连接关系在建表语句里都有外键兜着——
+  fk_fav_note / fk_note_course / fk_note_uploader 非空，user.college_id 非空。
+  也就是说「连接不上」这种情形在库里不可能出现，用 LEFT JOIN 反而会把数据损坏
+  伪装成「某一列恰好为 null」，让问题更难发现（与 NoteMapper.xml 的开篇同一理由）。
+-->
+<mapper namespace="com.wlf.favorite.FavoriteMapper">
+
+    <!--
+      我的收藏的一页。见 §5.5、§6.5。
+
+      ① 不筛 n.status。§6.5 要求三种状态都取回来交给 Service 渲染：
+         ONLINE 正常项、OFFLINE 占位「已下架」、DELETED 占位「已删除」。
+         在 SQL 里筛掉非 ONLINE 会让占位项直接消失——那等于把「不解除收藏关系」做成了「解除」。
+
+         过滤条件全部落在 favorite 自己身上还有个附带好处：这条查询的语义不依赖分页插件
+         改写 count 时如何去留那几条 JOIN（那些 JOIN 都是 to-one，留着也不影响行数，
+         但让 count 与主查询共用同一组条件，读起来少一层要推敲的东西）。
+
+      ② 别名是必需的，不是风格问题：favorite / note / course / user 每张都有 id 列，
+         course 与 college 都有 name 列。不显式改名的话，MyBatis 按列名回填时
+         后出现的会覆盖先出现的。f.created_at 也要改名——它在这里的语义是「收藏时间」，
+         直接叫 created_at 会与 n.updated_at 在概念上打架（见 FavoriteItemRow 的注释）。
+
+      ③ 标签不并进来：它与笔记是 to-many，一旦 JOIN 进带 LIMIT 的语句，LIMIT 切的就是
+         JOIN 之后的行——一篇带 3 个标签的笔记会占掉 3 个名额，一页 20 条实际只回来七八篇。
+         这个错误是静默的，返回条数「看起来只是少了一点」。标签另起一条 IN 查询批量取回
+         （复用 NoteMapper#selectTagRefsByNoteIds），在 Service 里按 noteId 装配。
+         同理，note_tag 也不能作为筛选条件出现——本查询没有标签筛选。
+
+      ④ 排序：f.created_at DESC 是主键，f.id DESC 只做次级键。
+         索引是 idx_user_created (user_id, created_at)，InnoDB 的二级索引叶子隐含主键
+         favorite.id，所以「user_id 等值 + created_at DESC, id DESC」是索引倒扫、无需 filesort。
+         次级键取 f.id 而不是 n.id：前者受该索引支撑，后者不受。
+         它也不是洁癖——created_at 是秒精度的 DATETIME，同一秒内连收几篇就会并列，
+         没有确定的次级键时翻页会看到重复或漏掉的项。
+    -->
+    <select id="selectFavoritePage" resultType="com.wlf.favorite.FavoriteItemRow">
+        SELECT f.note_id,
+               f.created_at AS favorited_at,
+               n.status,
+               n.title,
+               n.view_count,
+               n.download_count,
+               n.favorite_count,
+               n.updated_at,
+               c.id   AS course_id,
+               c.name AS course_name,
+               u.id   AS uploader_id,
+               u.nickname,
+               u.avatar,
+               g.name AS college_name
+        FROM favorite f
+                 JOIN note n ON n.id = f.note_id
+                 JOIN course c ON c.id = n.course_id
+                 JOIN `user` u ON u.id = n.uploader_id
+                 JOIN college g ON g.id = u.college_id
+        WHERE f.user_id = #{userId}
+        ORDER BY f.created_at DESC, f.id DESC
+    </select>
+
+</mapper>

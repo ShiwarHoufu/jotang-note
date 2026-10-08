@@ -22,7 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -170,6 +172,80 @@ class FavoriteControllerTest {
         mockMvc.perform(delete("/api/notes/{id}/favorite", 999_999_999L).header("Authorization", token()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    // ==================== 我的收藏 ====================
+
+    @Test
+    void listingFavoritesRequiresLogin() throws Exception {
+        mockMvc.perform(get("/api/users/me/favorites"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+    }
+
+    /** 分页响应的形状：四个字段都在，且 {@code items} 是数组而不是 null */
+    @Test
+    void listingFavoritesReturnsThePageEnvelope() throws Exception {
+        mockMvc.perform(post("/api/notes/{id}/favorite", noteId).header("Authorization", token()));
+
+        mockMvc.perform(get("/api/users/me/favorites").header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].noteId").value(noteId))
+                .andExpect(jsonPath("$.data.items[0].status").value("ONLINE"))
+                .andExpect(jsonPath("$.data.items[0].title").value(MARKER + "笔记"))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.page").value(1))
+                .andExpect(jsonPath("$.data.size").value(20));
+    }
+
+    /**
+     * 占位项的响应形状：身份（标题、课程）在，内容（上传者、标签、计数）为 null。
+     *
+     * <p>这条同时钉住 {@code OFFLINE} / {@code DELETED} 确实是以 200 正常返回的业务值，
+     * 而不是被 40301 拦掉——40301 只属于预览 / 下载 / 收藏那几个动作（§4.1）。
+     */
+    @Test
+    void listingFavoritesRendersADeletedNoteAsAPlaceholder() throws Exception {
+        mockMvc.perform(post("/api/notes/{id}/favorite", noteId).header("Authorization", token()));
+        setNoteStatus(NoteStatus.DELETED);
+
+        mockMvc.perform(get("/api/users/me/favorites").header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].status").value("DELETED"))
+                .andExpect(jsonPath("$.data.items[0].title").value(MARKER + "笔记"))
+                .andExpect(jsonPath("$.data.items[0].uploader").value(nullValue()))
+                .andExpect(jsonPath("$.data.items[0].tags").isEmpty())
+                .andExpect(jsonPath("$.data.items[0].viewCount").value(nullValue()))
+                .andExpect(jsonPath("$.data.items[0].updatedAt").value(nullValue()));
+    }
+
+    /** 没有任何收藏时给空数组而不是 null，前端可以无条件遍历 */
+    @Test
+    void listingFavoritesWithoutAnyFavoriteYieldsAnEmptyArray() throws Exception {
+        mockMvc.perform(get("/api/users/me/favorites").header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items").isEmpty())
+                .andExpect(jsonPath("$.data.total").value(0));
+    }
+
+    /** 每页上界 50 条：超了要落成 40001 加字段明细，而不是被插件静默截断 */
+    @Test
+    void listingFavoritesRejectsSizeAboveFifty() throws Exception {
+        mockMvc.perform(get("/api/users/me/favorites?size=51").header("Authorization", token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001))
+                .andExpect(jsonPath("$.data[0].field").value("size"));
+    }
+
+    /** 分页深度上限对所有列表统一生效（§3.3）：51 × 20 = 1020 > 1000 */
+    @Test
+    void listingFavoritesRejectsDeepPagination() throws Exception {
+        mockMvc.perform(get("/api/users/me/favorites?page=51&size=20").header("Authorization", token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001))
+                .andExpect(jsonPath("$.data[0].field").value("page"));
     }
 
     /**

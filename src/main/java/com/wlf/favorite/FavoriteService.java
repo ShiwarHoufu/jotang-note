@@ -1,32 +1,50 @@
 package com.wlf.favorite;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.wlf.catalog.dto.CourseResponse;
+import com.wlf.catalog.dto.TagResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
+import com.wlf.common.PageResponse;
+import com.wlf.common.Paging;
 import com.wlf.entity.Favorite;
+import com.wlf.favorite.dto.FavoriteItemResponse;
+import com.wlf.favorite.dto.FavoriteListQuery;
 import com.wlf.note.NoteMapper;
 import com.wlf.note.NoteStatus;
+import com.wlf.note.NoteTagRef;
+import com.wlf.note.dto.UploaderResponse;
+import com.wlf.storage.Bucket;
+import com.wlf.storage.StorageService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 收藏业务：仅 ONLINE 可收藏；列表按 note.status 渲染「已下架/已删除」占位。
- * 见《概要设计》§6.5。
+ * 收藏业务：仅 ONLINE 可收藏；列表按 {@code note.status} 渲染「已下架 / 已删除」占位。
+ * 见《概要设计》§5.5、§6.5。
  *
- * <p>读取侧两个方法（{@link #isFavorited} / {@link #favoritedNoteIds}）供详情与列表页填
- * {@code isFavorited}；写入侧是 {@link #favorite} / {@link #unfavorite}。
- * 「我的收藏」列表随后续切片补上。
+ * <p>三个入口：{@link #favorite} / {@link #unfavorite} 是写入侧，
+ * {@link #listFavorites} 是「我的收藏」；另有两个给别的模块用的只读方法
+ * （{@link #isFavorited} / {@link #favoritedNoteIds}），供详情页与笔记列表填 {@code isFavorited}。
  *
- * <p><b>本类直接注入 {@link NoteMapper}</b>——这是 §1.1「不引用对方 Mapper」的一处违反，
- * 理由见 {@code NoteMapper#incrementFavoriteCount}：{@code favorite_count} 是 {@code note} 的列，
- * 而 {@code NoteService} 已经注入本类，反过来注入它就成了构造器循环依赖。
- * 注意这与 {@link #isFavorited} 的性质不同：那边是纯读，走 {@code favorite} 表自己的谓词。
+ * <p><b>本类直接注入 {@link NoteMapper}</b>，这是 §1.1 明确允许的一类写入：
+ * 跨模块写对方模块拥有的单表列，且对方的 Service 承接不了这个写
+ * （{@code NoteService} 已经注入本类，反过来注入它即是构造器循环依赖）。
+ * 既存先例是 {@code AuthService} 直接注入 {@code UserMapper}。详见
+ * {@code NoteMapper#incrementFavoriteCount} 与 §1.1 的「跨模块写对方单表列的条件」。
+ *
+ * <p>注意这与 {@link #isFavorited} 的性质不同：那边是纯读，走 {@code favorite} 表自己的谓词，
+ * 不碰 {@code note} 表；而 {@link #listFavorites} 的 {@code favorite ⋈ note} 是 §1.1 里
+ * 「检索侧的多表 JOIN 不受此限」的又一例，与 {@code NoteMapper.xml} 连 {@code course} 同理。
  */
 @Service
 public class FavoriteService {
@@ -42,9 +60,18 @@ public class FavoriteService {
      */
     private final NoteMapper noteMapper;
 
-    public FavoriteService(FavoriteMapper favoriteMapper, NoteMapper noteMapper) {
+    /**
+     * 收藏列表要展示上传者，头像得拼成公网直连 URL（§6.7）。
+     * 与 {@code NoteService} 注入的是同一个接口，头像是公共读 Bucket，不需要签名。
+     */
+    private final StorageService storageService;
+
+    public FavoriteService(FavoriteMapper favoriteMapper,
+                           NoteMapper noteMapper,
+                           StorageService storageService) {
         this.favoriteMapper = favoriteMapper;
         this.noteMapper = noteMapper;
+        this.storageService = storageService;
     }
 
     /**
@@ -134,6 +161,126 @@ public class FavoriteService {
         }
 
         return noteMapper.selectFavoriteCount(noteId);
+    }
+
+    /**
+     * 我的收藏，按收藏时间倒序分页。见 §5.5、§6.5、§4.1。
+     *
+     * <p><b>只查自己的收藏</b>：{@code userId} 取自 JWT，绝不从请求参数传入——
+     * 这个接口没有「看别人收藏」的语义，把 id 交出去就等于开放了它。
+     * 也正因为过滤条件落在 {@code favorite.user_id} 上，结果集天然只有「我收藏的那些」，
+     * 不需要像笔记列表那样另造一个课程把开发库里的既有数据圈出去。
+     *
+     * <p><b>三种状态都渲染</b>（§6.5）：{@code ONLINE} 正常项，
+     * {@code OFFLINE} / {@code DELETED} 是占位项——保留标题与课程，其余置空。
+     * 见 {@link #toFavoriteItem}。
+     *
+     * <p><b>本方法刻意不开事务。</b>纯读，没有需要原子化的写；两条查询之间即便插进一次
+     * 「笔记刚被下架」，最坏结果也只是标题用得上而计数没了，而这两者本来就允许短暂不一致
+     * （§3.3 的计数是派生值）。与 {@code NoteService.detail} 同一个态度：
+     * 为一次只读的装配开事务，只会白白多占一个连接。
+     *
+     * <p><b>固定三次数据库交互</b>，与页大小无关：主干分页 + 插件改写的 count + 一次标签
+     * {@code IN} 查询。标签不逐条查——那会立刻退化成 N+1（一页 20 条就是 20 次往返）。
+     *
+     * @param userId 当前登录者，取自 JWT
+     * @throws BusinessException 40001 分页过深（{@code page × size > 1000}，见 {@link Paging#MAX_PAGE_DEPTH}）
+     */
+    public PageResponse<FavoriteItemResponse> listFavorites(Long userId, FavoriteListQuery query) {
+        Paging.requireShallow(query.getPage(), query.getSize());
+
+        // Page 只携带「第几页、每页几条」，count 语句由分页插件改写生成，不在这里手写
+        IPage<FavoriteItemRow> result = favoriteMapper.selectFavoritePage(
+                new Page<>(query.getPage(), query.getSize()), userId);
+
+        // total 取插件回填的真实总数；page/size 回显入参而不是 result.getCurrent()，
+        // 免得前端收到一个与它请求时不一致的页码（插件内部对越界页有它自己的处理）
+        return new PageResponse<>(
+                assembleFavorites(result.getRecords()),
+                result.getTotal(),
+                query.getPage(),
+                query.getSize());
+    }
+
+    /**
+     * 把一页的行装配成出参：一次批量查询取回整页的标签，再在内存里按 {@code noteId} 归位。
+     *
+     * <p>空页要在这里短路——{@code IN ()} 是语法错误，那条批量查询吃不下空集合。
+     *
+     * <p>标签查询复用 {@link NoteMapper#selectTagRefsByNoteIds} 而不是在 {@code FavoriteMapper.xml}
+     * 里另抄一条：那条 SQL（{@code note_tag ⋈ tag}）与列表页用的是同一条，抄第二份只会让两处
+     * 将来各自漂移。本类已经因为 {@code favorite_count} 直接依赖 {@code note} 模块了
+     * （见类注释），再多引一个它的只读投影不是新的妥协类别。
+     *
+     * <p><b>对「本页全部 noteId」一次取，不按 ONLINE 过滤后再取</b>：
+     * 后者会引入一个窗口——笔记正好在主查询与标签查询之间被下架，主行说 ONLINE 而标签是空的。
+     * 取回来的标签只装配到正常项上，占位项那部分丢掉，代价只是一次
+     * {@code IN} 多带几个 id，与页大小无关。
+     */
+    private List<FavoriteItemResponse> assembleFavorites(List<FavoriteItemRow> rows) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<Long> noteIds = rows.stream().map(FavoriteItemRow::getNoteId).toList();
+
+        // groupingBy 的下游是 toList（ArrayList），组内保持查询的 encounter order，
+        // 于是每篇笔记的标签仍是 tag.id 升序——与详情页、列表页那条查询的口径一致
+        Map<Long, List<TagResponse>> tagsByNote = noteMapper.selectTagRefsByNoteIds(noteIds).stream()
+                .collect(Collectors.groupingBy(NoteTagRef::getNoteId,
+                        Collectors.mapping(ref -> new TagResponse(ref.getTagId(), ref.getTagName()),
+                                Collectors.toList())));
+
+        return rows.stream()
+                .map(row -> toFavoriteItem(row, tagsByNote))
+                .toList();
+    }
+
+    /**
+     * 一行 → 一项。正常项与占位项的分叉只有这一处，
+     * 所以「占位项到底空掉了哪些字段」是一个能一眼读完的事实，不会散在装配代码里。
+     *
+     * <p>占位项保留标题与课程、隐去其余，理由见 {@link FavoriteItemResponse}：
+     * 用户要认得出自己收藏的是什么，但已下架笔记的上传者、标签与计数不该再从这条路径露出去。
+     *
+     * <p>{@code OFFLINE → ONLINE} 恢复之后不需要任何额外处理就会重新走正常项那一支——
+     * 这正是 §6.5 说的「恢复后自动正常展示，计数不变」，也说明占位不是一种被写进去的状态，
+     * 而是每次读取时对当前 {@code note.status} 的即时判断。
+     */
+    private FavoriteItemResponse toFavoriteItem(FavoriteItemRow row, Map<Long, List<TagResponse>> tagsByNote) {
+        NoteStatus status = NoteStatus.valueOf(row.getStatus());
+        CourseResponse course = new CourseResponse(row.getCourseId(), row.getCourseName());
+
+        if (status != NoteStatus.ONLINE) {
+            return new FavoriteItemResponse(row.getNoteId(), status, row.getFavoritedAt(),
+                    row.getTitle(), course,
+                    null, List.of(), null, null, null, null);
+        }
+
+        return new FavoriteItemResponse(row.getNoteId(), status, row.getFavoritedAt(),
+                row.getTitle(), course,
+                new UploaderResponse(row.getUploaderId(), row.getNickname(),
+                        avatarUrl(row.getAvatar()), row.getCollegeName()),
+                // 没有标签时给空列表：getOrDefault 的默认值必须是不可变的 List.of()，
+                // 而不是 null——前端可以无条件遍历
+                tagsByNote.getOrDefault(row.getNoteId(), List.of()),
+                row.getViewCount(), row.getDownloadCount(), row.getFavoriteCount(),
+                row.getUpdatedAt());
+    }
+
+    /**
+     * 头像对象键 → 公网直连 URL（§6.7）。
+     *
+     * <p>空值必须在这里短路：{@code StorageService#publicUrl} 是裸字符串拼接，
+     * 喂个 null 会拼出一个以 {@code /null} 结尾、看着像 URL 的东西——
+     * 前端会安心地拿它去 {@code <img src>}，然后拿到一个 404。
+     *
+     * <p>与 {@code NoteService} 里那三行是同一段逻辑。这里先复制而不是抽公共助手：
+     * 抽取要动 note 模块（已在用的那处），而本切片的目标是把收藏做完；
+     * 「个人主页」落地时会出现第三份，那时才是抽取的时机——三处会逼出一个正确的形状，
+     * 两处则容易抽出只够这两处用的东西。
+     */
+    private String avatarUrl(String avatarKey) {
+        return avatarKey == null ? null : storageService.publicUrl(Bucket.AVATAR, avatarKey);
     }
 
     /**

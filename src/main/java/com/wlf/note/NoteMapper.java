@@ -166,4 +166,45 @@ public interface NoteMapper extends BaseMapper<Note> {
      */
     @Select("SELECT status FROM note WHERE id = #{id} FOR UPDATE")
     String selectStatusForUpdate(@Param("id") Long id);
+
+    /**
+     * 锁住笔记行并读出「谁的」与「什么状态」，供删除做归属校验与迁移判断。
+     *
+     * <p><b>只为这两列开一条语句，不复用 {@code BaseMapper#selectById}</b>：后者会拖回十几列。
+     * 也<b>不复用 {@link #selectStatusForUpdate}</b>：它不带 {@code uploader_id}，
+     * 而且它在那边的注释里被钉成了收藏切片的锁序原语，借过来用会让两处语义混在一起。
+     *
+     * <p><b>为什么删除也要 {@code FOR UPDATE}</b>：删除是「读状态 → 判迁移 → 写状态」三步，
+     * 而迁移的合法性依赖读到的那个状态。不加锁的话这三步之间存在窗口——读完之后管理员把笔记改成
+     * OFFLINE，写时依据的就是一个已经过期的状态。加了锁，状态在提交前不可能变，
+     * 于是那条「写语句要不要再带一次状态守卫」的问题根本不存在
+     * （与 {@link #incrementFavoriteCount} 刻意不带守卫是同一个道理）。
+     *
+     * <p>代价与收藏那边相同：X 锁持到提交，期间同一行的 {@link #incrementViewCount} 会等。
+     * 删除事务只有两次读 + 一次写、没有任何 I/O，等待是毫秒级。
+     *
+     * @return 该笔记的归属与状态；id 不存在时为 {@code null}——调用方据此报 40400
+     */
+    @Select("SELECT uploader_id, status FROM note WHERE id = #{id} FOR UPDATE")
+    NoteDeleteRow selectForDelete(@Param("id") Long id);
+
+    /**
+     * 软删除：把状态置为传入值并写下删除时刻。见 §4.1、§3.3。
+     *
+     * <p><b>只写这两列，一个都不能多：</b>
+     * <ul>
+     *   <li><b>不写 {@code updated_at}</b>。它的语义是「用户最后编辑笔记的时间」（§3.3），
+     *       删除不是编辑。建表语句刻意不带 {@code ON UPDATE CURRENT_TIMESTAMP} 就是为了这个，
+     *       在这里顺手写一个 {@code NOW()} 等于把它偷偷加回来——
+     *       守卫用例见 {@code NoteDetailServiceTest#viewingDoesNotTouchUpdatedAt}。</li>
+     *   <li><b>不写 {@code favorite_count}</b>。§6.5 要求删除后收藏关系仍在（收藏列表渲染
+     *       「已删除」占位），删笔记去减收藏数会把两者弄得不一致。</li>
+     * </ul>
+     *
+     * <p>不带 {@code status} 守卫，理由见 {@link #selectForDelete}：调用方在同一事务里
+     * 已经持有该行的 X 锁。状态字面量仍由调用方传（{@code NoteStatus} 的取值不写死在 SQL 里），
+     * 与 {@link #incrementViewCount} 同规矩。
+     */
+    @Update("UPDATE note SET status = #{status}, deleted_at = NOW() WHERE id = #{id}")
+    int markDeleted(@Param("id") Long id, @Param("status") String status);
 }
