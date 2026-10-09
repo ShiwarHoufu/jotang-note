@@ -78,7 +78,7 @@ class OssStorageServiceTest {
         try {
             // 1. 流式上传
             StoredObject stored = storageService.upload(
-                    Bucket.NOTE, key, new ByteArrayInputStream(payload), payload.length, "text/plain");
+                    Bucket.NOTE, key, new ByteArrayInputStream(payload), payload.length, "text/plain", null);
             assertThat(stored.key()).isEqualTo(key);
             assertThat(stored.contentType()).isEqualTo("text/plain");
             assertThat(stored.size()).isEqualTo(payload.length);
@@ -126,7 +126,7 @@ class OssStorageServiceTest {
 
         try {
             storageService.upload(Bucket.NOTE, key, new ByteArrayInputStream(payload),
-                    payload.length, "text/plain");
+                    payload.length, "text/plain", null);
 
             try (InputStream in = storageService.open(Bucket.NOTE, key)) {
                 assertThat(in.readAllBytes()).isEqualTo(payload);
@@ -172,7 +172,7 @@ class OssStorageServiceTest {
 
         try {
             storageService.upload(Bucket.NOTE, key, new ByteArrayInputStream(payload),
-                    payload.length, "image/png");
+                    payload.length, "image/png", null);
 
             // downloadName 传 null = 预览（§6.2：TTL 5min）
             String url = storageService.presignedUrl(Bucket.NOTE, key, Duration.ofMinutes(5), null);
@@ -205,6 +205,37 @@ class OssStorageServiceTest {
 
         assertThat(url)
                 .isEqualTo("https://" + bucketAvatar + "." + endpointBrowser + "/avatars/1/abc.png");
+    }
+
+    /**
+     * 头像对象的 {@code Cache-Control} 必须真的写进元数据——它是 §6.7「版本化键 + 长强缓存」
+     * 的另一半。只断言「调用方传了这个参数」抓不到「SDK 没把它落到对象上」这类错，
+     * 所以真传一次、再从头像桶的公网地址读回来。
+     *
+     * <p>本用例同时验证了头像桶确实是<b>公共读</b>：非 200 多半是桶的策略没配对，
+     * 而那种错在单元测试里完全看不出来。
+     */
+    @Test
+    void avatarUploadCarriesImmutableCacheControl() throws Exception {
+        String key = "test/avatars/" + UUID.randomUUID() + ".png";
+        byte[] payload = onePixelPng();
+        String url = storageService.publicUrl(Bucket.AVATAR, key);
+
+        try {
+            storageService.upload(Bucket.AVATAR, key, new ByteArrayInputStream(payload),
+                    payload.length, "image/png", "public, max-age=31536000, immutable");
+
+            HttpResponse<byte[]> response = get(url);
+
+            assertThat(response.statusCode())
+                    .withFailMessage("头像公网直读失败：HTTP %d，多半是头像桶没配成公共读%nURL=%s",
+                            response.statusCode(), url)
+                    .isEqualTo(200);
+            assertThat(response.body()).isEqualTo(payload);
+            assertThat(response.headers().firstValue("Cache-Control")).contains("max-age=31536000");
+        } finally {
+            storageService.delete(Bucket.AVATAR, key);
+        }
     }
 
     /**

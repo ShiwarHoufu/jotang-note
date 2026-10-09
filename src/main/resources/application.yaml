@@ -28,6 +28,21 @@ spring:
       mode: always
       encoding: UTF-8
 
+  # Redis：目前只用于笔记详情的读缓存（《技术选型》§5 的 V2 缓存条目）。
+  #
+  # 前缀是 spring.data.redis，不是 spring.redis。后者在 Boot 3.0 起被标为 error 级废弃
+  # （配置元数据里 replacement 已指向 spring.data.redis.*），网上仍有大量旧教程在用，照抄必踩。
+  #
+  # 环境变量名与同文件的 DB_HOST / DB_PORT 对齐，而不是像 aliyun.oss 那样加 JOTANG_ 前缀：
+  # OSS 加前缀是为了躲开 sslocal / ossutil 等工具的通用名，而 Redis 与数据库同属「数据面连接坐标」，
+  # 同一个文件里两种命名风格反而更难维护，故与 db 保持一致、接受通用名可能被顶替的风险。
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # 本机 WSL 里的 Redis 没设密码；生产必须配 REDIS_PASSWORD 并删掉这个默认空值
+      password: ${REDIS_PASSWORD:}
+
 # JWT：密钥不落仓库，一律外部注入；本机开发由 application-local.yaml 覆盖 jwt.secret。
 # 密钥是 32 字节密钥的 Base64 串（解码后 256 位，恰为 HS256 下限），生成示例：
 #   openssl rand -base64 32

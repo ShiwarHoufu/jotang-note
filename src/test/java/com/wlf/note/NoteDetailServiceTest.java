@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -82,6 +83,13 @@ class NoteDetailServiceTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    /**
+     * 只有 {@link #viewCountIsServedFromCacheWithinTtl} 用到它——那个用例要清缓存、要有确定的冷启动。
+     * 本类其余用例不碰 Redis：详情接口对 Redis 故障是降级的，所以 Redis 没起时它们照样该过。
+     */
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
 
     @MockitoBean
     private StorageService storageService;
@@ -164,20 +172,34 @@ class NoteDetailServiceTest {
         }
     }
 
-    /** §5.4：仅 ONLINE 计数，且返回的值含本次浏览 */
+    /**
+     * §5.4 的原语义是「仅 ONLINE 计数，且返回的值含本次浏览」。加了详情缓存之后
+     * <b>只有前半句还成立</b>：第二次调用命中缓存，回的是回填那一刻的快照，
+     * 而这期间库里的自增照常发生。
+     *
+     * <p>所以这里如实钉住<b>新行为</b>，把取舍写进断言、而不是留给后人踩：
+     * 第一次返回 1，再调仍返回 1（命中缓存），但库里已经是 2。
+     *
+     * <p><b>本用例是本类唯一直接读写 Redis 的</b>，因此必须先清缓存拿到确定的冷启动——
+     * 缓存不在 {@code @Transactional} 的回滚范围内，本类其它用例写进去的条目会跨用例残留。
+     */
     @Test
-    void viewCountGrowsOnlyForOnlineNotesAndIncludesThisVisit() {
+    void viewCountIsServedFromCacheWithinTtl() {
         Fixture online = createNote(NoteStatus.ONLINE, null);
         Fixture offline = createNote(NoteStatus.OFFLINE, null);
+        redisTemplate.delete(redisTemplate.keys("note:meta:*"));
 
+        // 冷缓存：未命中 → 查库 → 回填。返回的值含本次浏览（自增先于读取）
         assertThat(noteService.detail(online.noteId(), viewerId).viewCount()).isEqualTo(1L);
-        assertThat(noteService.detail(online.noteId(), viewerId).viewCount()).isEqualTo(2L);
+        // 命中缓存：回的还是上面那一刻的快照，不是 2。这就是被接受的滞后
+        assertThat(noteService.detail(online.noteId(), viewerId).viewCount()).isEqualTo(1L);
 
-        assertThat(noteService.detail(offline.noteId(), viewerId).viewCount()).isZero();
-        assertThat(noteService.detail(offline.noteId(), viewerId).viewCount()).isZero();
-
-        // 回库核对：返回的值不是凭空加的，确实写进去了
+        // 但库里确实涨到了 2——缓存既没让自增失效，也没动写路径
         assertThat(noteMapper.selectById(online.noteId()).getViewCount()).isEqualTo(2L);
+
+        // OFFLINE 不参与自增，返回值恒为 0，与缓存无关
+        assertThat(noteService.detail(offline.noteId(), viewerId).viewCount()).isZero();
+        assertThat(noteService.detail(offline.noteId(), viewerId).viewCount()).isZero();
         assertThat(noteMapper.selectById(offline.noteId()).getViewCount()).isZero();
     }
 

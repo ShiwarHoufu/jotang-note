@@ -50,13 +50,19 @@ public class OssStorageService implements StorageService {
     }
 
     @Override
-    public StoredObject upload(Bucket bucket, String key, InputStream in, long size, String contentType) {
+    public StoredObject upload(Bucket bucket, String key, InputStream in, long size,
+                               String contentType, String cacheControl) {
         String bucketName = resolve(bucket);
         try {
             ObjectMetadata metadata = new ObjectMetadata();
             // InputStream 入参下 SDK 无法自行推断长度：给错会失败，给 -1 会退化成先缓冲再传，大文件会吃内存
             metadata.setContentLength(size);
             metadata.setContentType(contentType);
+            // 只在调用方给了值时才设：null 表示「这桶不需要缓存头」，不能写成空字符串
+            // （那会真的发出一个空的 Cache-Control 响应头）
+            if (cacheControl != null) {
+                metadata.setCacheControl(cacheControl);
+            }
 
             ossServer.putObject(new PutObjectRequest(bucketName, key, in, metadata));
             return new StoredObject(key, contentType, size);

@@ -11,6 +11,7 @@ import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
 import com.wlf.common.JwtTokenProvider;
 import com.wlf.entity.User;
+import com.wlf.storage.StorageService;
 import com.wlf.user.UserMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -31,16 +32,24 @@ public class AuthService {
     private final LoginAttemptLimiter loginAttemptLimiter;
     private final CollegeService collegeService;
 
+    /**
+     * 仅用于把 {@code UserInfo.avatarUrl} 拼出来（§6.7）。本接口与存储本无业务往来，
+     * 但「当前登录用户的对外视图」里含头像，而桶名 / Endpoint 只有存储层知道。
+     */
+    private final StorageService storageService;
+
     public AuthService(UserMapper userMapper,
                        PasswordEncoder passwordEncoder,
                        JwtTokenProvider jwtTokenProvider,
                        LoginAttemptLimiter loginAttemptLimiter,
-                       CollegeService collegeService) {
+                       CollegeService collegeService,
+                       StorageService storageService) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.loginAttemptLimiter = loginAttemptLimiter;
         this.collegeService = collegeService;
+        this.storageService = storageService;
     }
 
     /**
@@ -87,7 +96,7 @@ public class AuthService {
                     : ErrorCode.EMAIL_TAKEN);
         }
 
-        return UserInfo.from(user);
+        return UserInfo.from(user, storageService);
     }
 
     /**
@@ -117,7 +126,7 @@ public class AuthService {
         loginAttemptLimiter.reset(username);
 
         String token = jwtTokenProvider.issue(user.getId(), user.getUsername(), user.getRole());
-        return new LoginResponse(token, UserInfo.from(user));
+        return new LoginResponse(token, UserInfo.from(user, storageService));
     }
 
     /** 当前登录用户 */
@@ -126,7 +135,7 @@ public class AuthService {
         if (user == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
         }
-        return UserInfo.from(user);
+        return UserInfo.from(user, storageService);
     }
 
     private boolean existsByUsername(String username) {
