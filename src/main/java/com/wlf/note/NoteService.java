@@ -28,6 +28,7 @@ import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import com.wlf.storage.StoredObject;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -35,6 +36,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -49,6 +51,19 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class NoteService {
+
+    /** 详情缓存的 key 前缀。带 {@code note:} 归属前缀，便于在 redis-cli 里辨认和将来成片清理 */
+    private static final String DETAIL_CACHE_PREFIX = "note:meta:";
+
+    /**
+     * 详情缓存的存活时间。
+     *
+     * <p>这个数字同时是「写路径不失效缓存」这一取舍的<b>代价上限</b>：按约定，本版不在
+     * 编辑 / 删除 / 下架 / 恢复里删缓存，所以那些写操作之后，详情页最多脏这么久。
+     * 它是用户可见的（管理员下架后前端仍在显示「在线」），不是理论上的边界情况——
+     * 将来若把这个窗口收到不可感知的范围，要么改小 TTL，要么给写路径补失效。
+     */
+    private static final Duration DETAIL_CACHE_TTL = Duration.ofMinutes(10);
 
     private final NoteMapper noteMapper;
     private final NoteFileMapper noteFileMapper;
@@ -70,6 +85,14 @@ public class NoteService {
     private final NoteStateMachine stateMachine;
     private final TransactionTemplate transactionTemplate;
 
+    /**
+     * 详情页的读缓存（《技术选型》§5 的 V2 缓存条目）。<b>目前只有 {@link #detail} 用它。</b>
+     *
+     * <p>键 {@code note:meta:{noteId}}，值是 {@link NoteMeta} 的 JSON——序列化规则见
+     * {@code RedisConfig}。读写与降级都在 {@link #loadMeta} 里。
+     */
+    private final RedisTemplate<String, Object> redisTemplate;
+
     public NoteService(NoteMapper noteMapper,
                        NoteFileMapper noteFileMapper,
                        NoteTagMapper noteTagMapper,
@@ -79,6 +102,7 @@ public class NoteService {
                        NoteFilePolicy filePolicy,
                        StorageService storageService,
                        NoteStateMachine stateMachine,
+                       RedisTemplate<String, Object> redisTemplate,
                        PlatformTransactionManager transactionManager) {
         this.noteMapper = noteMapper;
         this.noteFileMapper = noteFileMapper;
@@ -89,6 +113,7 @@ public class NoteService {
         this.filePolicy = filePolicy;
         this.storageService = storageService;
         this.stateMachine = stateMachine;
+        this.redisTemplate = redisTemplate;
         // 自己 new 而不依赖 Spring Boot 的自动配置：本类要的是「一段明确可控的事务边界」，
         // 而不是一个可被替换的托管 Bean，显式持有反而少一层「bean 从哪来」的疑问
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -132,8 +157,6 @@ public class NoteService {
     /**
      * 详情：读取元数据与标签、判断是否已收藏，并在 ONLINE 时把浏览量 +1。
      *
-     * <p>三条查询的顺序是有意的：<b>先自增、后读取</b>，这样 SELECT 拿到的就是已含本次浏览的值。
-     *
      * <p><b>本方法刻意不开事务。</b>里面的写语句只有浏览量自增一条，而把它圈进事务的后果是：
      * {@code note} 那一行的排他锁会一直持有到方法返回——这中间还夹着标签查询、收藏查询与响应体装配。
      * 详情页是最热的读接口，为一个统计计数把行锁按住整个请求时长，代价远大于收益；
@@ -141,22 +164,26 @@ public class NoteService {
      * 于是返回的 {@code viewCount} 可能略大于自己那一次 +1——计数本身就没有去重
      * （D2 对下载量也是这个口径），多算一两次不改变它的性质。
      *
+     * <p><b>主干与标签走读缓存</b>（见 {@link #loadMeta}）
+     *
      * @param viewerId 当前登录者，只用于判断「他收藏过没有」；取自 JWT
      * @throws BusinessException 40400 笔记不存在
      */
     public NoteDetailResponse detail(Long noteId, Long viewerId) {
-        // 状态由调用方传入：'ONLINE' 这个字面量属于 NoteStatus，不该在 SQL 里再写一份。
-        // id 不存在时这条 UPDATE 影响 0 行，无害；真正的 404 判定交给下面的 selectDetail。
+        // id 不存在时这条 UPDATE 影响 0 行，无害；真正的 404 判定交给下面的 loadMeta。
+        // 自增不参与缓存——它每次请求都要落库。两者于是出现可见差值，直到 TTL 到期 ViewCount 才跳到最新。
         noteMapper.incrementViewCount(noteId, NoteStatus.ONLINE.name());
 
-        NoteDetailRow row = noteMapper.selectDetail(noteId);
-        if (row == null) {
+        NoteMeta meta = loadMeta(noteId);
+        if (meta == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND);
         }
+        NoteDetailRow row = meta.row();
 
         NoteStatus status = NoteStatus.valueOf(row.getStatus());
         boolean online = status == NoteStatus.ONLINE;
 
+        //装配响应
         return new NoteDetailResponse(
                 row.getId(),
                 row.getTitle(),
@@ -167,7 +194,7 @@ public class NoteService {
                 new UploaderResponse(
                         row.getUploaderId(), row.getNickname(),
                         avatarUrl(row.getAvatar()), row.getCollegeName()),
-                noteMapper.selectTagRefs(noteId),
+                meta.tags(),
                 row.getViewCount(),
                 row.getDownloadCount(),
                 row.getFavoriteCount(),
@@ -178,6 +205,43 @@ public class NoteService {
                 online ? fileInfoOf(row) : null,
                 // 非 ONLINE 也照查：§6.5 说收藏关系不因下架而解除（详见 FavoriteService#isFavorited）
                 favoriteService.isFavorited(viewerId, noteId));
+    }
+
+    /**
+     * 取详情的主干与标签：<b>读穿 + 降级</b>。命中缓存就直接返回，未命中才查那两条 SQL 并回填。
+     *
+     * <p>两件事刻意不做（对应「暂不处理穿透 / 击穿」）：<b>不缓存 null</b>——笔记不存在时直接返回
+     * {@code null} 交给上层抛 40400，不让空值占住 key；<b>不防击穿</b>——热点 key 失效的瞬间，
+     * 并发请求会一起查库。
+     *
+     * @return 笔记不存在时为 {@code null}，由调用方转 40400
+     */
+    private NoteMeta loadMeta(Long noteId) {
+        String key = DETAIL_CACHE_PREFIX + noteId;
+
+        try {
+            // 用 instanceof 而不是「先取出来再强转」：缓存里若混进别的类型（换过实现、被手工塞过
+            // 脏数据），强转会抛 ClassCastException 把请求打死；而它本该被当成「没命中」——
+            // 下面照样查库救得回来，下次回填也就覆盖掉了。
+            if (redisTemplate.opsForValue().get(key) instanceof NoteMeta cached) {
+                return cached;
+            }
+        } catch (RuntimeException e) {
+            log.warn("读笔记详情缓存失败，降级直查库 noteId={}", noteId, e);
+        }
+
+        NoteDetailRow row = noteMapper.selectDetail(noteId);
+        if (row == null) {
+            return null;
+        }
+        NoteMeta loaded = new NoteMeta(row, noteMapper.selectTagRefs(noteId));
+
+        try {
+            redisTemplate.opsForValue().set(key, loaded, DETAIL_CACHE_TTL);
+        } catch (RuntimeException e) {
+            log.warn("回填笔记详情缓存失败，不影响本次请求 noteId={}", noteId, e);
+        }
+        return loaded;
     }
 
     /**
@@ -294,14 +358,8 @@ public class NoteService {
     /**
      * 我的上传：本人传过的笔记，按上传时间倒序分页。见 §5.4、§4.1。
      *
-     * <p><b>已删除的不出</b>——{@code DELETED} 由 SQL 无条件排除。§4.1 的表里「我的上传」
-     * 这一列对 {@code DELETED} 是「不可见」：这份列表的语义是「我还留着的笔记」。
-     * 排除放在 SQL 而不是这里过滤，是为了让 {@code total} 也是筛过的数，
-     * 否则前端会算出一堆点进去是空的页（与公开列表只出 ONLINE 同一条理由）。
-     *
-     * <p><b>已下架的照出</b>，靠 {@code status} 让前端加「已下架」角标。它与「已删除」的区别
-     * 在这里正对应 §4.1 表格里那一列的两档：{@code OFFLINE} 是「可见并标注」，
-     * {@code DELETED} 是不可见。
+     * <p><b>已删除的不出</b>——{@code DELETED} 由 SQL 无条件排除。
+     * <p><b>已下架的照出</b>，靠 {@code status} 让前端加「已下架」角标。
      *
      * <p>与 {@link #list} 一样，一页只有三次数据库交互：主干分页 + 插件改写出的 count
      * + 标签批量查询。<b>没有第四次</b>——本列表不带 {@code isFavorited}，
