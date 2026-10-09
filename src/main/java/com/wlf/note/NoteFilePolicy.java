@@ -145,9 +145,6 @@ public class NoteFilePolicy {
     /**
      * 判定一份上传文件是否准入，并给出落库与渲染所需的元信息。
      *
-     * <p>不合法一律抛 42200（{@link ErrorCode#FILE_INVALID}），具体原因写在 message 里
-     * （§5.7 对该码的约定就是「扩展名 / 魔数 / 大小由 message 说明」）。
-     *
      * <p><b>本方法会读取 {@code content}</b>：二进制类型只读文件头，
      * md / txt 会读到末尾（UTF-8 全量校验）。
      * 但调用方在上传前需要重新打开一个流——{@code MultipartFile#getInputStream} 可重复调用。

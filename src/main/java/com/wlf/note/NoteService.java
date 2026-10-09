@@ -631,7 +631,6 @@ public class NoteService {
      *
      * <p>计数列（浏览 / 下载 / 收藏）与 {@code is_purged} 都<b>不显式赋值</b>：
      * MyBatis-Plus 默认跳过 null 字段，于是这些列交给建表语句的 {@code DEFAULT 0}。
-     * 在 Java 侧再写一遍 0 只会多一处可能与 DDL 不一致的地方。
      */
     private NoteCreatedResponse insertNote(Long uploaderId, NoteUploadRequest request,
                                            FileDecision decision, StoredObject stored, List<Long> tagIds) {
@@ -686,9 +685,6 @@ public class NoteService {
     /**
      * 校验课程合法性。走 {@link CourseService} 而不是直接查 {@code course} 表：§1.1 约定
      * 跨模块的校验一律经对方 Service。
-     *
-     * <p>报 40001 带字段明细而不是 40400：课程由前端下拉框提供，id 对不上属于请求参数错，
-     * 前端据此把课程选择框标红比弹一个「资源不存在」有用。
      */
     private void requireCourse(Long courseId) {
         if (!courseService.exists(courseId)) {
@@ -700,10 +696,6 @@ public class NoteService {
 
     /**
      * 补偿删除：入库失败时刚上传的对象已无人引用。
-     *
-     * <p>删除失败只记日志、不再外抛——原始异常才是用户与排查者要看的那个，
-     * 用「OSS 删不掉」把它顶掉只会把排查方向带偏。残留对象由 §7.3 的每日维护脚本对账清理
-     * （那一步按 {@code note_file.is_purged = 0} 扫，仓外的脚本负责，见 §7.3）。
      */
     private void purgeQuietly(String key) {
         try {
