@@ -2,6 +2,7 @@ package com.wlf.note;
 
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
+import com.wlf.common.FileMagic;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -63,29 +64,6 @@ public class NoteFilePolicy {
 
     private static final DateTimeFormatter KEY_MONTH = DateTimeFormatter.ofPattern("yyyy/MM");
 
-    // ---- 魔数表 ----
-    // 用十六进制字节数组而非字符串字面量：rar / png 的魔数里含 0x1A、0x89 这类控制字符与
-    // 非 ASCII 字节，写成字符串会是一串转义符，既难读也容易抄错。
-
-    /** {@code %PDF-} */
-    private static final byte[] MAGIC_PDF = {0x25, 0x50, 0x44, 0x46, 0x2D};
-    /** JPEG 的 SOI 标记 {@code FF D8 FF} */
-    private static final byte[] MAGIC_JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
-    /** {@code 89 50 4E 47 0D 0A 1A 0A} */
-    private static final byte[] MAGIC_PNG = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
-    /** {@code GIF8}（87a / 89a 两个版本共用这四字节） */
-    private static final byte[] MAGIC_GIF = {0x47, 0x49, 0x46, 0x38};
-    /** {@code RIFF}，WebP 的容器头 */
-    private static final byte[] MAGIC_RIFF = {0x52, 0x49, 0x46, 0x46};
-    /** {@code WEBP}，位于 RIFF 容器偏移 8 处 */
-    private static final byte[] MAGIC_WEBP = {0x57, 0x45, 0x42, 0x50};
-    /** {@code PK\x03\x04}，zip 与新式 Office（docx/xlsx/pptx）同族 */
-    private static final byte[] MAGIC_ZIP = {0x50, 0x4B, 0x03, 0x04};
-    /** {@code Rar!\x1a\x07}，rar4 与 rar5 共用前 6 字节（第 7 字节起才是版本差异） */
-    private static final byte[] MAGIC_RAR = {0x52, 0x61, 0x72, 0x21, 0x1A, 0x07};
-    /** {@code 37 7A BC AF 27 1C} */
-    private static final byte[] MAGIC_7Z = {0x37, 0x7A, (byte) 0xBC, (byte) 0xAF, 0x27, 0x1C};
-
     /**
      * 扩展名 → 判定格式。键是小写扩展名（不含点），值为该类型的元信息。
      *
@@ -118,26 +96,26 @@ public class NoteFilePolicy {
         formats.put("txt", new Format("text/plain", null));
 
         // 浏览器可内联渲染的单一格式
-        formats.put("pdf", new Format("application/pdf", head -> startsWith(head, MAGIC_PDF)));
-        formats.put("jpg", new Format("image/jpeg", head -> startsWith(head, MAGIC_JPEG)));
-        formats.put("jpeg", new Format("image/jpeg", head -> startsWith(head, MAGIC_JPEG)));
-        formats.put("png", new Format("image/png", head -> startsWith(head, MAGIC_PNG)));
-        formats.put("gif", new Format("image/gif", head -> startsWith(head, MAGIC_GIF)));
-        formats.put("webp", new Format("image/webp", NoteFilePolicy::isWebp));
+        formats.put("pdf", new Format("application/pdf", FileMagic::pdf));
+        formats.put("jpg", new Format("image/jpeg", FileMagic::jpeg));
+        formats.put("jpeg", new Format("image/jpeg", FileMagic::jpeg));
+        formats.put("png", new Format("image/png", FileMagic::png));
+        formats.put("gif", new Format("image/gif", FileMagic::gif));
+        formats.put("webp", new Format("image/webp", FileMagic::webp));
 
         // 仅下载。注意四者的魔数完全相同，类型只能由扩展名区分
         formats.put("docx", new Format(
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                head -> startsWith(head, MAGIC_ZIP)));
+                FileMagic::zip));
         formats.put("xlsx", new Format(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                head -> startsWith(head, MAGIC_ZIP)));
+                FileMagic::zip));
         formats.put("pptx", new Format(
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                head -> startsWith(head, MAGIC_ZIP)));
-        formats.put("zip", new Format("application/zip", head -> startsWith(head, MAGIC_ZIP)));
-        formats.put("rar", new Format("application/vnd.rar", head -> startsWith(head, MAGIC_RAR)));
-        formats.put("7z", new Format("application/x-7z-compressed", head -> startsWith(head, MAGIC_7Z)));
+                FileMagic::zip));
+        formats.put("zip", new Format("application/zip", FileMagic::zip));
+        formats.put("rar", new Format("application/vnd.rar", FileMagic::rar));
+        formats.put("7z", new Format("application/x-7z-compressed", FileMagic::sevenZip));
 
         return Map.copyOf(formats);
     }
@@ -297,27 +275,5 @@ public class NoteFilePolicy {
             log.error("读取上传文件失败", e);
             throw new BusinessException(ErrorCode.SERVER_ERROR, "读取上传文件失败");
         }
-    }
-
-    private static boolean isWebp(byte[] head) {
-        // RIFF 头偏移 4 起的 4 字节是整个文件的长度，每次都不同，进不了魔数表，故单独比对偏移 8 处的 WEBP
-        return startsWith(head, MAGIC_RIFF) && startsWithAt(head, 8, MAGIC_WEBP);
-    }
-
-    private static boolean startsWith(byte[] head, byte[] magic) {
-        return startsWithAt(head, 0, magic);
-    }
-
-    /** 定长比对。长度不足一律判否——短的「魔数」是残缺文件，不能因为前缀对上了就放行 */
-    private static boolean startsWithAt(byte[] head, int offset, byte[] magic) {
-        if (head.length < offset + magic.length) {
-            return false;
-        }
-        for (int i = 0; i < magic.length; i++) {
-            if (head[offset + i] != magic[i]) {
-                return false;
-            }
-        }
-        return true;
     }
 }

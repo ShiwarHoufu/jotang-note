@@ -7,9 +7,16 @@ import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
 import com.wlf.entity.User;
+import com.wlf.storage.Bucket;
+import com.wlf.storage.StorageService;
+import com.wlf.storage.StoredObject;
 import com.wlf.user.dto.UpdateProfileRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 
 /**
@@ -17,10 +24,20 @@ import java.util.List;
  * 其他模块取用户信息也走此 Service，不直接引用 UserMapper。
  * 见《概要设计》§5.2、§6.7。
  *
- * <p>当前只实现了改资料；头像上传与个人主页随后续切片补上。
+ * <p>当前已落地改资料与头像上传；个人主页随后续切片补上。
  */
+@Slf4j
 @Service
 public class UserService {
+
+    /**
+     * 头像对象的 {@code Cache-Control}。§6.7 要求写入对象元数据。
+     *
+     * <p><b>值取自调用方的策略而非存储层</b>（§1.1）：{@code immutable} 之所以成立，是因为
+     * {@link AvatarFilePolicy#objectKey} 每次换头像都换一个键——同一个 URL 指向的对象永不改变。
+     * 若哪天改成原地覆盖，这个头必须一并去掉，否则用户会一直看到旧头像。
+     */
+    private static final String AVATAR_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
     private final UserMapper userMapper;
 
@@ -30,9 +47,19 @@ public class UserService {
      */
     private final CollegeService collegeService;
 
-    public UserService(UserMapper userMapper, CollegeService collegeService) {
+    /** 头像的准入规则。与 note 的 {@code NoteFilePolicy} 各持一份，理由见 {@link AvatarFilePolicy} */
+    private final AvatarFilePolicy avatarFilePolicy;
+
+    private final StorageService storageService;
+
+    public UserService(UserMapper userMapper,
+                       CollegeService collegeService,
+                       AvatarFilePolicy avatarFilePolicy,
+                       StorageService storageService) {
         this.userMapper = userMapper;
         this.collegeService = collegeService;
+        this.avatarFilePolicy = avatarFilePolicy;
+        this.storageService = storageService;
     }
 
     /**
@@ -99,6 +126,93 @@ public class UserService {
         // 注意它与写库走的不是同一个东西：上面那条 UPDATE 里没有实体。
         user.setNickname(nickname);
         user.setCollegeId(request.getCollegeId());
-        return UserInfo.from(user);
+        return UserInfo.from(user, storageService);
+    }
+
+    /**
+     * 上传头像：校验 → 传 OSS → 单列更新 {@code user.avatar}。见《概要设计》§6.7。
+     *
+     * <p><b>三步的先后顺序都是有意的</b>：
+     * <ol>
+     *   <li>用户存在性放在最前。不在就根本不该碰 OSS——先传后判会平白多出一个需要补偿删除的对象</li>
+     *   <li>文件校验在 OSS 之前，与 {@code NoteService#upload} 同一条规矩：不合格就不产生对象</li>
+     *   <li>OSS 上传在写库之前，因为对象键要先于落库存在</li>
+     * </ol>
+     *
+     * <p><b>不开事务。</b>写库只有一条单语句 UPDATE，与 {@link #updateProfile} 同形——
+     * 不存在需要串行化的「读-判-写」窗口。代价是「对象已存、更新失败」这个窗口真实存在，
+     * 由 {@link #purgeQuietly} 兜住。
+     *
+     * <p><b>旧头像对象刻意不删。</b>键是版本化的，旧对象留在桶里，其 URL 在对方缓存过期前仍可访问
+     * （§8.4 第 8 条明说接受这个代价）。清理旧对象挂在 §7.3 的每日维护脚本，不在请求链路上做——
+     * 在这里删会让「换头像」多一次可能失败的网络写，而失败既不影响本次结果、也无从补救。
+     *
+     * <p>两个并发请求是 {@code user.avatar} 单列的 last-write-wins，各自响应由自己的入参装配，自洽；
+     * 输掉的那次会在桶里留下一个无人引用的对象，同样归维护脚本。
+     *
+     * @param userId 换谁的头像，取自 JWT，不接受请求体传入——否则可以改任何人的头像
+     * @throws BusinessException 40400 用户不存在；42200 文件类型 / 大小不合法
+     */
+    public UserInfo uploadAvatar(Long userId, MultipartFile file) {
+        // 404 门放最前，与 updateProfile 同口径。注意这里读到的 avatar 是旧键——
+        // 它在写库成功后才用于响应装配，写的是同一行，不存在不一致
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
+        }
+
+        AvatarDecision decision = inspectAvatar(file, userId);
+        String key = avatarFilePolicy.objectKey(userId, decision.extension());
+        StoredObject stored = storeAvatar(file, key, decision, userId);
+
+        try {
+            // 只写 avatar 一列，绝不把 selectById 捞回来的实体交给 updateById：
+            // 那会生成一份含 username / email / password_hash / role / status 的全列 SET，
+            // 覆盖并发改动并平白重写密码哈希。理由与 updateProfile 里那段完全一致。
+            // 用 stored.key() 而不是本地的 key：落库的以存储层实际记下的键为准，
+            // 与 NoteService 写 note_file.storage_key 的做法一致
+            userMapper.update(null, Wrappers.<User>lambdaUpdate()
+                    .set(User::getAvatar, stored.key())
+                    .eq(User::getId, userId));
+        } catch (RuntimeException e) {
+            // 更新失败则刚传的对象无人引用，删掉；删不掉也只是留下孤儿，不影响本次请求的成败
+            purgeQuietly(stored.key());
+            throw e;
+        }
+
+        // 与写库走的不是同一个东西：那条 UPDATE 里没有实体。响应装配用内存里这个对象，
+        // 免得再查一次库；赋的也是写进库的那个 stored.key()，两者不会不一致。
+        // updated_at 不手写——user 表带 ON UPDATE，换头像是一次真实修改
+        user.setAvatar(stored.key());
+        return UserInfo.from(user, storageService);
+    }
+
+    private AvatarDecision inspectAvatar(MultipartFile file, Long userId) {
+        // MultipartFile#getInputStream 可重复调用：策略读一遍文件头，上传时再开一个新的
+        try (InputStream in = file.getInputStream()) {
+            return avatarFilePolicy.inspect(file.getOriginalFilename(), file.getSize(), in);
+        } catch (IOException e) {
+            log.error("读取上传头像失败 userId={} name={}", userId, file.getOriginalFilename(), e);
+            throw new BusinessException(ErrorCode.SERVER_ERROR, "读取上传文件失败");
+        }
+    }
+
+    private StoredObject storeAvatar(MultipartFile file, String key, AvatarDecision decision, Long userId) {
+        try (InputStream in = file.getInputStream()) {
+            return storageService.upload(Bucket.AVATAR, key, in, file.getSize(),
+                    decision.contentType(), AVATAR_CACHE_CONTROL);
+        } catch (IOException e) {
+            log.error("读取上传头像失败 userId={} name={}", userId, file.getOriginalFilename(), e);
+            throw new BusinessException(ErrorCode.SERVER_ERROR, "读取上传文件失败");
+        }
+    }
+
+    /** 补偿删除：更新失败时刚上传的对象已无人引用。删不掉也只记日志，不掩盖原始异常 */
+    private void purgeQuietly(String key) {
+        try {
+            storageService.delete(Bucket.AVATAR, key);
+        } catch (RuntimeException e) {
+            log.error("补偿删除头像对象失败 key={}", key, e);
+        }
     }
 }

@@ -733,7 +733,10 @@ public class NoteService {
     private StoredObject store(MultipartFile file, FileDecision decision, Long uploaderId) {
         String key = filePolicy.objectKey(decision.extension());
         try (InputStream in = file.getInputStream()) {
-            return storageService.upload(Bucket.NOTE, key, in, file.getSize(), decision.contentType());
+            // 笔记对象不设 Cache-Control：它靠短 TTL 的签名 URL 读取，缓存由 §6.2 那套控制，
+            // 与头像桶的「版本化键 + 长强缓存」是两套策略
+            return storageService.upload(Bucket.NOTE, key, in, file.getSize(),
+                    decision.contentType(), null);
         } catch (IOException e) {
             log.error("读取上传文件失败 uploaderId={} name={}", uploaderId, file.getOriginalFilename(), e);
             throw new BusinessException(ErrorCode.SERVER_ERROR, "读取上传文件失败");

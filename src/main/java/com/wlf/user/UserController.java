@@ -3,9 +3,12 @@ package com.wlf.user;
 import com.wlf.auth.dto.UserInfo;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;
+import com.wlf.user.dto.AvatarUploadRequest;
 import com.wlf.user.dto.UpdateProfileRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 用户接口：个人主页 / 改昵称 / 上传头像。
  * 见《概要设计》§5.2。
  *
- * <p>当前只实现了改资料；个人主页与头像上传随后续切片补上。
+ * <p>当前已落地改资料与头像上传；个人主页随后续切片补上。
  * 全部接口要求登录
  */
 @RestController
@@ -49,5 +52,21 @@ public class UserController {
     public ApiResponse<UserInfo> updateProfile(@AuthenticationPrincipal AuthenticatedUser user,
                                                @Valid @RequestBody UpdateProfileRequest request) {
         return ApiResponse.ok(userService.updateProfile(user.userId(), request));
+    }
+
+    /**
+     * 上传头像。multipart 表单，单个 {@code file} 字段。见 §6.7。
+     *
+     * <p>换谁的取自 JWT，与改资料同一规矩。出参同样是 {@code UserInfo}——头像的 OSS 键由服务端
+     * 生成，前端推不出来，必须把新 URL 拿回去；而它本就在 Pinia 里存着整个 {@code UserInfo}，
+     * 回同一形状让前端「一把覆盖」，不必为这一个字段单独写一条赋值分支。
+     *
+     * <p>注意这里的「回资源」与改资料的理由不同：改资料是「前端要覆盖昵称与学院」，
+     * 这里是「前端拿不到那个 URL」。但落到契约上是同一件事，故形状保持一致。
+     */
+    @PostMapping("/me/avatar")
+    public ApiResponse<UserInfo> uploadAvatar(@AuthenticationPrincipal AuthenticatedUser user,
+                                              @Valid @ModelAttribute AvatarUploadRequest request) {
+        return ApiResponse.ok(userService.uploadAvatar(user.userId(), request.getFile()));
     }
 }

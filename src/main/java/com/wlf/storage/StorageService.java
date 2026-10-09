@@ -17,9 +17,15 @@ public interface StorageService {
      * 流式上传，不把内容整体读进内存（单文件可达 100MB，§6.1）。
      *
      * @param size 字节数，<b>必须准确</b>——以 InputStream 入参时 SDK 无法自行推断长度
+     * @param contentType 服务端判定值，写入对象元数据。读取时不再覆写（§6.2），故这里定下的就是最终值
+     * @param cacheControl 写入对象元数据的 {@code Cache-Control}；<b>null 表示不设置</b>。
+     *                     它是调用方的策略而非存储层的策略（§1.1）：头像桶的对象键已版本化，
+     *                     故传长强缓存 {@code public, max-age=31536000, immutable}（§6.7）；
+     *                     笔记对象走短 TTL 签名 URL，传 null
      * @return 上传结果；key 原样回传，便于调用方直接落库
      */
-    StoredObject upload(Bucket bucket, String key, InputStream in, long size, String contentType);
+    StoredObject upload(Bucket bucket, String key, InputStream in, long size,
+                        String contentType, String cacheControl);
 
     /**
      * 打开对象供读取。返回的流<b>由调用方负责关闭</b>（关闭流即释放底层 HTTP 连接），

@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -98,7 +99,7 @@ class NoteServiceTest {
 
         // 回显入参的 key / contentType / size：让「落库的」就是「storage 真正收到并使用的」，
         // 若被测代码把某个字段传错位置（比如 key 与 contentType 调换），这里会立刻暴露
-        when(storageService.upload(eq(Bucket.NOTE), anyString(), any(), anyLong(), anyString()))
+        when(storageService.upload(eq(Bucket.NOTE), anyString(), any(), anyLong(), anyString(), isNull()))
                 .thenAnswer(invocation -> new StoredObject(
                         invocation.getArgument(1, String.class),
                         invocation.getArgument(4, String.class),
@@ -146,7 +147,7 @@ class NoteServiceTest {
         assertThat(file.getStorageKey()).matches("notes/\\d{4}/\\d{2}/[0-9a-f-]{36}\\.pdf");
 
         verify(storageService).upload(eq(Bucket.NOTE), eq(file.getStorageKey()), any(),
-                eq((long) PDF.length), eq("application/pdf"));
+                eq((long) PDF.length), eq("application/pdf"), isNull());
     }
 
     /** 标签不存在时由上传流程当场创建，而不是拒绝请求（需求 §2「标签」决策） */
@@ -182,7 +183,7 @@ class NoteServiceTest {
                             .isEqualTo(List.of(new FieldViolation("courseId", "课程不存在")));
                 });
 
-        verify(storageService, never()).upload(any(), anyString(), any(), anyLong(), anyString());
+        verify(storageService, never()).upload(any(), anyString(), any(), anyLong(), anyString(), any());
     }
 
     @Test
@@ -194,7 +195,7 @@ class NoteServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class, e ->
                         assertThat(e.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
 
-        verify(storageService, never()).upload(any(), anyString(), any(), anyLong(), anyString());
+        verify(storageService, never()).upload(any(), anyString(), any(), anyLong(), anyString(), any());
     }
 
     /**
@@ -208,7 +209,7 @@ class NoteServiceTest {
     @Test
     void objectIsPurgedWhenInsertFails() {
         String key = "notes/2026/10/" + UUID.randomUUID() + ".pdf";
-        when(storageService.upload(eq(Bucket.NOTE), anyString(), any(), anyLong(), anyString()))
+        when(storageService.upload(eq(Bucket.NOTE), anyString(), any(), anyLong(), anyString(), isNull()))
                 .thenReturn(new StoredObject(key, "application/pdf", PDF.length));
 
         noteService.upload(uploaderId, request("第一篇", null, null, List.of()));
