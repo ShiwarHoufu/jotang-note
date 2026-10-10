@@ -43,6 +43,29 @@ spring:
       # 本机 WSL 里的 Redis 没设密码；生产必须配 REDIS_PASSWORD 并删掉这个默认空值
       password: ${REDIS_PASSWORD:}
 
+  # AI。
+  # DeepSeek 提供 OpenAI 兼容接口，故复用 openai starter。
+  # 六个模态的自动配置默认全都加载（每个的 matchIfMissing 都是 true）。用不到的五个必须显式关掉：
+  ai:
+    openai:
+      # 缺 key 时整个上下文起不来，但可以留空：
+      # 留空时 chat 客户端照样构造成功（它不在启动时校验凭据），只有真去调用才失败 → 50300（§6.8）。
+      api-key: ${JOTANG_AI_API_KEY:}
+      base-url: https://api.deepseek.com
+      chat:
+        model: deepseek-flash
+        # 单条请求超时，默认值本就是 60s，这里显式写出来便于调整。
+        # 注意：**没有独立的「连接超时」开关**，要单设得自己定制 SDK client（§7.1 已按实测改口径）。
+        timeout: 60s
+    model:
+      chat: openai
+      embedding: none
+      image: none
+      audio:
+        speech: none
+        transcription: none
+      moderation: none
+
 # JWT：密钥不落仓库，一律外部注入；本机开发由 application-local.yaml 覆盖 jwt.secret。
 # 密钥是 32 字节密钥的 Base64 串（解码后 256 位，恰为 HS256 下限），生成示例：
 #   openssl rand -base64 32

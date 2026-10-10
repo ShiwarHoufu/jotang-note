@@ -51,8 +51,26 @@ public enum ErrorCode {
     /** 账号已锁定。data 携带剩余锁定秒数，供前端倒计时 */
     ACCOUNT_LOCKED(42300, "账号已锁定", HttpStatus.LOCKED),
 
+    /**
+     * AI 摘要调用过于频繁。见《概要设计》§6.8。
+     *
+     * <p>与 {@link #ACCOUNT_LOCKED} 同属「稍后再来」那一类，但防的东西完全不同：
+     * 那个防的是撞库，这个防的是<b>烧钱</b>——每次摘要调用都真金白银地计费，
+     * 连点按钮或写脚本刷就一直在花钱。
+     */
+    AI_RATE_LIMITED(42900, "生成过于频繁，请稍后再试", HttpStatus.TOO_MANY_REQUESTS),
+
     /** 服务器内部错误：未预期的异常统一兜底为该码 */
-    SERVER_ERROR(50000, "服务器内部错误", HttpStatus.INTERNAL_SERVER_ERROR);
+    SERVER_ERROR(50000, "服务器内部错误", HttpStatus.INTERNAL_SERVER_ERROR),
+
+    /**
+     * AI 摘要服务暂不可用：上游超时、连不上、或返回错误。见《概要设计》§6.8。
+     *
+     * <p><b>与 {@link #SERVER_ERROR} 刻意分开</b>：这个是「上游不可用，稍后重试可能有救」，
+     * 那个是「我们的代码出了没预料到的错」。混成一个码，前端就只能给用户一句笼统的
+     * 「服务器错误」，也无从判断该不该让用户重试。
+     */
+    AI_UNAVAILABLE(50300, "摘要生成服务暂不可用，请稍后重试", HttpStatus.SERVICE_UNAVAILABLE);
 
     private final int code;
     private final String message;

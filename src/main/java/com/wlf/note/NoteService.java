@@ -492,6 +492,43 @@ public class NoteService {
     }
 
     /**
+     * 供 ai 模块读取本人笔记的附件（§5.8 的编辑场景）。<b>只读</b>：不开事务、不加锁、不改任何列。
+     *
+     * <p><b>判门口径与 {@link #update} 完全一致</b>——不存在 40400、非本人 40300、
+     * {@code DELETED} 报 40301、{@code OFFLINE} 放行。两者本来就是同一件事的两面：
+     * <b>能改这篇笔记的元数据，就该能拿它的附件生成一段摘要</b>；反过来说，
+     * 已经删掉的笔记没有任何理由再为它读一次 OSS。
+     *
+     * <p><b>这是 ai 模块唯一的读入口</b>（§1.1「跨模块访问」的第三个实例）：ai 要的是
+     * 「附件在 OSS 的哪个键、当前用户能不能读」，属纯读路径，故走本类而不是让 ai 直接注入
+     * {@link NoteMapper}。方向是单向的 ai → note——ai 的入口在它自己的 Controller 上，
+     * note 不反向依赖 ai，因此<b>不构成构造器循环依赖</b>。这正是它与
+     * {@code FavoriteService → NoteMapper} 那个例外的分界：那边正是因为反向注入会成环，
+     * 才被允许直接写对方的单表。
+     *
+     * <p>也因此它<b>不加锁</b>：{@code selectOwnershipForUpdate} 的 {@code FOR UPDATE}
+     * 是为「读状态 → 判 → 写」之间的窗口加的，而这里读完就结束了。后面跟着的是一次 OSS 读
+     * 和一次几秒到几十秒的模型调用，期间没有任何本行的写入，锁只会白白挡住浏览量自增。
+     *
+     * @throws BusinessException 40400 笔记不存在；40300 非上传者本人；40301 笔记已删除
+     */
+    public NoteFileOwnershipRow requireOwnFile(Long noteId, Long uploaderId) {
+        NoteFileOwnershipRow row = noteMapper.selectFileOwnership(noteId);
+        if (row == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND);
+        }
+        // 先判存在、再判归属：与 applyUpdate / softDelete 同序——反过来会用 40300
+        // 泄露「这个 id 是存在的」
+        if (!Objects.equals(row.getUploaderId(), uploaderId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        if (NoteStatus.valueOf(row.getStatus()) == NoteStatus.DELETED) {
+            throw new BusinessException(ErrorCode.NOTE_UNAVAILABLE);
+        }
+        return row;
+    }
+
+    /**
      * 管理员下架：{@code ONLINE → OFFLINE}。见 §5.6、§4.1。
      *
      * <p><b>刻意不做归属校验</b>——管理员可以下架任何人的笔记，这与本类其余写方法

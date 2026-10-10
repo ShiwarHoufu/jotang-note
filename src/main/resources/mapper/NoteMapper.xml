@@ -197,4 +197,26 @@
         ORDER BY nt.note_id, t.id
     </select>
 
+    <!--
+      归属 + 附件位置，服务 ai 模块的编辑场景（§5.8）。
+
+      与 selectOwnershipForUpdate 的唯一差别是没有 FOR UPDATE，理由见 NoteFileOwnershipRow
+      与 NoteMapper#selectFileOwnership：ai 只读不写，读完之后要做的是「读 OSS → 调模型」，
+      几秒到几十秒里并不需要保护这一行不变。
+
+      JOIN note_file 而不是分两次查：note_file.note_id 上有 uk_note_id 唯一键，
+      连接不出多余的行，一次往返就能拿全四列。这两张表也都有外键兜着，用 INNER JOIN
+      不会意外丢行（同 selectDetail 的理由）。
+    -->
+    <select id="selectFileOwnership" resultType="com.wlf.note.NoteFileOwnershipRow">
+        SELECT n.uploader_id  AS uploader_id,
+               n.status       AS status,
+               f.storage_key  AS storage_key,
+               f.size,
+               f.content_type AS content_type
+        FROM note n
+                 JOIN note_file f ON f.note_id = n.id
+        WHERE n.id = #{id}
+    </select>
+
 </mapper>

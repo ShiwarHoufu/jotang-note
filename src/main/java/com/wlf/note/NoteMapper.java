@@ -233,6 +233,23 @@ public interface NoteMapper extends BaseMapper<Note> {
     NoteOwnershipRow selectOwnershipForUpdate(@Param("id") Long id);
 
     /**
+     * 读一篇笔记的归属、状态与附件位置，供 ai 模块的编辑场景使用（§5.8）。
+     *
+     * <p><b>与 {@link #selectOwnershipForUpdate} 只差「不加锁」</b>，而那正是它存在的理由：
+     * 那一条的 {@code FOR UPDATE} 是为「读状态 → 判 → 写」三步之间的窗口加的，
+     * 而 ai 这一趟读完就结束——拿到对象键之后要去读 OSS、再去调模型，几秒到几十秒，
+     * 全程没有本行的写入。把 X 锁持到那么久，只会让同一行的 {@link #incrementViewCount}
+     * 一起排队。
+     *
+     * <p>因此<b>不复用那一条</b>（不加事务跑 {@code FOR UPDATE} 只会得到一个语义可疑的空操作），
+     * 也不复用 {@link #selectDetail}（它 JOIN 五张表、拖回十几列，而这里只要四列）。
+     * 代价是 note 的归属读多了一条近邻语句；换来的是两条路径各自的锁语义在调用点就看得见。
+     *
+     * @return 归属、状态与附件位置；笔记不存在时为 {@code null}，调用方据此报 40400
+     */
+    NoteFileOwnershipRow selectFileOwnership(@Param("id") Long id);
+
+    /**
      * 只改状态：供管理员的下架 / 恢复使用。见 §5.6、§4.1、§3.3。
      *
      * <p><b>这条语句的列清单只有一个 {@code status}，一个都不能多。</b>§3.3 明写管理员的
