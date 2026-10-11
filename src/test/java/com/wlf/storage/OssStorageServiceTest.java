@@ -100,7 +100,8 @@ class OssStorageServiceTest {
                     .isEqualTo(200);
             assertThat(response.body()).isEqualTo(payload);
             // Content-Type 来自对象元数据（上传时写入），不是 URL 参数——OSS 已禁止后者
-            assertThat(response.headers().firstValue("Content-Type")).contains("text/plain");
+            assertThat(response.headers().firstValue("Content-Type"))
+                    .hasValueSatisfying(contentType -> assertThat(contentType).contains("text/plain"));
             assertThat(response.headers().firstValue("Content-Disposition"))
                     .hasValueSatisfying(disposition -> assertThat(disposition)
                             .startsWith("attachment")
@@ -186,7 +187,8 @@ class OssStorageServiceTest {
                     .isEqualTo(200);
             assertThat(response.body()).isEqualTo(payload);
             // 类型取自对象元数据（上传时写入），浏览器据此渲染
-            assertThat(response.headers().firstValue("Content-Type")).contains("image/png");
+            assertThat(response.headers().firstValue("Content-Type"))
+                    .hasValueSatisfying(contentType -> assertThat(contentType).contains("image/png"));
 
             // 我们这一侧能控制的部分：声明 inline，且绝不夹带下载文件名
             assertThat(url)
@@ -232,7 +234,8 @@ class OssStorageServiceTest {
                             response.statusCode(), url)
                     .isEqualTo(200);
             assertThat(response.body()).isEqualTo(payload);
-            assertThat(response.headers().firstValue("Cache-Control")).contains("max-age=31536000");
+            assertThat(response.headers().firstValue("Cache-Control"))
+                    .hasValueSatisfying(cacheControl -> assertThat(cacheControl).contains("max-age=31536000"));
         } finally {
             storageService.delete(Bucket.AVATAR, key);
         }

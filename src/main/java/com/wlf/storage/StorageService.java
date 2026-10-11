@@ -67,9 +67,11 @@ public interface StorageService {
     String publicUrl(Bucket bucket, String key);
 
     /**
-     * 删除对象。对象不存在时同样成功（OSS 返回 204），调用方无需先判存在。
+     * 删除对象，不可恢复。对象不存在时同样成功（OSS 返回 204），调用方无需先判存在。
      *
-     * <p>对应 §3.3「用户删除笔记后异步清理 OSS 对象」，不可恢复。
+     * <p>三个调用方都是"收尾"性质，没有一个是用户请求的主路径：笔记的对象回收走
+     * {@code OrphanObjectSweeper} 的定时对账（§3.3、§7.3），上传与头像那两处是为
+     * 「对象已存、入库失败」补的一次补偿删除（§6.1、§6.7）。删除接口本身不碰本方法。
      */
     void delete(Bucket bucket, String key);
 }

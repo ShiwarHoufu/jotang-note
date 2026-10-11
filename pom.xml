@@ -32,12 +32,22 @@
         <aliyun-oss.version>3.18.5</aliyun-oss.version>
         <spring-ai.version>2.0.1</spring-ai.version>
         <!--
-            surefire 默认跳过的测试标签。storage 的集成测试真打阿里云 OSS（@Tag("oss")），
-            依赖网络与有效 AccessKey，离线环境或 CI 上必然失败，故默认排除。
+            surefire 默认跳过的测试标签。它们都依赖本机之外的东西，离线环境或 CI 上必然失败：
+
+              oss  —— 真打阿里云 OSS（storage 的存储原语、note 的孤儿对象对账），要网络与 AccessKey
+              mail —— 真发一封邮件，要有效的 QQ SMTP 授权码
+              mq   —— 真连一个 RabbitMQ（拓扑声明、消费、重试与死信队列），要 docker compose up
+
             单独运行（必须同时清空排除，否则 JUnit 的排除优先于包含，会一个都不跑）：
                 ./mvnw test -DexcludedGroups= -Dgroups=oss
+                ./mvnw test -DexcludedGroups= -Dgroups=mail
+                ./mvnw test -DexcludedGroups= -Dgroups=mq
+            也可以一次跑多个：-Dgroups=oss,mail,mq
+
+            注意这里是**排除**而不是「默认关闭」：这些用例本身是必需的（mock 验不到真实链路），
+            只是不能在默认套件里跑。
         -->
-        <excludedGroups>oss</excludedGroups>
+        <excludedGroups>oss,mail,mq</excludedGroups>
     </properties>
 
     <dependencyManagement>
@@ -85,6 +95,23 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
+
+        <!--
+            RabbitMQ：**目前只服务一条链路**——密码找回的重置邮件（《概要设计》§6.6）。
+
+            为什么现在才引入：此前 MVP 不产生也不消费消息，引入它只会让自动配置在没有 Broker 时
+            空转（见《技术选型》§5 的原话）。现在有了第一条真正需要异步的链路，理由才成立。
+
+            「有没有 Broker 都不影响其余功能」这件事由配置保证，不由这个依赖保证：
+            jotang.mail.mode 的默认值是 smtp，队列相关的 Bean（发布者、消费者）都挂在
+            @ConditionalOnProperty 上，默认压根不注册——所以新克隆的仓库 ./mvnw test 不需要
+            任何中间件就能全绿。详见 RabbitConfig 与 QueuedMailService 的类注释。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>

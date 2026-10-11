@@ -1,0 +1,47 @@
+# RabbitMQ：异步任务队列。当前唯一用途是密码找回的重置邮件（《概要设计》§6.6）——
+# 这一条链路需要异步的原因不是「慢」（本机 SMTP 也就几百毫秒），而是**防枚举**：
+# 同步发信会让「邮箱存在」与「邮箱不存在」两条分支的耗时明显不同，成为一个时间侧信道。
+#
+# 注意：应用只在 jotang.mail.mode=queue 时才会连过来（默认是 smtp，见 application.yaml）。
+# 起来了这个容器 ≠ 应用就在用它。
+#
+# 只起 RabbitMQ，不含 MySQL / Redis：那两个本机已有实例（Redis 在 WSL 里），
+# 再起一份会争 3306 / 6379 端口。将来要迁进来时再单独加 service。
+#
+# 密码不落仓库，从同目录 .env 读取（Compose 会自动加载该文件）。
+# 与 application.yaml 里 jwt.secret / OSS AccessKey 的做法一致：仓库只存占位，
+# 真值走本地未跟踪文件。.env 已被 .gitignore 忽略，模板见 .env.example。
+
+services:
+  rabbitmq:
+    # -management 后缀才带网页管理台（15672）。不带后缀的 rabbitmq:4 没有 UI，
+    # 本地开发没有它排查队列会很痛苦。
+    image: rabbitmq:4-management
+    container_name: rabbitmq
+    # 开机 / Docker 重启后自动拉起；手动 docker stop 过的不会被打扰
+    restart: unless-stopped
+    ports:
+      - "5672:5672"    # AMQP，Spring Boot 连这个
+      - "15672:15672"  # 管理台 http://localhost:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      # :? 让变量缺失时直接报错退出，而不是静默用空密码起一个连不上的实例
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?缺少 .env 或未设置 RABBITMQ_PASSWORD}
+    volumes:
+      # 队列和消息存在这个卷里，docker rm 掉容器数据也不丢。
+      # 左边是卷名不是 Windows 路径——容器内是 Linux，挂宿主机目录会因为权限起不来。
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      # ping 只探「节点是否响应」。不探 15672 端口：管理插件比 AMQP 后起，
+      # 探端口会让刚就绪的实例被误判为不健康。
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # 首次启动要初始化 mnesia 库，这期间失败不计入 retries
+      start_period: 40s
+
+volumes:
+  rabbitmq-data:
+    # 显式命名，避免带上目录名前缀导致换目录后找不到旧卷
+    name: rabbitmq-data

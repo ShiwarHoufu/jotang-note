@@ -250,6 +250,24 @@ public interface NoteMapper extends BaseMapper<Note> {
     NoteFileOwnershipRow selectFileOwnership(@Param("id") Long id);
 
     /**
+     * 孤儿对象对账的候选集：已删除、但对象还没被物理清理的笔记。
+     *
+     * <p><b>{@code status} 才是重点</b>：{@code is_purged = 0} 是 {@code note_file} 的建表默认值，
+     * 每一篇活着的笔记都是 0，只有被清理过才变 1。少了 {@code status}，这条语句返回的是
+     * 「全部在线笔记」，对账立刻退化成「把站上所有文件删掉」。
+     *
+     * <p>排除空 {@code storage_key}（该列 NOT NULL，空串只可能来自手工改库）：它既删不掉，
+     * 又会在每一轮重新被选中，永久占着批量的一个名额。
+     *
+     * <p>不加新索引：靠 {@code idx_status_created} 的 {@code status} 前缀定位，再按
+     * {@code uk_note_id} 连回 {@code note_file}；{@code is_purged} 是 TINYINT，没有选择性。
+     *
+     * @param status 调用方传 {@link NoteStatus#DELETED}
+     * @param limit  一轮最多取多少行；没做完的下一轮自然接上
+     */
+    List<PendingPurgeRow> selectPendingPurge(@Param("status") String status, @Param("limit") int limit);
+
+    /**
      * 只改状态：供管理员的下架 / 恢复使用。见 §5.6、§4.1、§3.3。
      *
      * <p><b>这条语句的列清单只有一个 {@code status}，一个都不能多。</b>§3.3 明写管理员的

@@ -15,7 +15,6 @@ import com.wlf.favorite.FavoriteMapper;
 import com.wlf.favorite.FavoriteService;
 import com.wlf.favorite.dto.FavoriteItemResponse;
 import com.wlf.favorite.dto.FavoriteListQuery;
-import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import com.wlf.user.UserMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,10 +33,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -46,10 +43,10 @@ import static org.mockito.Mockito.verify;
  * <p>重点在几条<b>写错了不会立刻暴露</b>的规则：
  *
  * <ul>
+ *   <li><b>删除不碰 OSS</b>——一次都不该调存储层，对象回收全归定时对账
+ *       （{@code OrphanObjectSweeperTest} 那边验）</li>
  *   <li><b>只改该改的列</b>——{@code updated_at}、{@code favorite_count}、{@code note_tag} 都不能被碰到。
  *       它们各自都有一个看似「顺手」的理由去改，而每个都错</li>
- *   <li><b>幂等 200 不等于什么都不做</b>——上一次清理失败了，这一次要接着清</li>
- *   <li><b>清理失败不能让删除失败</b>，但也不能把 {@code is_purged} 谎报成 1</li>
  *   <li><b>归属校验</b>——这是全项目第一处 40300</li>
  * </ul>
  *
@@ -103,9 +100,12 @@ class NoteDeleteServiceTest {
 
     // ==================== 正常路径 ====================
 
-    /** 状态置为 DELETED、写下删除时刻、对象被清理并记账——四件事一起对才算删干净 */
+    /**
+     * 状态置为 DELETED、写下删除时刻就算删完；<b>对象不在这里清</b>，
+     * {@code is_purged} 留给定时对账去置。
+     */
     @Test
-    void deletingMarksTheNoteDeletedAndPurgesItsObject() {
+    void deletingMarksTheNoteDeletedAndLeavesTheObjectToTheSweeper() {
         Fixture fixture = createNote(NoteStatus.ONLINE);
 
         noteService.delete(fixture.noteId(), fixture.uploaderId());
@@ -114,8 +114,8 @@ class NoteDeleteServiceTest {
         assertThat(note.getStatus()).isEqualTo(NoteStatus.DELETED.name());
         assertThat(note.getDeletedAt()).isNotNull();
 
-        verify(storageService).delete(Bucket.NOTE, fixture.storageKey());
-        assertThat(noteFileMapper.selectById(fixture.fileId()).getIsPurged()).isEqualTo(1);
+        verify(storageService, never()).delete(any(), anyString());
+        assertThat(noteFileMapper.selectById(fixture.fileId()).getIsPurged()).isZero();
     }
 
     /** §4.1 的图里有 {@code OFFLINE→DELETED}：管理员下架过的笔记，上传者仍然有权删掉 */
@@ -129,12 +129,9 @@ class NoteDeleteServiceTest {
                 .isEqualTo(NoteStatus.DELETED.name());
     }
 
-    /**
-     * 幂等：第二次不报错、状态不变，而且<b>不会重复清理</b>——第一次已经把 {@code is_purged}
-     * 置成 1，第二次读到的就是「没什么可清」。
-     */
+    /** 幂等：第二次不报错、状态不变，也不多做任何事 */
     @Test
-    void deletingTwiceIsIdempotentAndPurgesOnlyOnce() {
+    void deletingTwiceIsIdempotent() {
         Fixture fixture = createNote(NoteStatus.ONLINE);
 
         noteService.delete(fixture.noteId(), fixture.uploaderId());
@@ -142,53 +139,32 @@ class NoteDeleteServiceTest {
 
         assertThat(noteMapper.selectById(fixture.noteId()).getStatus())
                 .isEqualTo(NoteStatus.DELETED.name());
-        verify(storageService, times(1)).delete(Bucket.NOTE, fixture.storageKey());
+        verify(storageService, never()).delete(any(), anyString());
     }
 
-    // ==================== 清理失败与重试 ====================
+    // ==================== 与 OSS 解耦 ====================
 
     /**
-     * 清理失败不能让删除失败：状态已经落库，用户要的「这篇别在站内出现了」已经达成，
-     * 而对象清理只影响存储回收（§6.2 之后不再为它签发任何 URL）。
-     * 同时 {@code is_purged} 必须<b>留在 0</b>——谎报成 1 就再也没人对账得出来。
-     */
-    @Test
-    void aFailedPurgeStillDeletesTheNoteButLeavesTheMarkUnset() {
-        Fixture fixture = createNote(NoteStatus.ONLINE);
-        whenDeleteThrows();
-
-        noteService.delete(fixture.noteId(), fixture.uploaderId());
-
-        assertThat(noteMapper.selectById(fixture.noteId()).getStatus())
-                .isEqualTo(NoteStatus.DELETED.name());
-        assertThat(noteFileMapper.selectById(fixture.fileId()).getIsPurged()).isZero();
-    }
-
-    /**
-     * <b>幂等 200 不等于什么都不做</b>：上一次清理失败留下了 {@code is_purged = 0}，
-     * 这一次必须接着清，否则那个对象永远成为孤儿。
+     * 删除不依赖 OSS 可用：<b>存储层整个是坏的，删除照样成功</b>，且一次都没碰它。
      *
-     * <p>这条兜底是有必要的：{@code NoteService#purgeQuietly} 的注释说「残留由每日维护脚本对账」，
-     * 而那个脚本是本仓库之外的 shell，此前只清 {@code password_reset_token}。
-     * 让重复删除顺带成为重试路径，兜底就不必依赖它。
+     * <p>这是「对象回收交给定时对账」换来的性质（§3.3）。放在请求链路里清的话，
+     * 一次被挂住的 OSS 调用就能让一个本该瞬间返回的 DELETE 陪它等到超时。
      */
     @Test
-    void repeatingTheDeleteRetriesAPurgeThatPreviouslyFailed() {
+    void deletingSucceedsEvenWhenTheStorageLayerIsBroken() {
         Fixture fixture = createNote(NoteStatus.ONLINE);
         whenDeleteThrows();
-        noteService.delete(fixture.noteId(), fixture.uploaderId());
-        assertThat(noteFileMapper.selectById(fixture.fileId()).getIsPurged()).isZero();
 
-        whenDeleteSucceeds();
         noteService.delete(fixture.noteId(), fixture.uploaderId());
 
-        verify(storageService, times(2)).delete(Bucket.NOTE, fixture.storageKey());
-        assertThat(noteFileMapper.selectById(fixture.fileId()).getIsPurged()).isEqualTo(1);
+        assertThat(noteMapper.selectById(fixture.noteId()).getStatus())
+                .isEqualTo(NoteStatus.DELETED.name());
+        verify(storageService, never()).delete(any(), anyString());
     }
 
     /**
-     * {@code note_file} 行缺失时照样删得掉，只是没什么可清。
-     * 状态那一步已经落库，为一条脏数据把整次删除判失败是本末倒置。
+     * {@code note_file} 行缺失时照样删得掉：删除只关 {@code note} 的状态，
+     * 不该因为一条脏数据把整次删除判失败，也不该为此多查一张表。
      */
     @Test
     void deletingSucceedsWhenTheFileRowIsMissing() {
@@ -365,10 +341,6 @@ class NoteDeleteServiceTest {
 
     private void whenDeleteThrows() {
         doThrow(new IllegalStateException("模拟 OSS 故障")).when(storageService).delete(any(), anyString());
-    }
-
-    private void whenDeleteSucceeds() {
-        doNothing().when(storageService).delete(any(), anyString());
     }
 
     private Long insertCollege() {

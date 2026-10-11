@@ -31,6 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -130,8 +131,8 @@ public class NoteService {
      *       异常会在这里抛出，此时还没有对象产生</li>
      *   <li>OSS 上传放在事务<b>之外</b>：单文件可达 100MB，把一次上百 MB 的网络传输
      *       圈进数据库事务，会让一个连接被占住整个上传时长。代价是「对象已存、入库失败」
-     *       这个窗口真实存在，由下面的补偿删除兜住；补偿失败也只是留下孤儿对象，
-     *       由每日维护脚本按 {@code is_purged} 对账，不影响用户请求的成败</li>
+     *       这个窗口真实存在，由下面的补偿删除兜住；补偿再失败就留下无人认领的孤儿对象，
+     *       不影响用户请求的成败</li>
      * </ol>
      *
      * @param uploaderId 上传者，取自 JWT，不接受请求体传入——否则可以冒名顶替他人上传
@@ -602,46 +603,31 @@ public class NoteService {
     /**
      * 软删除：上传者本人把自己的笔记置为 {@code DELETED}。见 §5.4、§4.1、§3.3。
      *
-     * <p><b>本方法必须是最外层事务边界，不要从别的 {@code @Transactional} 方法里调用。</b>
-     * 清理对象那一步刻意放在 {@code transactionTemplate.execute(...)} <b>之后</b>，依赖
-     * {@code execute} 确实开了新事务、并在返回前提交。若被一个事务方法调用，{@code REQUIRED}
-     * 会加入外层事务，清理就跑到外层提交之前去了——一旦外层回滚，对象已经删掉而笔记还在，
-     * 那篇笔记就永远打不开了。
-     *
-     * <p><b>为什么不用 {@code @Transactional}</b>：同一个取舍的两面。业务上，删除要做的第二件事
-     * 是一次 OSS 网络调用，它不该被圈进数据库事务（§6.1 给上传定了同样的规矩）。工程上，
-     * 用 {@code @Transactional} 加 {@code afterCommit} 回调也能达到目的，但本项目所有服务测试
-     * 都跑在被 Spring 托管的测试事务里，挂在被加入事务上的 {@code afterCommit} 在测试中
-     * <b>永远不会触发</b>，清理逻辑将完全无法断言；{@code execute} 之后的普通代码没有这个问题。
+     * <p><b>删除不碰 OSS。</b>本方法只改状态，对象由孤儿对象对账（{@link #sweepOrphanObjects}）
+     * 在最长一个对账周期内回收。曾经这里是「提交后同步删一次」，但那个网络调用一旦被挂住
+     * （OSS 客户端是按上传场景配的，socket 超时 60s），一个本该瞬间返回的 DELETE 就要陪它等；
+     * 而它清没清掉，对用户看到的结果毫无影响——§6.2 保证 {@code status = DELETED} 之后
+     * 不再签发任何 URL。用一次请求延迟去换一次提前一小时的存储回收，账算不过来。
      *
      * <p><b>删除已删除的笔记是幂等的（200）</b>，与取消收藏同口径：DELETE 本就该如此，
      * 前端连点两次不该有一次报错。只有笔记不存在才是 40400。
      *
      * @param uploaderId 当前登录者，取自 JWT。本接口没有「管理员代删」的语义
-     *                   （§5.6 给管理员的是下架 / 恢复），所以这里不看 role，非本人一律 40300
      * @throws BusinessException 40400 笔记不存在；40300 非上传者本人
      */
+    @Transactional
     public void delete(Long noteId, Long uploaderId) {
-        // 返回非 null 表示「还有对象没清掉」，交给下面在事务外处理；null 表示这次无事可做
-        String storageKey = transactionTemplate.execute(status -> softDelete(noteId, uploaderId));
-        if (storageKey != null) {
-            purgeObjectThenMark(noteId, storageKey);
-        }
+        softDelete(noteId, uploaderId);
     }
 
     /**
-     * 事务内的那一段：校验归属 → 走状态机 → 落库。返回「还没被物理清理的对象键」，没有则 null。
-     *
-     * <p><b>「已经删除」这一支也要返回 storageKey</b>，不能直接 return null——幂等 200 不等于
-     * 什么都不做。若上一次的清理失败了（{@code is_purged} 仍是 0），那个对象就再也没人管：
-     * {@link #purgeQuietly} 的注释一直说「残留由每日维护脚本对账」，而那只在 §7.3 补上之后才算数。
-     * 让这一支照常返回待清键，重复点删除就顺带成了清理的重试路径，兜底不必依赖一个外部脚本。
+     * 事务内：校验归属 → 走状态机 → 落库。
      *
      * <p>{@code OFFLINE} 的笔记<b>允许</b>删除（§4.1 的图里有 {@code OFFLINE→DELETED} 这条边）：
      * 管理员下架过的笔记，上传者仍然有权把它删掉。这也是本流程绝不返回 40301 的原因——
      * 那个码管的是预览 / 下载 / 收藏。
      */
-    private String softDelete(Long noteId, Long uploaderId) {
+    private void softDelete(Long noteId, Long uploaderId) {
         NoteOwnershipRow row = noteMapper.selectOwnershipForUpdate(noteId);
         if (row == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND);
@@ -652,50 +638,19 @@ public class NoteService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
 
-        // 先取待清键再动状态：两支（正常删除、已经删过）都要用它
-        String pendingKey = pendingStorageKey(noteId);
-
         NoteStatus from = NoteStatus.valueOf(row.getStatus());
         if (from == NoteStatus.DELETED) {
-            return pendingKey;
+            // 幂等：状态已是终态，本次什么都不做。对象清理由对账负责，与删几次无关
+            return;
         }
 
         // 状态在提交前不会再变：上面那条 selectOwnershipForUpdate 已经持有该行的 X 锁
         stateMachine.requireTransition(from, NoteStatus.DELETED);
         noteMapper.markDeleted(noteId, NoteStatus.DELETED.name());
-        return pendingKey;
     }
 
     /**
-     * 还没被物理清理的对象键；没有则 null。三种「没有」要分开对待：
-     * 已经清理过（正常，静默返回 null）、{@code note_file} 行缺失、{@code storage_key} 为空
-     * （后两种是数据不一致，记 warn 后照样放行）。
-     *
-     * <p>后两种只记日志不抛异常：用户要的是「这篇笔记别在站内出现了」，而状态那一步已经落库。
-     * 因为一条脏的 {@code note_file} 行把一次成功的删除变成失败，是拿次要的事顶掉主要的事。
-     * 而且 {@code StorageService#delete} 是裸字符串拼接，喂 null 会删到一个不存在的键，
-     * 所以这里必须在调用之前把空值挡掉。
-     */
-    private String pendingStorageKey(Long noteId) {
-        // uk_note_id 保证一篇笔记至多一个文件行，selectOne 不会拿到多行
-        NoteFile file = noteFileMapper.selectOne(Wrappers.<NoteFile>lambdaQuery()
-                .eq(NoteFile::getNoteId, noteId));
-        if (file == null) {
-            log.warn("笔记没有文件行，跳过对象清理 noteId={}", noteId);
-            return null;
-        }
-        if (file.getIsPurged() != null && file.getIsPurged() != 0) {
-            return null;
-        }
-        if (file.getStorageKey() == null || file.getStorageKey().isBlank()) {
-            log.warn("文件行没有 storage_key，跳过对象清理 noteId={}", noteId);
-            return null;
-        }
-        return file.getStorageKey();
-    }
-
-    /**
-     * 事务提交后清理 OSS 对象并记账。见 §3.3、§7.3。
+     * 清理 OSS 对象并标记已清理。
      *
      * <p><b>顺序是先删对象、后置标记，不能反。</b>若先置 {@code is_purged = 1} 而随后的删除失败，
      * 这一行就谎称「对象已清理」——而对象还在，且任何对账都救不回来（对账的判据正是这一列）。
@@ -706,19 +661,45 @@ public class NoteService {
      *
      * <p>失败只记日志、不往外抛：这一步只影响存储回收，不影响用户可见的结果——
      * {@code status} 已是 {@code DELETED}，§6.2 之后不再为它签发任何 URL。
+     *
+     * @return 对象是否确实被清掉了，供调用方统计本轮清了几条
      */
-    private void purgeObjectThenMark(Long noteId, String storageKey) {
+    private boolean purgeObjectThenMark(Long noteId, String storageKey) {
         try {
             storageService.delete(Bucket.NOTE, storageKey);
         } catch (RuntimeException e) {
-            // 残留对象由 §7.3 的每日维护脚本按 is_purged = 0 对账清理
+            // 残留对象由孤儿对象对账（OrphanObjectSweeper）按 is_purged = 0 捡回来
             log.error("清理笔记对象失败，is_purged 保持 0 待对账 noteId={} key={}", noteId, storageKey, e);
-            return;
+            return false;
         }
         noteFileMapper.update(null, Wrappers.<NoteFile>lambdaUpdate()
                 .eq(NoteFile::getNoteId, noteId)
                 .eq(NoteFile::getIsPurged, 0)
                 .set(NoteFile::getIsPurged, 1));
+        return true;
+    }
+
+    /**
+     * 孤儿对象对账：把「已删除、但对象还没被清掉」的笔记捞一批出来补做清理。
+     *
+     * <p>删除接口不碰 OSS，所以被删笔记的对象全靠这里回收：{@code is_purged = 0} 就是待办清单。
+     *
+     * <p>不开事务：每清理一条就是一次 OSS 网络调用，圈进事务只会让连接被网络等待占住；
+     * 单条失败也因此不影响其余各行。
+     *
+     * @param limit 一轮最多处理多少条；没做完的下一轮自然接上
+     * @return 本轮<b>确实清掉对象</b>的条数。小于 {@code limit} 不代表积压已清空——
+     *         清理失败的条目不计数，会留在候选集里等下一轮
+     */
+    public int sweepOrphanObjects(int limit) {
+        List<PendingPurgeRow> pending = noteMapper.selectPendingPurge(NoteStatus.DELETED.name(), limit);
+        int purged = 0;
+        for (PendingPurgeRow row : pending) {
+            if (purgeObjectThenMark(row.getNoteId(), row.getStorageKey())) {
+                purged++;
+            }
+        }
+        return purged;
     }
 
     /**
@@ -793,7 +774,12 @@ public class NoteService {
     }
 
     /**
+    /**
      * 补偿删除：入库失败时刚上传的对象已无人引用。
+     *
+     * <p><b>这一处不受孤儿对象对账保护，是有意的区分。</b>触发它的前提是落库事务已回滚，
+     * {@code note_file} 里没有那一行，而对账的候选集正是从那张表来的——没有行就无从发现。
+     * 只有「库里有行可对账」的清理才适合交给定时路径。
      */
     private void purgeQuietly(String key) {
         try {

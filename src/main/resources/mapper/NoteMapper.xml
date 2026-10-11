@@ -219,4 +219,29 @@
         WHERE n.id = #{id}
     </select>
 
+    <!--
+      孤儿对象对账的候选集：已删除、但对象还没被物理清理的笔记。
+
+      status 才是重点：is_purged = 0 是建表默认值，每一篇活着的笔记都是 0，
+      少了 status 这条语句返回的是全部在线笔记，对账会变成把站上所有文件删光。
+      状态字面量由调用方传入（NoteStatus 的取值不写死在 SQL 里）。
+
+      用 INNER JOIN：note_file.note_id 上有 uk_note_id 且是外键，连不上只可能是数据损坏；
+      LEFT JOIN 会把「没有文件行」伪装成「文件字段全是 null」，那种行既删不掉也标不掉。
+
+      storage_key != '' 排除手工改库造成的空键，否则它每轮都会被重新选中、占着批量名额。
+      ORDER BY n.id 只为顺序确定，候选集很小，不值得为它调索引。
+    -->
+    <select id="selectPendingPurge" resultType="com.wlf.note.PendingPurgeRow">
+        SELECT n.id AS note_id,
+               nf.storage_key
+        FROM note n
+                 JOIN note_file nf ON nf.note_id = n.id
+        WHERE n.status = #{status}
+          AND nf.is_purged = 0
+          AND nf.storage_key != ''
+        ORDER BY n.id
+        LIMIT #{limit}
+    </select>
+
 </mapper>
