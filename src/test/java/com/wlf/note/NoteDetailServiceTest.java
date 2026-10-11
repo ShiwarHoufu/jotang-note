@@ -138,11 +138,11 @@ class NoteDetailServiceTest {
                 .containsExactly(MARKER + "标签甲", MARKER + "标签乙");
 
         assertThat(detail.file()).isNotNull();
-        assertThat(detail.file().originalName()).isEqualTo("课件.pdf");
+        assertThat(detail.file().originalName()).isEqualTo("课件.png");
         assertThat(detail.file().size()).isEqualTo(1048576L);
-        assertThat(detail.file().contentType()).isEqualTo("application/pdf");
+        assertThat(detail.file().contentType()).isEqualTo("image/png");
         // previewMode 不在库里，是由 contentType 现推的（§6.2）
-        assertThat(detail.file().previewMode()).isEqualTo(PreviewMode.PDF_INLINE);
+        assertThat(detail.file().previewMode()).isEqualTo(PreviewMode.IMAGE_INLINE);
 
         assertThat(detail.isFavorited()).isFalse();
     }
@@ -300,10 +300,10 @@ class NoteDetailServiceTest {
         // 用上传流程造数据会把 NoteFilePolicy 与 OSS 一起拖进来
         NoteFile file = new NoteFile();
         file.setNoteId(note.getId());
-        file.setStorageKey("notes/2026/10/" + UUID.randomUUID() + ".pdf");
-        file.setOriginalName("课件.pdf");
+        file.setStorageKey("notes/2026/10/" + UUID.randomUUID() + ".png");
+        file.setOriginalName("课件.png");
         file.setSize(1048576L);
-        file.setContentType("application/pdf");
+        file.setContentType("image/png");
         noteFileMapper.insert(file);
 
         return new Fixture(note.getId(), uploaderId);

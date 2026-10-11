@@ -155,7 +155,7 @@ class AdminNoteControllerTest {
 
         mockMvc.perform(get("/api/notes/{id}", noteId).header("Authorization", adminToken()))
                 .andExpect(jsonPath("$.data.status").value("ONLINE"))
-                .andExpect(jsonPath("$.data.file.originalName").value("课件.pdf"));
+                .andExpect(jsonPath("$.data.file.originalName").value("课件.png"));
     }
 
     /** 幂等：连点两次不该有一次报错（与删除、取消收藏同口径） */
@@ -223,10 +223,10 @@ class AdminNoteControllerTest {
 
         NoteFile file = new NoteFile();
         file.setNoteId(note.getId());
-        file.setStorageKey("notes/2026/10/" + UUID.randomUUID() + ".pdf");
-        file.setOriginalName("课件.pdf");
+        file.setStorageKey("notes/2026/10/" + UUID.randomUUID() + ".png");
+        file.setOriginalName("课件.png");
         file.setSize(1024L);
-        file.setContentType("application/pdf");
+        file.setContentType("image/png");
         noteFileMapper.insert(file);
 
         return note.getId();

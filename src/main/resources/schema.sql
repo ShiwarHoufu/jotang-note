@@ -127,3 +127,19 @@ CREATE TABLE IF NOT EXISTS `password_reset_token` (
   KEY `idx_user` (`user_id`),
   CONSTRAINT `fk_prt_user` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- AI 对话消息（服务端保存多轮记忆）
+-- 一轮问答两行。历史按 id 正序就是模型要的顺序，不做任何裁剪——
+-- DeepSeek 的前缀缓存按「从 token 0 起逐字相同的公共前缀」命中，裁剪会让缓存失效
+CREATE TABLE IF NOT EXISTS `ai_message` (
+  `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id`         BIGINT UNSIGNED NOT NULL,
+  `conversation_id` CHAR(36)        NOT NULL COMMENT '服务端生成的 UUID，同一会话的消息共用它',
+  `role`            VARCHAR(16)     NOT NULL COMMENT 'USER / ASSISTANT',
+  `content`         TEXT            NOT NULL,
+  `created_at`      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_conversation` (`conversation_id`, `id`),   -- 取历史：按会话正序
+  KEY `idx_user_created` (`user_id`, `created_at`),   -- 将来的会话列表
+  CONSTRAINT `fk_am_user` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

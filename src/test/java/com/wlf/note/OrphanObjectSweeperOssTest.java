@@ -174,18 +174,18 @@ class OrphanObjectSweeperOssTest {
 
         // 键走 test/ 前缀而不是生产格式 notes/yyyy/MM/...：对账把它当不透明字符串，
         // 键长什么样不影响结论，而 test/ 前缀让桶里万一残留的垃圾一眼可辨、好清理。
-        String storageKey = "test/sweep/" + UUID.randomUUID() + ".pdf";
+        String storageKey = "test/sweep/" + UUID.randomUUID() + ".png";
         byte[] payload = "孤儿对象对账集成测试".getBytes(StandardCharsets.UTF_8);
         storageService.upload(Bucket.NOTE, storageKey, new ByteArrayInputStream(payload),
-                payload.length, "application/pdf", null);
+                payload.length, "image/png", null);
         uploadedKeys.add(storageKey);
 
         NoteFile file = new NoteFile();
         file.setNoteId(note.getId());
         file.setStorageKey(storageKey);
-        file.setOriginalName("课件.pdf");
+        file.setOriginalName("课件.png");
         file.setSize((long) payload.length);
-        file.setContentType("application/pdf");
+        file.setContentType("image/png");
         noteFileMapper.insert(file);
 
         return new Fixture(note.getId(), file.getId(), storageKey);

@@ -265,10 +265,10 @@ class AdminNoteServiceTest {
 
         NoteFile file = new NoteFile();
         file.setNoteId(note.getId());
-        file.setStorageKey("notes/2026/10/" + UUID.randomUUID() + ".pdf");
-        file.setOriginalName("课件.pdf");
+        file.setStorageKey("notes/2026/10/" + UUID.randomUUID() + ".png");
+        file.setOriginalName("课件.png");
         file.setSize(1048576L);
-        file.setContentType("application/pdf");
+        file.setContentType("image/png");
         noteFileMapper.insert(file);
 
         return note.getId();

@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 找回密码限频：按邮箱维度
  * 见《概要设计》§6.3、§6.6。
  *
- * <p>实现沿用 {@link com.wlf.ai.AiSummaryRateLimiter} 的做法
+ * <p>实现沿用 {@link com.wlf.ai.AiRateLimiter} 的做法
  * （{@link ConcurrentHashMap} + 惰性过期，不引入 Redis、也不起清理线程）：MVP 单实例，
  * 不存在多实例计数不一致的问题。与它仅有的两处差别是维度（邮箱 vs 用户 id）与错误码。
  *

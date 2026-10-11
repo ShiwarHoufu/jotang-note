@@ -27,7 +27,7 @@ class AiSummaryImagePolicyTest {
     private static final byte[] WEBP = {0x52, 0x49, 0x46, 0x46, 0x1A, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50};
     /** note 的合法类型，也是本策略的合法类型——这是它与头像白名单的差别（头像不收 gif） */
     private static final byte[] GIF = {0x47, 0x49, 0x46, 0x38, 0x39, 0x61};
-    /** note 里合法、但模型读不了的类型（§6.8） */
+    /** 非图片：note 里要么不收（pdf / zip），要么收但模型读不了（txt） */
     private static final byte[] PDF = {0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37};
     private static final byte[] ZIP = {0x50, 0x4B, 0x03, 0x04, 0x14, 0x00};
     private static final byte[] TXT = "第一章 绪论".getBytes();
@@ -61,15 +61,15 @@ class AiSummaryImagePolicyTest {
     // ==================== 白名单之外一律拒绝 ====================
 
     /**
-     * 这条是本策略与另两条准入链路的<b>关键差别</b>：note 收 PDF、收 docx，
-     * 而 AI 只能读光栅图。放行它们不会带来安全风险，但会白花一次计费再换回一个上游错误。
+     * 这条是本策略与另两条准入链路的<b>关键差别</b>：note 收 md / txt，而 AI 只能读光栅图。
+     * 放行它们不会带来安全风险，但会白花一次计费再换回一个上游错误。
      */
     @Test
-    void nonImageTypesValidForNotesAreRejectedHere() {
-        assertThatThrownBy(() -> inspect("讲义.pdf", PDF)).isInstanceOfSatisfying(BusinessException.class,
+    void nonImageTypesAreRejectedHere() {
+        assertThatThrownBy(() -> inspect("笔记.md", TXT)).isInstanceOfSatisfying(BusinessException.class,
                 ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
-        assertThatThrownBy(() -> inspect("讲义.docx", ZIP)).isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> inspect("笔记.md", TXT)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> inspect("说明.txt", TXT)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> inspect("讲义.pdf", PDF)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> inspect("打包.zip", ZIP)).isInstanceOf(BusinessException.class);
     }
 
@@ -138,7 +138,7 @@ class AiSummaryImagePolicyTest {
 
     @Test
     void supportsRejectsEverythingElseIncludingNull() {
-        // PDF 在 note 里合法，在 AI 这里不合法——supports 与 inspect 的白名单必须一致
+        // note 支持的类型不等于 AI 支持的类型——supports 与 inspect 的白名单必须一致
         assertThat(policy.supports("application/pdf")).isFalse();
         assertThat(policy.supports("text/markdown")).isFalse();
         assertThat(policy.supports("image/svg+xml")).isFalse();

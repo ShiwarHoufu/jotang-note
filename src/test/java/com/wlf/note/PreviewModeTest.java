@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link PreviewMode#of(String)} 的单元测试。
  *
  * <p>这张映射是读取侧从 {@code note_file.content_type} 反推渲染意图的<b>唯一</b>依据（§6.2）。
- * 用例做两件事：<b>逐项锁住 13 个可能入库的 {@code content_type} 各自的去向</b>
+ * 用例做两件事：<b>逐项锁住白名单可能判出的 {@code content_type} 各自的去向</b>
  * （与 §6.1 那张表的「预览方式」列一一对照），以及<b>锁住兜底方向</b>——
  * 认不出来时必须落到 {@link PreviewMode#DOWNLOAD_ONLY}，那是唯一失败得安全的取值。
  *
@@ -28,9 +28,10 @@ class PreviewModeTest {
         assertThat(PreviewMode.of("image/webp")).isEqualTo(PreviewMode.IMAGE_INLINE);
     }
 
+    /** pdf 不在白名单内，映射也把它认成「仅下载」而不是抛异常或返回 null */
     @Test
-    void pdfIsInline() {
-        assertThat(PreviewMode.of("application/pdf")).isEqualTo(PreviewMode.PDF_INLINE);
+    void pdfIsDownloadOnly() {
+        assertThat(PreviewMode.of("application/pdf")).isEqualTo(PreviewMode.DOWNLOAD_ONLY);
     }
 
     @Test

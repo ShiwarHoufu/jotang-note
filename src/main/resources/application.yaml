@@ -28,7 +28,7 @@ spring:
       mode: always
       encoding: UTF-8
 
-  # Redis：目前只用于笔记详情的读缓存（《技术选型》§5 的 V2 缓存条目）。
+  # Redis：目前只用于笔记详情的读缓存。
   #
   # 前缀是 spring.data.redis，不是 spring.redis。后者在 Boot 3.0 起被标为 error 级废弃
   # （配置元数据里 replacement 已指向 spring.data.redis.*），网上仍有大量旧教程在用，照抄必踩。
@@ -70,11 +70,7 @@ spring:
 
   # RabbitMQ：密码找回邮件的异步投递。只在 jotang.mail.mode=queue 时被真正用到。
   #
-  # 连接坐标用裸名（同 DB_HOST / REDIS_HOST），**刻意不套 JOTANG_ 前缀**：这四个名字已经被
-  # docker-compose.yml 的 RABBITMQ_DEFAULT_USER/PASS 占用，.env 是唯一真源，改名要动两个文件。
-  # OSS / AI 加 JOTANG_ 前缀是为了躲开 sslocal / ossutil 那类通用名，RABBITMQ_* 没有这个问题。
-  #
-  # ⚠ Docker Compose 会自动加载同目录的 .env，**Spring Boot 不会**。所以本机真值要写进
+  # Docker Compose 会自动加载同目录的 .env，**Spring Boot 不会**。所以本机真值要写进
   # application-local.yaml（顶层键，同 DB_PORT 那招），只靠 .env 是不够的——
   # compose 起来了不代表应用连得上。
   rabbitmq:
@@ -98,13 +94,10 @@ spring:
         default-requeue-rejected: false
         retry:
           enabled: true
-          # ⚠ 这一项在 Boot 4 里叫 max-retries，不是老教程里的 max-attempts。
-          # 名字写错**不会报错**——未知属性被静默忽略，于是「重试几次」由默认值说了算，
-          # 而默认值恰好也是 3，所以只有数一数实际调用次数才发现配置根本没生效（已实测）。
-          # 与同文件上面 spring.data.redis 那条「网上大量旧教程仍用 spring.redis」是同一类坑。
+          # 这一项在 Boot 4 里叫 max-retries，不是老教程里的 max-attempts。
           #
-          # 语义是「重试次数」，不含首次：这里是 1 次初始 + 3 次重试 = 最多投递 4 次。
-          # 配合下面的退避就是 2s → 4s → 8s，最坏一条消息占住消费者约 14 秒（已实测）。
+          # 语义是重试次数，不含首次：这里是 1 次初始 + 3 次重试 = 最多投递 4 次。
+          # 配合下面的退避就是 2s → 4s → 8s，最坏一条消息占住消费者约 14 秒。
           max-retries: 3
           initial-interval: 2s
           multiplier: 2.0
@@ -114,6 +107,15 @@ spring:
   # DeepSeek 提供 OpenAI 兼容接口，故复用 openai starter。
   # 六个模态的自动配置默认全都加载（每个的 matchIfMissing 都是 true）。用不到的五个必须显式关掉：
   ai:
+    tools:
+      limits:
+        # 超限的默认行为是 THROW，而 Advisor 会把那句英文超限文案（"Tool call limit (N)
+        # exceeded..."）当成助手回答返回——它会被当成正常回复落进 ai_message。
+        # 改成回一条错误结果，让模型自己收尾。
+        on-limit-exceeded: return-error-response
+        # 单轮上限。一次「检索 + 读正文」最多也就 4 次调用，给到 4 已经宽裕
+        max-calls-per-tool-default: 4
+        max-total-tool-calls: 6
     openai:
       # 缺 key 时整个上下文起不来，但可以留空：
       # 留空时 chat 客户端照样构造成功（它不在启动时校验凭据），只有真去调用才失败 → 50300（§6.8）。
@@ -141,10 +143,6 @@ jwt:
   ttl: ${JWT_TTL:2h}
 
 # OSS：AccessKey 不落仓库，一律外部注入（同 jwt.secret 的做法），本机开发由 application-local.yaml 覆盖。
-#
-# 环境变量一律以 JOTANG_ 开头。不用 OSS_ACCESS_KEY_ID 这类通用名：sslocal、ossutil、阿里云 CLI
-# 和各家 OSS SDK 都用它，机器上一旦存在同名变量就会被静默采用——用错凭据却不报任何错。
-# 加项目前缀后，「本项目读哪些环境变量」有唯一答案：全部 JOTANG_ 打头。
 # bucket 名与 endpoint 不是秘密，给默认值；部署到非成都地域时用环境变量覆盖即可。
 aliyun:
   oss:
@@ -169,18 +167,14 @@ jotang:
     # 这条约束只能在配置层保证，代码里无从校验。留空时不带 From 头，由 JavaMail 用账号默认值
     # （比往 From 里塞空串好，后者会被某些服务器判成非法信头）。
     from: ${JOTANG_MAIL_FROM:${spring.mail.username:}}
-    # 重置链接的前端地址前缀，后端只负责在它后面拼 ?token=...（§6.6）。
+    # 重置链接的前端地址前缀，后端只负责在它后面拼 ?token=...。
     # 前端的实际路由尚未定（§10 的「链接文案与倒计时」），故先给一个本机开发用的默认值；
     # 生产用环境变量覆盖。
     reset-link-base: ${JOTANG_MAIL_RESET_LINK_BASE:http://localhost:5173/reset-password}
-    # 发信走哪条路：smtp = 同步直发（调用方等它发完）；queue = 投进 RabbitMQ，由消费者发。
+    # 发信走哪条路：smtp = 同步直发；queue = 投进 RabbitMQ，由消费者发。
     #
-    # 默认 smtp，是为了**新克隆的仓库不需要任何中间件就能 ./mvnw test 全绿**——
-    # queue 模式所需的两类 Bean（发布者、消费者）都挂在这个开关上，默认压根不注册，
-    # 因此也不会去连一个不存在的 Broker。所以「有没有 RabbitMQ」完全由这一个键决定。
-    #
-    # 代价是部署时可能忘了翻成 queue。用启动时的两条 INFO 横幅兜住：
-    # 「邮件投递方式：RabbitMQ 队列」与「重置邮件消费者已启动」——没看到就是还在 smtp 模式。
+    # 默认 smtp，是为了**新克隆的仓库不需要任何中间件就能 ./mvnw test 全绿
+    # 启动时的两条 INFO：「邮件投递方式：RabbitMQ 队列」与「重置邮件消费者已启动」——没看到就是还在 smtp 模式。
     mode: ${JOTANG_MAIL_MODE:smtp}
 
   purge:

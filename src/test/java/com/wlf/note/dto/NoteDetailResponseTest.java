@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code isOther()} 会被 Jackson 判成属性名 {@code other}）。record 走的是另一套内省路径
  *       （Jackson 3 以 record 组件名称为准），所以这条不能照搬结论，得实测钉住</li>
  *   <li><b>{@code status} / {@code previewMode} 序列化为枚举名</b>（{@code "ONLINE"} /
- *       {@code "PDF_INLINE"}），前端 switch 的就是这两个字面量</li>
+ *       {@code "IMAGE_INLINE"}），前端 switch 的就是这两个字面量</li>
  *   <li><b>非 ONLINE 时 {@code file} 是 JSON {@code null}</b>，而其余字段照常——
  *       这是 §4.1「详情页提示已下架」与「文件字段不外露」两条结论的交界处</li>
  * </ul>
@@ -57,8 +57,8 @@ class NoteDetailResponseTest {
         assertThat(root.get("uploader").get("avatarUrl").asString()).startsWith("https://");
 
         // 文件：对象键不外露
-        assertThat(root.get("file").get("originalName").asString()).isEqualTo("课件.pdf");
-        assertThat(root.get("file").get("previewMode").asString()).isEqualTo("PDF_INLINE");
+        assertThat(root.get("file").get("originalName").asString()).isEqualTo("课件.png");
+        assertThat(root.get("file").get("previewMode").asString()).isEqualTo("IMAGE_INLINE");
         assertThat(root.get("file").has("storageKey")).isFalse();
     }
 
@@ -112,7 +112,7 @@ class NoteDetailResponseTest {
                 43L, 3L, 5L,
                 LocalDateTime.of(2026, 10, 1, 10, 0),
                 LocalDateTime.of(2026, 10, 2, 9, 30),
-                new NoteDetailResponse.FileInfo("课件.pdf", 1048576L, "application/pdf", PreviewMode.PDF_INLINE),
+                new NoteDetailResponse.FileInfo("课件.png", 1048576L, "image/png", PreviewMode.IMAGE_INLINE),
                 true);
     }
 }

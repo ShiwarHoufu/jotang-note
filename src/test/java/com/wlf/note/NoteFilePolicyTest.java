@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>这是预览型 XSS 的唯一防线（§8.3），用例按「白名单放行 / 白名单外拒绝 / 魔数不符 /
  * 文本降级 / 边界」分组，重点是那些<b>写错了也不会立刻暴露</b>的地方——
- * docx 与 zip 魔数同族、跨块边界被切开的多字节字符、藏在合法 UTF-8 里的 NUL。
+ * 被截断的魔数、跨块边界被切开的多字节字符、藏在合法 UTF-8 里的 NUL。
  *
  * <p>几处「可内联预览 / 仅下载」的断言写成 {@code PreviewMode.of(decision.contentType())}：
  * 预览方式已经不在上传判定里（理由见 {@link PreviewMode#of(String)}），而是读取侧由
@@ -25,12 +25,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class NoteFilePolicyTest {
 
-    // ---- 各类文件的合法文件头。尾部多余字节对二进制类型无影响：魔数只校验前缀 ----
-    private static final byte[] PDF = {0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37};          // %PDF-1.7
+    // ---- 白名单内的文件头。尾部多余字节对二进制类型无影响：魔数只校验前缀 ----
     private static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0x00, 0x10};
     private static final byte[] PNG = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00};
     private static final byte[] GIF = {0x47, 0x49, 0x46, 0x38, 0x39, 0x61};                      // GIF89a
     private static final byte[] WEBP = {0x52, 0x49, 0x46, 0x46, 0x1A, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50};
+
+    // ---- 白名单外的文件头，用来验「不认识的类型一律拒」 ----
+    private static final byte[] PDF = {0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37};          // %PDF-1.7
     private static final byte[] ZIP = {0x50, 0x4B, 0x03, 0x04, 0x14, 0x00};
     private static final byte[] RAR = {0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00};
     private static final byte[] SEVEN_Z = {0x37, 0x7A, (byte) 0xBC, (byte) 0xAF, 0x27, 0x1C};
@@ -42,13 +44,8 @@ class NoteFilePolicyTest {
     // ==================== 白名单放行 ====================
 
     @Test
-    void pdfIsAcceptedForInlinePreview() {
-        FileDecision decision = inspect("课件.pdf", PDF);
-
-        assertThat(decision.contentType()).isEqualTo("application/pdf");
-        assertThat(PreviewMode.of(decision.contentType())).isEqualTo(PreviewMode.PDF_INLINE);
-        assertThat(decision.extension()).isEqualTo("pdf");
-        assertThat(decision.originalName()).isEqualTo("课件.pdf");
+    void pdfIsRejected() {
+        assertRejectedWithMessage("课件.pdf", PDF, "不支持的文件类型");
     }
 
     @Test
@@ -68,23 +65,15 @@ class NoteFilePolicyTest {
         assertThat(inspect("a.jpeg", JPEG).extension()).isEqualTo("jpeg");
     }
 
-    /**
-     * docx / xlsx / pptx / zip 的魔数完全一样，类型只能由扩展名区分。
-     * 这组用例锁住的就是「别按魔数推断类型」——否则 docx 会被判成 zip。
-     */
+    /** Office 三件套与压缩包都不在白名单内 */
     @Test
-    void officeAndArchiveFilesAreDownloadOnlyAndKeepDistinctTypes() {
-        assertThat(inspect("论文.docx", ZIP).contentType())
-                .isEqualTo("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-        assertThat(inspect("成绩.xlsx", ZIP).contentType())
-                .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        assertThat(inspect("汇报.pptx", ZIP).contentType())
-                .isEqualTo("application/vnd.openxmlformats-officedocument.presentationml.presentation");
-        assertThat(inspect("资料.zip", ZIP).contentType()).isEqualTo("application/zip");
-        assertThat(inspect("资料.rar", RAR).contentType()).isEqualTo("application/vnd.rar");
-        assertThat(inspect("资料.7z", SEVEN_Z).contentType()).isEqualTo("application/x-7z-compressed");
-
-        assertThat(PreviewMode.of(inspect("论文.docx", ZIP).contentType())).isEqualTo(PreviewMode.DOWNLOAD_ONLY);
+    void officeAndArchiveFilesAreRejected() {
+        assertRejected("论文.docx", ZIP);
+        assertRejected("成绩.xlsx", ZIP);
+        assertRejected("汇报.pptx", ZIP);
+        assertRejected("资料.zip", ZIP);
+        assertRejected("资料.rar", RAR);
+        assertRejected("资料.7z", SEVEN_Z);
     }
 
     @Test
@@ -106,15 +95,15 @@ class NoteFilePolicyTest {
     /** 客户端可能送来带路径的文件名（Windows 浏览器历史上会送全路径） */
     @Test
     void pathInFileNameIsStripped() {
-        assertThat(inspect("../../etc/passwd.pdf", PDF).originalName()).isEqualTo("passwd.pdf");
-        assertThat(inspect("C:\\Users\\张三\\笔记.PDF", PDF).originalName()).isEqualTo("笔记.PDF");
+        assertThat(inspect("../../etc/passwd.png", PNG).originalName()).isEqualTo("passwd.png");
+        assertThat(inspect("C:\\Users\\张三\\笔记.PNG", PNG).originalName()).isEqualTo("笔记.PNG");
     }
 
     @Test
     void sizeExactlyAtLimitIsAccepted() {
-        FileDecision decision = policy.inspect("big.pdf", NoteFilePolicy.MAX_SIZE_BYTES, new ByteArrayInputStream(PDF));
+        FileDecision decision = policy.inspect("big.png", NoteFilePolicy.MAX_SIZE_BYTES, new ByteArrayInputStream(PNG));
 
-        assertThat(decision.extension()).isEqualTo("pdf");
+        assertThat(decision.extension()).isEqualTo("png");
     }
 
     // ==================== 大小与文件名 ====================
@@ -122,7 +111,7 @@ class NoteFilePolicyTest {
     @Test
     void oversizedFileIsRejected() {
         assertThatThrownBy(() ->
-                policy.inspect("big.pdf", NoteFilePolicy.MAX_SIZE_BYTES + 1, new ByteArrayInputStream(PDF)))
+                policy.inspect("big.png", NoteFilePolicy.MAX_SIZE_BYTES + 1, new ByteArrayInputStream(PNG)))
                 .isInstanceOfSatisfying(BusinessException.class, e -> {
                     assertThat(e.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID);
                     assertThat(e.getMessage()).contains("100MB");
@@ -136,12 +125,12 @@ class NoteFilePolicyTest {
 
     @Test
     void overlongFileNameIsRejected() {
-        assertRejectedWithMessage("a".repeat(256) + ".pdf", PDF, "文件名超过");
+        assertRejectedWithMessage("a".repeat(256) + ".png", PNG, "文件名超过");
     }
 
     // ==================== 白名单之外 ====================
 
-    /** svg / html / js 能在 OSS 域名下形成存储型 XSS，是刻意不收的（§6.1、§6.7）；.doc 等旧版 Office 也不在白名单内 */
+    /** svg / html / js 能在 OSS 域名下形成存储型 XSS，是刻意不收的（§6.1、§6.7）；把白名单外的类型都点一遍 */
     @Test
     void unlistedExtensionsAreRejected() {
         assertRejectedWithMessage("evil.svg", text("<svg onload=alert(1)>"), "不支持的文件类型");
@@ -149,6 +138,8 @@ class NoteFilePolicyTest {
         assertRejected("evil.js", text("alert(1)"));
         assertRejected("evil.exe", EXE);
         assertRejected("旧格式.doc", ZIP);
+        assertRejected("讲义.pdf", PDF);
+        assertRejected("打包.zip", ZIP);
     }
 
     @Test
@@ -170,8 +161,8 @@ class NoteFilePolicyTest {
     // ==================== 魔数与扩展名不符 ====================
 
     @Test
-    void executableRenamedToPdfIsRejected() {
-        assertRejectedWithMessage("fake.pdf", EXE, "文件内容与扩展名 .pdf 不符");
+    void executableRenamedToImageIsRejected() {
+        assertRejectedWithMessage("fake.png", EXE, "文件内容与扩展名 .png 不符");
     }
 
     @Test
@@ -179,17 +170,17 @@ class NoteFilePolicyTest {
         assertRejected("fake.jpg", PNG);
     }
 
-    /** PK 头冒充 PDF：魔数族不对，不能因为「都是文件头」就放行 */
+    /** PK 头冒充 PNG：魔数族不对，不能因为「都是文件头」就放行 */
     @Test
-    void zipRenamedToPdfIsRejected() {
-        assertRejected("fake.pdf", ZIP);
+    void zipRenamedToPngIsRejected() {
+        assertRejected("fake.png", ZIP);
     }
 
     /** 文件头被截断：前缀对得上但长度不够，属于残缺文件，一律拒 */
     @Test
     void truncatedMagicIsRejected() {
-        assertRejected("broken.pdf", new byte[]{0x25, 0x50, 0x44, 0x46});
-        assertRejected("broken.zip", new byte[]{0x50, 0x4B, 0x03});
+        assertRejected("broken.png", new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47});
+        assertRejected("broken.webp", bytes(0x52, 0x49, 0x46, 0x46));
     }
 
     // ==================== md / txt 的降级校验 ====================
@@ -233,12 +224,12 @@ class NoteFilePolicyTest {
 
     @Test
     void objectKeyFollowsDocumentedLayout() {
-        assertThat(policy.objectKey("pdf")).matches("notes/\\d{4}/\\d{2}/[0-9a-f-]{36}\\.pdf");
+        assertThat(policy.objectKey("png")).matches("notes/\\d{4}/\\d{2}/[0-9a-f-]{36}\\.png");
     }
 
     @Test
     void objectKeyIsUniquePerCall() {
-        assertThat(policy.objectKey("pdf")).isNotEqualTo(policy.objectKey("pdf"));
+        assertThat(policy.objectKey("png")).isNotEqualTo(policy.objectKey("png"));
     }
 
     // ==================== 辅助 ====================

@@ -66,6 +66,12 @@ public class NoteService {
      */
     private static final Duration DETAIL_CACHE_TTL = Duration.ofMinutes(10);
 
+    /**
+     * 标题精确检索的硬上限。它只是护栏——真正取几条由调用方决定；设它是为了不让一个传错的
+     * 大数字变成一条扫回半个表的查询。
+     */
+    private static final int MAX_TITLE_SEARCH_LIMIT = 20;
+
     private final NoteMapper noteMapper;
     private final NoteFileMapper noteFileMapper;
     private final NoteTagMapper noteTagMapper;
@@ -500,7 +506,8 @@ public class NoteService {
      * <b>能改这篇笔记的元数据，就该能拿它的附件生成一段摘要</b>；反过来说，
      * 已经删掉的笔记没有任何理由再为它读一次 OSS。
      *
-     * <p><b>这是 ai 模块唯一的读入口</b>（§1.1「跨模块访问」的第三个实例）：ai 要的是
+     * <p><b>这是 ai 模块读附件的入口之一</b>（§1.1「跨模块访问」的第三个实例）——另两个是
+     * {@link #findOnlineByExactTitle} 与 {@link #readableOnlineFile}。它们要的是
      * 「附件在 OSS 的哪个键、当前用户能不能读」，属纯读路径，故走本类而不是让 ai 直接注入
      * {@link NoteMapper}。方向是单向的 ai → note——ai 的入口在它自己的 Controller 上，
      * note 不反向依赖 ai，因此<b>不构成构造器循环依赖</b>。这正是它与
@@ -524,6 +531,62 @@ public class NoteService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         if (NoteStatus.valueOf(row.getStatus()) == NoteStatus.DELETED) {
+            throw new BusinessException(ErrorCode.NOTE_UNAVAILABLE);
+        }
+        return row;
+    }
+
+    /**
+     * 供 ai 对话的检索工具使用：全站 {@code ONLINE} 笔记按<b>标题精确匹配</b>。
+     *
+     * <p><b>刻意不用 {@code LIKE}</b>。精确匹配顺带消掉了两个坑：{@code %} / {@code _} 不参与
+     * 模式匹配，所以没有通配符转义这回事；等值命中走 B-Tree，也就没有前导通配带来的全表扫描。
+     * 代价是调用方必须知道完整标题——这是产品口径（§6.8），不是实现取舍。
+     *
+     * <p>与 {@link #list} 同口径只出 {@code ONLINE}；与 {@link #requireOwnFile} 不同的是
+     * <b>不做归属判定</b>——检索范围是全站。
+     *
+     * <p>单表查询故走 MyBatis-Plus 而不是 {@code NoteMapper.xml}（§1.1）。也刻意不 JOIN
+     * {@code course}：课程名对「总结这篇笔记」不是必需，为它多一条 XML 语句不划算。
+     *
+     * @param title 完整标题；null / 空白视为无命中
+     * @return 命中的行，按最近更新倒序；无命中返回空列表，不抛异常
+     */
+    public List<NoteSearchHit> findOnlineByExactTitle(String title, int limit) {
+        if (title == null || title.isBlank()) {
+            return List.of();
+        }
+        // LIMIT 只能靠拼接（MyBatis-Plus 的分页会额外发一条 count，这里用不上），
+        // 但拼进去的是被夹进正区间、且有硬上限的 int，不来自字符串输入
+        int capped = Math.min(Math.max(limit, 1), MAX_TITLE_SEARCH_LIMIT);
+
+        return noteMapper.selectList(Wrappers.<Note>lambdaQuery()
+                        .eq(Note::getStatus, NoteStatus.ONLINE.name())
+                        .eq(Note::getTitle, title.strip())
+                        .orderByDesc(Note::getUpdatedAt)
+                        .orderByDesc(Note::getId)
+                        .last("LIMIT " + capped))
+                .stream()
+                .map(row -> new NoteSearchHit(row.getId(), row.getTitle(), row.getTeacher(), row.getSummary()))
+                .toList();
+    }
+
+    /**
+     * 供 ai 对话的读正文工具使用：取任意在线笔记的附件位置。与 {@link #requireOwnFile}
+     * <b>只差一件事——归属不参与判定</b>，因为检索范围是全站：任何登录用户都能让模型
+     * 读一篇在线笔记的正文（这是产品决策，见 §8.4 的已知限制）。
+     *
+     * <p>同样只读、不加锁，理由与 {@link #requireOwnFile} 一字不差：读完就结束了，
+     * 后面跟着的是一次 OSS 读和一次可能几十秒的模型调用，期间没有本行的写入。
+     *
+     * @throws BusinessException 40400 笔记不存在；40301 已下架或已删除
+     */
+    public NoteFileOwnershipRow readableOnlineFile(Long noteId) {
+        NoteFileOwnershipRow row = noteMapper.selectFileOwnership(noteId);
+        if (row == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND);
+        }
+        if (NoteStatus.valueOf(row.getStatus()) != NoteStatus.ONLINE) {
             throw new BusinessException(ErrorCode.NOTE_UNAVAILABLE);
         }
         return row;

@@ -58,7 +58,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class NoteControllerTest {
 
     private static final String MARKER = "ZZTEST-";
-    private static final byte[] PDF = {0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37};
+    private static final byte[] PNG = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
 
     @Autowired
     private MockMvc mockMvc;
@@ -101,7 +101,7 @@ class NoteControllerTest {
     @Test
     void uploadRequiresLogin() throws Exception {
         mockMvc.perform(multipart("/api/notes")
-                        .file(pdf())
+                        .file(png())
                         .param("title", "标题")
                         .param("courseId", String.valueOf(courseId)))
                 .andExpect(status().isUnauthorized())
@@ -111,7 +111,7 @@ class NoteControllerTest {
     @Test
     void uploadRejectsBlankTitle() throws Exception {
         mockMvc.perform(multipart("/api/notes")
-                        .file(pdf())
+                        .file(png())
                         .param("title", "   ")
                         .param("courseId", String.valueOf(courseId))
                         .header("Authorization", token()))
@@ -124,7 +124,7 @@ class NoteControllerTest {
     @Test
     void uploadRejectsUnknownCourse() throws Exception {
         mockMvc.perform(multipart("/api/notes")
-                        .file(pdf())
+                        .file(png())
                         .param("title", "标题")
                         .param("courseId", "999999999")
                         .header("Authorization", token()))
@@ -149,7 +149,7 @@ class NoteControllerTest {
     @Test
     void uploadCreatesNoteAndReturnsItsId() throws Exception {
         String body = mockMvc.perform(multipart("/api/notes")
-                        .file(pdf())
+                        .file(png())
                         .param("title", "  期中复习提纲  ")
                         .param("courseId", String.valueOf(courseId))
                         .param("tags", MARKER + "期末")
@@ -514,10 +514,10 @@ class NoteControllerTest {
 
         NoteFile file = new NoteFile();
         file.setNoteId(note.getId());
-        file.setStorageKey("notes/2026/10/" + UUID.randomUUID() + ".pdf");
-        file.setOriginalName("课件.pdf");
+        file.setStorageKey("notes/2026/10/" + UUID.randomUUID() + ".png");
+        file.setOriginalName("课件.png");
         file.setSize(1024L);
-        file.setContentType("application/pdf");
+        file.setContentType("image/png");
         noteFileMapper.insert(file);
 
         return note.getId();
@@ -535,8 +535,8 @@ class NoteControllerTest {
         return course.getId();
     }
 
-    private MockMultipartFile pdf() {
-        return new MockMultipartFile("file", "笔记.pdf", "application/pdf", PDF);
+    private MockMultipartFile png() {
+        return new MockMultipartFile("file", "笔记.png", "image/png", PNG);
     }
 
     private String token() {

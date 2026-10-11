@@ -21,8 +21,8 @@ import java.util.function.Predicate;
  * 三条各持一份；而「字节是什么类型」是同一个事实，共用 {@link FileMagic}，不复制。
  *
  * <p><b>白名单是 {@code NoteFilePolicy} 的真子集</b>：只有四种光栅图。模型的多模态输入
- * 不收任何其它格式（pdf / docx / xlsx / pptx 都不行，§6.8），所以在这里多放一种进来
- * 不是「宽容」，而是把一个注定失败的请求推给上游、白花一次计费。
+ * 不收任何其它格式（§6.8），所以在这里多放一种进来不是「宽容」，
+ * 而是把一个注定失败的请求推给上游、白花一次计费。
  *
  * <p><b>与另两条链路不同，本策略不产出「决策记录」</b>：那两条的记录里带 {@code extension}，
  * 是为了拼 OSS 对象键（§6.1 的 {@code notes/yyyy/MM/...}、§6.7 的 {@code avatars/{userId}/...}）；
@@ -88,7 +88,7 @@ public class AiSummaryImagePolicy {
         String extension = extensionOf(sanitizeName(originalName));
         Format format = FORMATS.get(extension);
         if (format == null) {
-            // pdf / docx / zip 以及一切没列进来的类型都从这里出去。这里必须挡住而不是放行：
+            // md / txt、svg / html 以及一切没列进来的类型都从这里出去。这里必须挡住而不是放行：
             // 模型收不了这些格式，放过去只会白花一次计费再拿回一个上游错误（§6.8）
             throw new BusinessException(ErrorCode.FILE_INVALID,
                     "AI 摘要目前只支持 jpg / png / gif / webp 图片");

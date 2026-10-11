@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * {@link PasswordResetRateLimiter} 的单元测试：纯对象，不起 Spring 上下文，也不碰时钟。
  *
- * <p>与 {@code AiSummaryRateLimiterTest} 一样，本类<b>不假装验证「窗口翻篇」</b>——
+ * <p>与 {@code AiRateLimiterTest} 一样，本类<b>不假装验证「窗口翻篇」</b>——
  * 没有可注入的时钟，窗口滑过后的恢复由 {@code Window#isExpired} 的形状决定，
  * 在 {@code 密码找回.md} 的「未覆盖的部分」里如实记着。
  */

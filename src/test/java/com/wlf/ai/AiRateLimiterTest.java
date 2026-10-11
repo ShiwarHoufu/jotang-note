@@ -4,23 +4,25 @@ import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * {@link AiSummaryRateLimiter} 的单元测试：纯对象，不起 Spring 上下文，也不碰时钟。
+ * {@link AiRateLimiter} 的单元测试：纯对象，不起 Spring 上下文，也不碰时钟。
  *
  * <p>固定窗口在测试里不推进时间——本类没有可注入的时钟，所以只验「窗口内的行为」：
- * 额度、用户隔离、以及超额后的错误码。窗口翻篇由 {@code Window#isExpired} 的构造决定，
- * 不在这里假装验证。
+ * 额度、用户隔离、实例隔离、以及超额后的错误码。窗口翻篇由 {@code Window#isExpired}
+ * 的构造决定，不在这里假装验证。
  */
-class AiSummaryRateLimiterTest {
+class AiRateLimiterTest {
 
-    /** 与 {@code AiSummaryRateLimiter#MAX_REQUESTS} 对齐（《概要设计》§7.1 的建议值） */
+    /** 与 {@code AiConfig#aiSummaryRateLimiter} 对齐（《概要设计》§7.1 的建议值） */
     private static final int MAX_REQUESTS = 10;
 
-    private final AiSummaryRateLimiter limiter = new AiSummaryRateLimiter();
+    private final AiRateLimiter limiter = new AiRateLimiter(MAX_REQUESTS, Duration.ofHours(1), "生成");
 
     @Test
     void requestsUpToTheLimitAreAllowed() {
@@ -67,5 +69,30 @@ class AiSummaryRateLimiterTest {
         }
         assertThatThrownBy(() -> limiter.requireSlot(100L)).isInstanceOf(BusinessException.class);
         assertThatCode(() -> limiter.requireSlot(200L)).doesNotThrowAnyException();
+    }
+
+    /**
+     * <b>两个实例各算各的额度</b>——这正是摘要与对话不共用一个 Bean 的理由：
+     * 共用一个桶的话，「点满摘要」会把聊天一起卡死，而两者的代价差一个数量级。
+     */
+    @Test
+    void instancesDoNotShareTheirQuota() {
+        AiRateLimiter chat = new AiRateLimiter(MAX_REQUESTS, Duration.ofHours(1), "对话");
+        for (int i = 0; i < MAX_REQUESTS; i++) {
+            limiter.requireSlot(1L);
+        }
+        assertThatThrownBy(() -> limiter.requireSlot(1L)).isInstanceOf(BusinessException.class);
+
+        assertThatCode(() -> chat.requireSlot(1L)).doesNotThrowAnyException();
+    }
+
+    /** 被拒文案的主语来自装配：两条接口共用一套窗口簿记，但对用户得各说各的话 */
+    @Test
+    void rejectionMessageCarriesTheConfiguredAction() {
+        for (int i = 0; i < MAX_REQUESTS; i++) {
+            limiter.requireSlot(1L);
+        }
+
+        assertThatThrownBy(() -> limiter.requireSlot(1L)).hasMessageContaining("生成过于频繁");
     }
 }

@@ -327,13 +327,13 @@ class NoteDeleteServiceTest {
 
         // 直接插 note_file 而不走上传流程：本用例验的是删除，把 NoteFilePolicy 与 OSS 拖进来
         // 只会让夹具变长，而对象键只要是个确定值就够了
-        String storageKey = "notes/2026/10/" + UUID.randomUUID() + ".pdf";
+        String storageKey = "notes/2026/10/" + UUID.randomUUID() + ".png";
         NoteFile file = new NoteFile();
         file.setNoteId(note.getId());
         file.setStorageKey(storageKey);
-        file.setOriginalName("课件.pdf");
+        file.setOriginalName("课件.png");
         file.setSize(1048576L);
-        file.setContentType("application/pdf");
+        file.setContentType("image/png");
         noteFileMapper.insert(file);
 
         return new Fixture(note.getId(), file.getId(), uploaderId, storageKey);

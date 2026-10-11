@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * {@link NoteService#requireOwnFile} 的用例。见《概要设计》§5.8（ai 模块的编辑场景）。
  *
- * <p><b>为什么值得为它单独起真库</b>：{@code AiSummaryService} 的单元测试把 note 层整个
+ * <p><b>为什么值得为它单独起真库</b>：{@code AiService} 的单元测试把 note 层整个
  * mock 掉了，于是 {@code selectFileOwnership} 这条新 SQL 一次都不会被执行——列名映射错了
  * 没有任何测试会红。这类错误不会报异常，只会安静地给出 {@code null}：
  *

@@ -27,15 +27,8 @@ public interface FavoriteMapper extends BaseMapper<Favorite> {
     /**
      * 某个用户的收藏，一页。见 §5.5、§6.5。
      *
-     * <p>第一个参数必须是 {@code IPage}：分页插件靠它识别出这是分页查询，并自动改写出一条
-     * count 语句（{@code optimizeCountSql} 会顺手去掉 {@code ORDER BY}）。条数不由调用方传，
-     * 由 {@code page} 对象携带。
-     *
-     * <p><b>不筛 {@code note.status}</b>：三种状态都要取回来交给 Service 渲染占位
-     * （§6.5「不解除收藏关系」），再筛一次就等于把占位项做没了。
-     *
-     * <p>入参是「谁在看」而不是「看谁」：这个列表只有本人能看，所以只需要 {@code userId}。
-     * 用户 id 取自 JWT，绝不能由请求参数传入——否则任何人都能翻别人的收藏。
+     * <p>不筛 {@code note.status}：三种状态都要取回来交给 Service 渲染占位；
+     * 入参是「谁在看」而不是「看谁」：这个列表只有本人能看，所以只需要 {@code userId}。
      *
      * @return 一页数据，按收藏时间倒序；{@code total} 由插件回填到返回的 {@code IPage} 上
      */

@@ -19,9 +19,8 @@ import org.springframework.web.multipart.MultipartFile;
  * 带字段明细的 40001。
  *
  * <p>{@code title} / {@code teacher} <b>是可选的上下文，不是校验对象</b>：它们只被拼进 prompt，
- * 帮模型判断这张图讲的是什么（一张板书照片本身没有标题）。前端此刻的表单可能还没填完，
- * 所以缺了也照常生成（§6.8）。上限照抄建表语句的列宽（{@code note.title} 128、
- * {@code note.teacher} 64），理由与上传一致：让超长输入得到字段级的 40001。
+ * 帮模型判断这张图讲的是什么。前端此刻的表单可能还没填完，
+ * 所以缺了也照常生成（§6.8）。
  */
 @Getter
 @Setter

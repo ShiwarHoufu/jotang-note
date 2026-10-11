@@ -49,7 +49,6 @@ public class FavoriteController {
      * 只有笔记本身不存在才是 40400。
      *
      * <p>笔记已下架 / 已删除时<b>照常允许取消</b>：不然收藏列表里的占位项永远清不掉。
-     * 这与收藏接口的 40301 不对称，理由见 {@code FavoriteService#unfavorite}。
      */
     @DeleteMapping("/api/notes/{id}/favorite")
     public ApiResponse<FavoriteCountResponse> unfavorite(@AuthenticationPrincipal AuthenticatedUser user,

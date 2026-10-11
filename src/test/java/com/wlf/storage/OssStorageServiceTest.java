@@ -159,12 +159,11 @@ class OssStorageServiceTest {
      * 否则 OSS 会把它当成附件下载并在保存时改名。
      *
      * <p><b>注意</b>：拿这个 URL 在浏览器地址栏直接打开会被 OSS <b>强制下载</b>。默认域名
-     * （*.aliyuncs.com）会对图片、PDF 等类型附加 {@code Content-Disposition: attachment}
+     * （*.aliyuncs.com）会对图片等类型附加 {@code Content-Disposition: attachment}
      * 与 {@code x-oss-force-download: true}（实测确认，阿里云错误码 0048-00000101），
      * 显式请求 inline 也压不过它。但这只影响「导航」场景：前端用 {@code <img src>} 加载
-     * 子资源时浏览器会忽略该响应头，图片照常显示；真正受影响的只有必须走 {@code <iframe>}
-     * 的 PDF 预览。详见《概要设计》§6.2。故本用例只断言「URL 由我们构造正确」，
-     * 不对那个由平台强加的响应头做断言。
+     * 子资源时浏览器会忽略该响应头，图片照常显示。详见《概要设计》§6.2。故本用例只断言
+     * 「URL 由我们构造正确」，不对那个由平台强加的响应头做断言。
      */
     @Test
     void previewUrlCarriesInlineDispositionAndNoDownloadName() throws Exception {

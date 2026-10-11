@@ -95,10 +95,10 @@ public class OssStorageService implements StorageService {
 
             // 显式声明 Content-Disposition
             // 预览声明 inline 只是表达意图，它在默认域名下**并不生效**：OSS 默认域名
-            //（*.aliyuncs.com）会对图片 / PDF 等类型强制附加 Content-Disposition: attachment
+            //（*.aliyuncs.com）会对图片等类型强制附加 Content-Disposition: attachment
             // 与 x-oss-force-download: true（实测确认，错误码 0048-00000101），策略压过我们写的值。
             // 该策略只作用于「导航」场景：前端用 <img> 加载子资源时浏览器会忽略它，故图片预览
-            // 依然可用；受影响的只有必须走 <iframe> 的 PDF（见 §6.2、§10）。
+            // 依然可用。
             // 改用自定义域名后该策略不再适用，此处的 inline 才会真正起作用。
             //
             // Content-Type 刻意不碰：它取自对象元数据（上传时由服务端判定并写入），

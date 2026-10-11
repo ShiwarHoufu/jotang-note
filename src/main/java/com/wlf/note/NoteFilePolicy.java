@@ -24,28 +24,12 @@ import java.util.UUID;
 import java.util.function.Predicate;
 
 /**
- * 上传文件的准入判定与对象键生成。见《概要设计》§6.1。
+ * 上传文件的准入判定与对象键生成。
  *
- * <p><b>这是预览型 XSS 的唯一防线。</b>§8.3 说得很直白：图片 / PDF 预览的
- * {@code Content-Type} 取自上传时写入对象元数据的服务端判定值，读取时无从覆写
- * （OSS 自 2025-01-20 起禁止签名 URL 覆盖 {@code response-content-type}），
- * 因此类型的正确性完全押在这一层上——一旦放进来一个 svg 或 html，
- * 它就会被当作图片或 PDF 内联渲染在 OSS 域名下。故采用<b>白名单</b>而非黑名单：
- * 只有明确认识的扩展名才可能通过，其余一律 42200。
+ * <p>这是预览型 XSS 的唯一防线。
  *
  * <p>判定顺序（先便宜的、后昂贵的）：文件名与大小 → 扩展名白名单 → 魔数 →
  * 仅对无魔数的 md/txt 降级做全量 UTF-8 解码。
- *
- * <p><b>关于 {@code PK\x03\x04} 这个坑</b>：docx / xlsx / pptx / zip 的魔数完全一样，
- * 光看文件头区分不了。所以 {@code content_type} 一律由<b>扩展名</b>映射，魔数只负责确认
- * 「确实属于这一族」。反过来写成「按魔数推断类型」的话，docx 会被判成 zip，
- * 而且测试还很难发现——因为两者都能通过校验。这正是本节把类型表按扩展名组织的原因。
- *
- * <p><b>关于 md / txt</b>：这类文件没有魔数可验，§6.1 要求降级为
- * 「扩展名 + UTF-8 可解码 + 无 NUL 字节」。这一步是 O(n) 全量扫描，代价只在文本类型上发生；
- * 它的目的不是防 XSS（{@code /raw} 固定返回 {@code text/plain} 且带 {@code nosniff}，
- * 本就不给浏览器解析的机会），而是把「二进制文件改个 .txt 后缀」挡在门外，
- * 免得代理接口去流式转发一堆乱码。
  */
 @Slf4j
 @Component
@@ -95,27 +79,12 @@ public class NoteFilePolicy {
         formats.put("md", new Format("text/markdown", null));
         formats.put("txt", new Format("text/plain", null));
 
-        // 浏览器可内联渲染的单一格式
-        formats.put("pdf", new Format("application/pdf", FileMagic::pdf));
+        // 浏览器可内联渲染的光栅图
         formats.put("jpg", new Format("image/jpeg", FileMagic::jpeg));
         formats.put("jpeg", new Format("image/jpeg", FileMagic::jpeg));
         formats.put("png", new Format("image/png", FileMagic::png));
         formats.put("gif", new Format("image/gif", FileMagic::gif));
         formats.put("webp", new Format("image/webp", FileMagic::webp));
-
-        // 仅下载。注意四者的魔数完全相同，类型只能由扩展名区分
-        formats.put("docx", new Format(
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                FileMagic::zip));
-        formats.put("xlsx", new Format(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                FileMagic::zip));
-        formats.put("pptx", new Format(
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                FileMagic::zip));
-        formats.put("zip", new Format("application/zip", FileMagic::zip));
-        formats.put("rar", new Format("application/vnd.rar", FileMagic::rar));
-        formats.put("7z", new Format("application/x-7z-compressed", FileMagic::sevenZip));
 
         return Map.copyOf(formats);
     }
@@ -184,7 +153,7 @@ public class NoteFilePolicy {
      * 清洗文件名：去掉路径、校验长度。
      *
      * <p>浏览器一般只送文件名，但客户端是可控的——{@code ../../etc/passwd} 或
-     * {@code C:\Users\x\笔记.pdf} 都可能被送上来。这里只留最后一段，
+     * {@code C:\Users\x\笔记.png} 都可能被送上来。这里只留最后一段，
      * 落库的 {@code original_name} 与下载时还原的文件名都以本结果为准。
      */
     private static String sanitizeName(String originalName) {

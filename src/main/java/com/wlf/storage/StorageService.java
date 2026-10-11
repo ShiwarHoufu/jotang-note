@@ -34,7 +34,7 @@ public interface StorageService {
      * <p>用途是 §6.2 的 MD / 文本预览：这类文件体积小，由后端代理转发而不是签发直连 URL，
      * 以便固定响应头（{@code Content-Type: text/plain; charset=utf-8} 与
      * {@code X-Content-Type-Options: nosniff}），不给浏览器直接解析原文件的机会。
-     * 图片 / PDF 不走这里，它们走 {@link #presignedUrl} 直连 OSS。
+     * 图片不走这里，它走 {@link #presignedUrl} 直连 OSS。
      *
      * <p>刻意返回 {@code InputStream} 而非 OSS SDK 的 {@code OSSObject}：不让 SDK 类型
      * 泄漏进业务层，V2 平替 MinIO 时本签名无需改动。响应头、状态校验等流程留在调用方。

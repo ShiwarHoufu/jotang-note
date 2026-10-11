@@ -59,10 +59,10 @@ class NoteServiceTest {
 
     private static final String MARKER = "ZZTEST-";
 
-    /** 文件头是 {@code %PDF-1.7}，够过魔数校验 */
-    private static final byte[] PDF = {0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37};
+    /** PNG 的文件头，够过魔数校验 */
+    private static final byte[] PNG = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
 
-    /** Windows 可执行文件的 MZ 头，用来冒充 PDF */
+    /** Windows 可执行文件的 MZ 头，用来冒充图片 */
     private static final byte[] EXE = {0x4D, 0x5A, (byte) 0x90, 0x00, 0x03, 0x00};
 
     @Autowired
@@ -128,9 +128,9 @@ class NoteServiceTest {
 
         NoteFile file = noteFileMapper.selectOne(
                 Wrappers.<NoteFile>lambdaQuery().eq(NoteFile::getNoteId, created.id()));
-        assertThat(file.getOriginalName()).isEqualTo("笔记.pdf");
-        assertThat(file.getContentType()).isEqualTo("application/pdf");
-        assertThat(file.getSize()).isEqualTo(PDF.length);
+        assertThat(file.getOriginalName()).isEqualTo("笔记.png");
+        assertThat(file.getContentType()).isEqualTo("image/png");
+        assertThat(file.getSize()).isEqualTo(PNG.length);
         assertThat(file.getIsPurged()).isZero();
 
         assertThat(tagNamesOf(created.id()))
@@ -144,10 +144,10 @@ class NoteServiceTest {
         NoteFile file = noteFileMapper.selectOne(
                 Wrappers.<NoteFile>lambdaQuery().eq(NoteFile::getNoteId, created.id()));
         // 对象键是重命名后的 notes/yyyy/MM/{uuid}.{ext}，不含原始文件名（§6.1）
-        assertThat(file.getStorageKey()).matches("notes/\\d{4}/\\d{2}/[0-9a-f-]{36}\\.pdf");
+        assertThat(file.getStorageKey()).matches("notes/\\d{4}/\\d{2}/[0-9a-f-]{36}\\.png");
 
         verify(storageService).upload(eq(Bucket.NOTE), eq(file.getStorageKey()), any(),
-                eq((long) PDF.length), eq("application/pdf"), isNull());
+                eq((long) PNG.length), eq("image/png"), isNull());
     }
 
     /** 标签不存在时由上传流程当场创建，而不是拒绝请求（需求 §2「标签」决策） */
@@ -189,7 +189,7 @@ class NoteServiceTest {
     @Test
     void unacceptableFileIsRejectedBeforeTouchingStorage() {
         NoteUploadRequest request = request("标题", null, null, List.of());
-        request.setFile(new MockMultipartFile("file", "伪装.pdf", "application/pdf", EXE));
+        request.setFile(new MockMultipartFile("file", "伪装.png", "image/png", EXE));
 
         assertThatThrownBy(() -> noteService.upload(uploaderId, request))
                 .isInstanceOfSatisfying(BusinessException.class, e ->
@@ -208,9 +208,9 @@ class NoteServiceTest {
      */
     @Test
     void objectIsPurgedWhenInsertFails() {
-        String key = "notes/2026/10/" + UUID.randomUUID() + ".pdf";
+        String key = "notes/2026/10/" + UUID.randomUUID() + ".png";
         when(storageService.upload(eq(Bucket.NOTE), anyString(), any(), anyLong(), anyString(), isNull()))
-                .thenReturn(new StoredObject(key, "application/pdf", PDF.length));
+                .thenReturn(new StoredObject(key, "image/png", PNG.length));
 
         noteService.upload(uploaderId, request("第一篇", null, null, List.of()));
 
@@ -220,6 +220,62 @@ class NoteServiceTest {
         verify(storageService).delete(Bucket.NOTE, key);
     }
 
+    // ==================== 按标题精确检索（ai 对话的工具） ====================
+
+    /** 精确匹配：标题不完整就不命中。这是产品口径，不是 LIKE 的近似实现 */
+    @Test
+    void titleSearchMatchesTheWholeTitleOnly() {
+        Long noteId = noteService.upload(uploaderId, request("期中复习提纲", null, null, List.of())).id();
+
+        assertThat(noteService.findOnlineByExactTitle("期中", 5)).isEmpty();
+        assertThat(noteService.findOnlineByExactTitle("期中复习提纲", 5))
+                .singleElement()
+                .satisfies(hit -> assertThat(hit.noteId()).isEqualTo(noteId));
+    }
+
+    /**
+     * {@code %} 在标题里是字面量而不是通配符——精确匹配压根不做模式匹配，所以这里既不需要
+     * 转义，也不该有「关键词里的 % 命中全站」这回事。用一个只差一个字符的邻居钉住它。
+     */
+    @Test
+    void percentInTheTitleIsLiteralNotAWildcard() {
+        noteService.upload(uploaderId, request("100%通关", null, null, List.of()));
+        noteService.upload(uploaderId, request("100X通关", null, null, List.of()));
+
+        assertThat(noteService.findOnlineByExactTitle("100%通关", 5))
+                .singleElement()
+                .satisfies(hit -> assertThat(hit.title()).isEqualTo("100%通关"));
+    }
+
+    /** 与列表 / 搜索同口径：只出 ONLINE，已下架与已删除都检索不到 */
+    @Test
+    void titleSearchSeesOnlyOnlineNotes() {
+        Long offlined = noteService.upload(uploaderId, request("将被下架", null, null, List.of())).id();
+        Long deleted = noteService.upload(uploaderId, request("将被删除", null, null, List.of())).id();
+        noteService.adminOffline(offlined);
+        noteService.delete(deleted, uploaderId);
+
+        assertThat(noteService.findOnlineByExactTitle("将被下架", 5)).isEmpty();
+        assertThat(noteService.findOnlineByExactTitle("将被删除", 5)).isEmpty();
+    }
+
+    /** 标题在库上没有唯一约束，同名多篇按最近更新倒序——同一秒内落库的靠 id 兜底，结果仍然确定 */
+    @Test
+    void sameTitleNotesComeBackNewestFirst() {
+        Long first = noteService.upload(uploaderId, request("同名", null, null, List.of())).id();
+        Long second = noteService.upload(uploaderId, request("同名", null, null, List.of())).id();
+
+        assertThat(noteService.findOnlineByExactTitle("同名", 5))
+                .extracting(NoteSearchHit::noteId)
+                .containsExactly(second, first);
+    }
+
+    @Test
+    void blankTitleIsNoMatch() {
+        assertThat(noteService.findOnlineByExactTitle("   ", 5)).isEmpty();
+        assertThat(noteService.findOnlineByExactTitle(null, 5)).isEmpty();
+    }
+
     private NoteUploadRequest request(String title, String summary, String teacher, List<String> tags) {
         NoteUploadRequest request = new NoteUploadRequest();
         request.setTitle(title);
@@ -227,7 +283,7 @@ class NoteServiceTest {
         request.setTeacher(teacher);
         request.setCourseId(courseId);
         request.setTags(tags);
-        request.setFile(new MockMultipartFile("file", "笔记.pdf", "application/pdf", PDF));
+        request.setFile(new MockMultipartFile("file", "笔记.png", "image/png", PNG));
         return request;
     }
 

@@ -45,7 +45,7 @@ class RedisConfigTest {
         assertThat(restored.row().getId()).isEqualTo(7L);
         assertThat(restored.row().getTitle()).isEqualTo("笔记标题");
         assertThat(restored.row().getStatus()).isEqualTo("ONLINE");
-        assertThat(restored.row().getContentType()).isEqualTo("application/pdf");
+        assertThat(restored.row().getContentType()).isEqualTo("image/png");
         assertThat(restored.row().getCollegeName()).isEqualTo("计算机学院");
         // 时间类型：序列化丢精度的话这里最先红
         assertThat(restored.row().getCreatedAt()).isEqualTo(LocalDateTime.of(2026, 10, 9, 12, 30, 45));
@@ -90,9 +90,9 @@ class RedisConfigTest {
         row.setFavoriteCount(1L);
         row.setCreatedAt(LocalDateTime.of(2026, 10, 9, 12, 30, 45));
         row.setUpdatedAt(LocalDateTime.of(2026, 10, 9, 12, 30, 45));
-        row.setOriginalName("课件.pdf");
+        row.setOriginalName("课件.png");
         row.setSize(1048576L);
-        row.setContentType("application/pdf");
+        row.setContentType("image/png");
         row.setCourseId(2L);
         row.setCourseName("数据结构");
         row.setUploaderId(3L);

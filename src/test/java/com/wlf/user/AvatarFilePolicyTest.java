@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * 一旦放进来 svg / html 就是 OSS 域名下的存储型 XSS。故本类的重点全在「白名单之外一律拒绝」
  * 与「扩展名与魔数必须一致」这两条上。
  *
- * <p>注意头像白名单是 note 那张表的<b>子集</b>：gif / pdf 在笔记里合法，在头像里不合法。
+ * <p>注意头像白名单是 note 那张表的<b>子集</b>：gif 在笔记里合法，在头像里不合法。
  * 这条差异正是两个策略类各持一份白名单的理由（见 {@link AvatarFilePolicy} 类注释）。
  */
 class AvatarFilePolicyTest {
@@ -28,6 +28,7 @@ class AvatarFilePolicyTest {
     private static final byte[] WEBP = {0x52, 0x49, 0x46, 0x46, 0x1A, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50};
     /** note 的合法类型，但不是头像的 */
     private static final byte[] GIF = {0x47, 0x49, 0x46, 0x38, 0x39, 0x61};
+    /** 两边都不收，用来验「白名单之外一律拒」 */
     private static final byte[] PDF = {0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37};
     /** Windows 可执行文件的 MZ 头，用来冒充图片 */
     private static final byte[] EXE = {0x4D, 0x5A, (byte) 0x90, 0x00, 0x03, 0x00};
@@ -77,7 +78,7 @@ class AvatarFilePolicyTest {
         assertThatThrownBy(() -> inspect("evil.js", html)).isInstanceOf(BusinessException.class);
     }
 
-    /** gif / pdf 是 note 的合法类型，头像不收——白名单是子集，不是同一张表 */
+    /** gif 是 note 的合法类型，头像不收——白名单是子集，不是同一张表 */
     @Test
     void typesValidForNotesAreRejectedForAvatars() {
         assertThatThrownBy(() -> inspect("动图.gif", GIF)).isInstanceOf(BusinessException.class);

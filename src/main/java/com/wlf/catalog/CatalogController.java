@@ -29,7 +29,7 @@ public class CatalogController {
     }
 
     /**
-     * 学院列表。不需要登录。<br>
+     * 学院列表。不需要登录。
      * 注册表单与筛选的下拉数据源。
      */
     @GetMapping("/api/colleges")
@@ -38,8 +38,7 @@ public class CatalogController {
     }
 
     /**
-     * 课程列表。{@code keyword} 按课程名模糊匹配，不传则返回全部。<br>
-     * 需要登录：注册页用不到课程下拉框
+     * 课程列表。{@code keyword} 按课程名模糊匹配，不传则返回全部。
      */
     @GetMapping("/api/courses")
     public ApiResponse<List<CourseResponse>> courses(
@@ -49,7 +48,6 @@ public class CatalogController {
 
     /**
      * 标签列表。筛选栏与上传表单的候选标签。<br>
-     * 需要登录。
      */
     @GetMapping("/api/tags")
     public ApiResponse<List<TagResponse>> tags() {
