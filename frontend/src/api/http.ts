@@ -94,3 +94,20 @@ export const api = {
   delete: <T>(url: string, config?: AxiosRequestConfig) =>
     http.delete(url, config) as unknown as Promise<T>,
 }
+
+/**
+ * 不做 ApiResponse 解包的裸实例，只带登录头。
+ * 给 GET /api/notes/{id}/raw 用：它直接回 text/plain 原文，响应体不是 {code, message, data}。
+ */
+export const rawHttp = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api',
+  timeout: 30000,
+})
+
+rawHttp.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
