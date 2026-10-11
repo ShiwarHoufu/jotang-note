@@ -70,3 +70,121 @@ export interface College {
   id: number
   name: string
 }
+
+export interface Course {
+  id: number
+  name: string
+}
+
+export interface Tag {
+  id: number
+  name: string
+}
+
+/** 与后端 com.wlf.note.dto.UploaderResponse 对应；avatarUrl 已是完整公网地址 */
+export interface Uploader {
+  id: number
+  nickname: string
+  avatarUrl: string | null
+  collegeName: string | null
+}
+
+/** 与后端 com.wlf.note.NoteStatus 枚举对应 */
+export type NoteStatus = 'ONLINE' | 'OFFLINE' | 'DELETED'
+
+/** 与后端 com.wlf.note.PreviewMode 枚举对应，决定详情页用哪种方式渲染文件 */
+export type PreviewMode = 'IMAGE_INLINE' | 'TEXT_PROXY' | 'DOWNLOAD_ONLY'
+
+export type NoteSort = 'LATEST' | 'HOT_VIEW' | 'HOT_DOWNLOAD'
+
+/** 公开列表项（§5.4）：只有 ONLINE，无 status / file / summary */
+export interface NoteListItem {
+  id: number
+  title: string
+  course: Course
+  uploader: Uploader
+  tags: Tag[]
+  viewCount: number
+  downloadCount: number
+  favoriteCount: number
+  updatedAt: string
+  isFavorited: boolean
+}
+
+/** 详情出参（§5.4）：非 ONLINE 时 file 为 null，status 原样返回由前端渲染提示 */
+export interface NoteDetail {
+  id: number
+  title: string
+  summary: string | null
+  teacher: string | null
+  status: NoteStatus
+  course: Course
+  uploader: Uploader
+  tags: Tag[]
+  viewCount: number
+  downloadCount: number
+  favoriteCount: number
+  createdAt: string
+  updatedAt: string
+  file: NoteFileInfo | null
+  isFavorited: boolean
+}
+
+export interface NoteFileInfo {
+  originalName: string
+  size: number
+  contentType: string
+  previewMode: PreviewMode
+}
+
+/** 「我的上传」项：无上传者信息（恒为本人），status 只会是 ONLINE / OFFLINE */
+export interface MyNoteItem {
+  id: number
+  status: NoteStatus
+  title: string
+  course: Course
+  tags: Tag[]
+  viewCount: number
+  downloadCount: number
+  favoriteCount: number
+  createdAt: string
+}
+
+/**
+ * 收藏列表项（§5.5）：占位项保留 title / course，uploader 与计数为 null，
+ * 「是不是占位」只需看 status
+ */
+export interface FavoriteItem {
+  noteId: number
+  status: NoteStatus
+  favoritedAt: string
+  title: string
+  course: Course
+  uploader: Uploader | null
+  tags: Tag[]
+  viewCount: number | null
+  downloadCount: number | null
+  favoriteCount: number | null
+  updatedAt: string | null
+}
+
+/** /api/notes/{id}/preview-url 与 /download 的出参：签发好的 OSS 签名 URL */
+export interface PresignedUrlResponse {
+  url: string
+}
+
+/** /api/notes/{id}/favorite 的出参：操作后的最新收藏量 */
+export interface FavoriteCountResponse {
+  favoriteCount: number
+}
+
+/** AI 摘要（§5.8）：建议文案，已按 note.summary 列宽截断，直接回填输入框 */
+export interface AiSummaryResponse {
+  summary: string
+}
+
+/** AI 对话响应 */
+export interface AiChatResponse {
+  reply: string
+  conversationId: string
+}

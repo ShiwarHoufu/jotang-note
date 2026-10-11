@@ -7,8 +7,44 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'home',
-      component: () => import('@/views/HomeView.vue'),
+      component: () => import('@/components/MainLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'home',
+          component: () => import('@/views/HomeView.vue'),
+        },
+        {
+          path: 'notes/upload',
+          name: 'note-upload',
+          component: () => import('@/views/NoteUploadView.vue'),
+        },
+        {
+          path: 'notes/:id',
+          name: 'note-detail',
+          component: () => import('@/views/NoteDetailView.vue'),
+        },
+        {
+          path: 'notes/:id/edit',
+          name: 'note-edit',
+          component: () => import('@/views/NoteEditView.vue'),
+        },
+        {
+          path: 'my/notes',
+          name: 'my-notes',
+          component: () => import('@/views/MyNotesView.vue'),
+        },
+        {
+          path: 'my/favorites',
+          name: 'my-favorites',
+          component: () => import('@/views/FavoritesView.vue'),
+        },
+        {
+          path: 'profile',
+          name: 'profile',
+          component: () => import('@/views/ProfileView.vue'),
+        },
+      ],
     },
     {
       path: '/login',

@@ -28,11 +28,16 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = await authApi.me()
   }
 
+  /** 改资料 / 换头像后拿响应里的 UserInfo 直接覆盖 */
+  function setUser(next: UserInfo): void {
+    user.value = next
+  }
+
   function logout(): void {
     token.value = null
     user.value = null
     clearToken()
   }
 
-  return { token, user, isLoggedIn, isAdmin, login, loadCurrentUser, logout }
+  return { token, user, isLoggedIn, isAdmin, login, loadCurrentUser, setUser, logout }
 })
