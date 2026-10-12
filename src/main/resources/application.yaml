@@ -68,11 +68,9 @@ spring:
           timeout: 5000
           writetimeout: 5000
 
-  # RabbitMQ：密码找回邮件的异步投递。只在 jotang.mail.mode=queue 时被真正用到。
-  #
-  # Docker Compose 会自动加载同目录的 .env，**Spring Boot 不会**。所以本机真值要写进
-  # application-local.yaml（顶层键，同 DB_PORT 那招），只靠 .env 是不够的——
-  # compose 起来了不代表应用连得上。
+  # RabbitMQ
+  # Docker Compose 会自动加载同目录的 .env，但Spring Boot不会。
+  # 所以只靠 .env 是不够的。compose起来了不代表应用连得上。
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
@@ -136,8 +134,6 @@ spring:
       moderation: none
 
 # JWT：密钥不落仓库，一律外部注入；本机开发由 application-local.yaml 覆盖 jwt.secret。
-# 密钥是 32 字节密钥的 Base64 串（解码后 256 位，恰为 HS256 下限），生成示例：
-#   openssl rand -base64 32
 jwt:
   secret: ${JWT_SECRET}
   ttl: ${JWT_TTL:2h}
@@ -158,9 +154,7 @@ aliyun:
     bucket-note: ${JOTANG_OSS_BUCKET_NOTE:jotang-note}
     bucket-avatar: ${JOTANG_OSS_BUCKET_AVATAR:jotang-avatar}
 
-# 孤儿对象对账：定期把「已删除但对象还没清掉」的笔记补清一次。
-# 加 JOTANG_ 前缀与 OSS / AI 一致——它是本应用的行为配置，不是 DB_HOST / REDIS_HOST
-# 那种「数据面连接坐标」，不必与那两个凑成同一风格。
+
 jotang:
   mail:
     # 发件人。必须与 spring.mail.username（已认证的账号）一致，否则 QQ SMTP 直接拒收——
@@ -172,11 +166,10 @@ jotang:
     # 生产用环境变量覆盖。
     reset-link-base: ${JOTANG_MAIL_RESET_LINK_BASE:http://localhost:5173/reset-password}
     # 发信走哪条路：smtp = 同步直发；queue = 投进 RabbitMQ，由消费者发。
-    #
-    # 默认 smtp，是为了**新克隆的仓库不需要任何中间件就能 ./mvnw test 全绿
-    # 启动时的两条 INFO：「邮件投递方式：RabbitMQ 队列」与「重置邮件消费者已启动」——没看到就是还在 smtp 模式。
-    mode: ${JOTANG_MAIL_MODE:smtp}
+    # 默认 smtp，是为了新克隆的仓库不需要任何中间件就能 ./mvnw test 全绿
+    mode: ${JOTANG_MAIL_MODE:queue}
 
+  # 孤儿对象对账：定期把已删除但对象还没清掉的笔记补清一次。
   purge:
     # 关掉则 OrphanObjectSweeper 这个 Bean 根本不注册，也就没有定时任务
     enabled: ${JOTANG_PURGE_ENABLED:true}

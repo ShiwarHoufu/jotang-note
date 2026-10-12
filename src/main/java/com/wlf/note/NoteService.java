@@ -21,6 +21,7 @@ import com.wlf.note.dto.NoteCreatedResponse;
 import com.wlf.note.dto.NoteDetailResponse;
 import com.wlf.note.dto.NoteListItemResponse;
 import com.wlf.note.dto.NoteListQuery;
+import com.wlf.note.dto.NotePreviewUrlResponse;
 import com.wlf.note.dto.NoteUpdateRequest;
 import com.wlf.note.dto.NoteUploadRequest;
 import com.wlf.note.dto.UploaderResponse;
@@ -47,7 +48,7 @@ import java.util.stream.Collectors;
 /**
  * 笔记核心业务。见《概要设计》§6.1（上传）、§6.2（预览与下载）、§5.4（详情 / 编辑 / 删除）。
  *
- * <p>当前已落地上传、详情、列表、我的上传、编辑、删除；搜索 / 预览 / 下载待后续切片。
+ * <p>当前已落地上传、详情、列表、我的上传、编辑、删除、预览；搜索 / 下载待后续切片。
  */
 @Slf4j
 @Service
@@ -71,6 +72,9 @@ public class NoteService {
      * 大数字变成一条扫回半个表的查询。
      */
     private static final int MAX_TITLE_SEARCH_LIMIT = 20;
+
+    /** 图片预览签名 URL 的存活时间（§6.2）。TTL 越短，「URL 被转发给未登录者」的窗口越小 */
+    private static final Duration PREVIEW_URL_TTL = Duration.ofMinutes(5);
 
     private final NoteMapper noteMapper;
     private final NoteFileMapper noteFileMapper;
@@ -572,9 +576,12 @@ public class NoteService {
     }
 
     /**
-     * 供 ai 对话的读正文工具使用：取任意在线笔记的附件位置。与 {@link #requireOwnFile}
+     * 供 ai 对话的读正文工具与预览接口使用：取任意在线笔记的附件位置。与 {@link #requireOwnFile}
      * <b>只差一件事——归属不参与判定</b>，因为检索范围是全站：任何登录用户都能让模型
      * 读一篇在线笔记的正文（这是产品决策，见 §8.4 的已知限制）。
+     *
+     * <p>预览走同一个闸门，因为 §4.1 对「预览 / 下载」的可见性与这里完全一致：
+     * 任何登录用户可读任何 {@code ONLINE} 笔记的附件。
      *
      * <p>同样只读、不加锁，理由与 {@link #requireOwnFile} 一字不差：读完就结束了，
      * 后面跟着的是一次 OSS 读和一次可能几十秒的模型调用，期间没有本行的写入。
@@ -590,6 +597,39 @@ public class NoteService {
             throw new BusinessException(ErrorCode.NOTE_UNAVAILABLE);
         }
         return row;
+    }
+
+    /**
+     * 图片预览：签发 OSS 直连的签名 URL。见 §5.4、§6.2。
+     *
+     * <p>模式校验不是冗余：存量行里还有上传白名单收窄之前的 pdf / Office / 压缩包（§6.9），
+     * 若其中混有 svg / html，不校验就会签出一条以该 {@code Content-Type} 交付的直连 URL。
+     *
+     * @throws BusinessException 40400 笔记不存在；40301 非 ONLINE；42200 该类型不走内联预览
+     */
+    public NotePreviewUrlResponse previewUrl(Long noteId) {
+        NoteFileOwnershipRow row = readableOnlineFile(noteId);
+        if (PreviewMode.of(row.getContentType()) != PreviewMode.IMAGE_INLINE) {
+            throw new BusinessException(ErrorCode.FILE_INVALID, "该类型不支持内联预览，请下载后查看");
+        }
+        return new NotePreviewUrlResponse(
+                storageService.presignedUrl(Bucket.NOTE, row.getStorageKey(), PREVIEW_URL_TTL, null));
+    }
+
+    /**
+     * 文本预览：把原文交给调用方代理转发（{@code /raw}）。见 §5.4、§6.2。
+     *
+     * <p>流由写出方负责关闭。
+     *
+     * @throws BusinessException 40400 笔记不存在；40301 非 ONLINE；42200 该类型不走文本代理
+     */
+    public NoteRawContent openRaw(Long noteId) {
+        NoteFileOwnershipRow row = readableOnlineFile(noteId);
+        if (PreviewMode.of(row.getContentType()) != PreviewMode.TEXT_PROXY) {
+            throw new BusinessException(ErrorCode.FILE_INVALID, "该类型不支持文本预览，请下载后查看");
+        }
+        // 不在本层读成 byte[]：文本上限 100MB（NoteFilePolicy），必须留给调用方流式转发
+        return new NoteRawContent(row.getSize(), storageService.open(Bucket.NOTE, row.getStorageKey()));
     }
 
     /**

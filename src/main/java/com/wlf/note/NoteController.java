@@ -9,9 +9,13 @@ import com.wlf.note.dto.NoteCreatedResponse;
 import com.wlf.note.dto.NoteDetailResponse;
 import com.wlf.note.dto.NoteListItemResponse;
 import com.wlf.note.dto.NoteListQuery;
+import com.wlf.note.dto.NotePreviewUrlResponse;
 import com.wlf.note.dto.NoteUpdateRequest;
 import com.wlf.note.dto.NoteUploadRequest;
 import jakarta.validation.Valid;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,10 +26,12 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * 笔记接口。见《概要设计》§5.4。
  *
- * <p>当前有上传、详情、列表、我的上传、编辑与删除；搜索 / 预览 / 下载随后续切片补上。
+ * <p>当前有上传、详情、列表、我的上传、编辑、删除与预览；搜索 / 下载随后续切片补上。
  * 全部接口都要求登录
  * {@code SecurityConfig} 的 {@code anyRequest().authenticated()} 已经覆盖。
  */
@@ -52,7 +58,7 @@ public class NoteController {
     }
 
     /**
-     * 笔记详情。见 §5.4、§4.1。
+     * 笔记详情。
      *
      * <p>登录者取自 JWT，只用于填 {@code isFavorited}——它不该由客户端传，
      * 否则任何人都能问出「别人收藏过这篇没有」。
@@ -64,6 +70,30 @@ public class NoteController {
     public ApiResponse<NoteDetailResponse> detail(@AuthenticationPrincipal AuthenticatedUser user,
                                                   @PathVariable Long id) {
         return ApiResponse.ok(noteService.detail(id, user.userId()));
+    }
+
+    /**
+     * 图片预览：返回 OSS 签名 URL，前端 {@code <img>} 直出。
+     */
+    @GetMapping("/api/notes/{id}/preview-url")
+    public ApiResponse<NotePreviewUrlResponse> previewUrl(@PathVariable Long id) {
+        return ApiResponse.ok(noteService.previewUrl(id));
+    }
+
+    /**
+     * 文本预览：后端代理返回原文
+     *
+     * <p><b>全仓唯一不套 {@code ApiResponse} 的接口</b>：成功时响应体是文件原文本身；失败仍由
+     * {@code GlobalExceptionHandler} 写回 JSON 信封。
+     */
+    @GetMapping("/api/notes/{id}/raw")
+    public ResponseEntity<InputStreamResource> raw(@PathVariable Long id) {
+        NoteRawContent content = noteService.openRaw(id);
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "plain", StandardCharsets.UTF_8))
+                .header("X-Content-Type-Options", "nosniff")
+                .contentLength(content.size())
+                .body(new InputStreamResource(content.content()));
     }
 
     /**

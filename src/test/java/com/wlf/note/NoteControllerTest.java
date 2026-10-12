@@ -25,6 +25,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,11 +38,15 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -200,6 +207,110 @@ class NoteControllerTest {
                 .andExpect(jsonPath("$.data.title").value(MARKER + "已下架"))
                 .andExpect(jsonPath("$.data.file").value(nullValue()))
                 .andExpect(jsonPath("$.data.isFavorited").value(false));
+    }
+
+    // ==================== GET /api/notes/{id}/preview-url & /raw ====================
+
+    @Test
+    void previewRequiresLogin() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "未登录预览", NoteStatus.ONLINE);
+
+        mockMvc.perform(get("/api/notes/" + noteId + "/preview-url"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+        mockMvc.perform(get("/api/notes/" + noteId + "/raw"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+    }
+
+    /**
+     * 图片走签名 URL，TTL 5 分钟、内联（{@code downloadName} 为 null）。
+     * stub 只认这三个参数，任一处写错就取不到 URL——断言的是整条签发口径，不只是「有个 URL」。
+     */
+    @Test
+    void previewUrlSignsImageInlineForFiveMinutes() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "图片", NoteStatus.ONLINE, "image/png", 1024L);
+        when(storageService.presignedUrl(eq(Bucket.NOTE), anyString(), eq(Duration.ofMinutes(5)), isNull()))
+                .thenReturn("https://oss.example.com/signed");
+
+        mockMvc.perform(get("/api/notes/" + noteId + "/preview-url").header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.url").value("https://oss.example.com/signed"));
+    }
+
+    /** 文本走代理：原文照出，且响应头钉死成纯文本 + nosniff，不给浏览器解析原文件的机会 */
+    @Test
+    void rawProxiesTextAsPlainTextWithNosniff() throws Exception {
+        byte[] body = "# 标题\n正文".getBytes(StandardCharsets.UTF_8);
+        Long noteId = insertNote(courseId, MARKER + "文本", NoteStatus.ONLINE,
+                "text/markdown", (long) body.length);
+        when(storageService.open(eq(Bucket.NOTE), anyString())).thenReturn(new ByteArrayInputStream(body));
+
+        mockMvc.perform(get("/api/notes/" + noteId + "/raw").header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "text/plain;charset=UTF-8"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(content().bytes(body));
+    }
+
+    /** §4.1：预览对 OFFLINE / DELETED 一律禁止，上传者本人也不例外 */
+    @Test
+    void previewRejectsOfflineAndDeletedNotes() throws Exception {
+        Long offline = insertNote(courseId, MARKER + "已下架", NoteStatus.OFFLINE);
+        Long deleted = insertNote(courseId, MARKER + "已删除", NoteStatus.DELETED);
+
+        mockMvc.perform(get("/api/notes/" + offline + "/preview-url").header("Authorization", token()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40301));
+        mockMvc.perform(get("/api/notes/" + deleted + "/raw").header("Authorization", token()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40301));
+    }
+
+    @Test
+    void previewReportsUnknownNoteAsNotFound() throws Exception {
+        mockMvc.perform(get("/api/notes/999999999/preview-url").header("Authorization", token()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400));
+        mockMvc.perform(get("/api/notes/999999999/raw").header("Authorization", token()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    /** 走错通道：图片不该被代理成文本，文本也不该签成直连 URL */
+    @Test
+    void previewRejectsTheWrongChannelForTheType() throws Exception {
+        Long image = insertNote(courseId, MARKER + "图片", NoteStatus.ONLINE, "image/png", 1024L);
+        Long text = insertNote(courseId, MARKER + "文本", NoteStatus.ONLINE, "text/plain", 10L);
+
+        mockMvc.perform(get("/api/notes/" + image + "/raw").header("Authorization", token()))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value(42200));
+        mockMvc.perform(get("/api/notes/" + text + "/preview-url").header("Authorization", token()))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value(42200));
+
+        // 挡在交付之前：两条通路都不该碰存储
+        verify(storageService, never()).presignedUrl(any(), anyString(), any(), any());
+        verify(storageService, never()).open(any(), anyString());
+    }
+
+    /**
+     * 存量行：白名单收窄之前进来的 pdf / Office / 压缩包（§6.9），{@code PreviewMode} 为
+     * {@code DOWNLOAD_ONLY}，两条通路都该拒——无校验的 {@code /preview-url} 会为 svg / html
+     * 这类旧类型签出一条以该 Content-Type 交付的直连 URL。
+     */
+    @Test
+    void previewRejectsLegacyDownloadOnlyTypes() throws Exception {
+        Long legacy = insertNote(courseId, MARKER + "存量pdf", NoteStatus.ONLINE, "application/pdf", 2048L);
+
+        mockMvc.perform(get("/api/notes/" + legacy + "/preview-url").header("Authorization", token()))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value(42200));
+        mockMvc.perform(get("/api/notes/" + legacy + "/raw").header("Authorization", token()))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value(42200));
     }
 
     // ==================== GET /api/notes ====================
@@ -505,6 +616,12 @@ class NoteControllerTest {
 
     /** 直接插库造一篇笔记（含文件行），避开上传流程——这里验的是读路径的路由与响应形状 */
     private Long insertNote(Long noteCourseId, String title, NoteStatus status) {
+        return insertNote(noteCourseId, title, status, "image/png", 1024L);
+    }
+
+    /** 同上，附件类型与大小可指定：预览的两个接口按 {@code content_type} 分流通路 */
+    private Long insertNote(Long noteCourseId, String title, NoteStatus status,
+                            String contentType, Long size) {
         Note note = new Note();
         note.setUploaderId(uploaderId);
         note.setCourseId(noteCourseId);
@@ -512,12 +629,13 @@ class NoteControllerTest {
         note.setStatus(status.name());
         noteMapper.insert(note);
 
+        // storageKey 与 originalName 都不参与预览的两个接口，造个能看的即可
         NoteFile file = new NoteFile();
         file.setNoteId(note.getId());
-        file.setStorageKey("notes/2026/10/" + UUID.randomUUID() + ".png");
+        file.setStorageKey("notes/2026/10/" + UUID.randomUUID());
         file.setOriginalName("课件.png");
-        file.setSize(1024L);
-        file.setContentType("image/png");
+        file.setSize(size);
+        file.setContentType(contentType);
         noteFileMapper.insert(file);
 
         return note.getId();
