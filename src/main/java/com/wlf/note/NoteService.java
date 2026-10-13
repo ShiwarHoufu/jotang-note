@@ -210,10 +210,9 @@ public class NoteService {
                 row.getFavoriteCount(),
                 row.getCreatedAt(),
                 row.getUpdatedAt(),
-                // 非 ONLINE 时整个 file 置空，而不是把三个字段各自置 null：
-                // 「这条笔记此刻没有可展示的文件」是一个整体事实，前端一个 truthy 判断就能收工
+                // 非 ONLINE 时整个 file 置空
                 online ? fileInfoOf(row) : null,
-                // 非 ONLINE 也照查：§6.5 说收藏关系不因下架而解除（详见 FavoriteService#isFavorited）
+                // 非 ONLINE 也照查：收藏关系不因下架而解除
                 favoriteService.isFavorited(viewerId, noteId));
     }
 

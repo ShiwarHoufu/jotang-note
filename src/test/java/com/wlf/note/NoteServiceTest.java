@@ -38,6 +38,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -211,6 +212,33 @@ class NoteServiceTest {
         String key = "notes/2026/10/" + UUID.randomUUID() + ".png";
         when(storageService.upload(eq(Bucket.NOTE), anyString(), any(), anyLong(), anyString(), isNull()))
                 .thenReturn(new StoredObject(key, "image/png", PNG.length));
+
+        noteService.upload(uploaderId, request("第一篇", null, null, List.of()));
+
+        assertThatThrownBy(() -> noteService.upload(uploaderId, request("第二篇", null, null, List.of())))
+                .isInstanceOf(DuplicateKeyException.class);
+
+        verify(storageService).delete(Bucket.NOTE, key);
+    }
+
+    /**
+     * 补偿删除自己也失败时，必须把失败留在日志里、把<b>原本的入库异常</b>照原样抛出去。
+     *
+     * <p>抛的是入库那个 {@code DuplicateKeyException} 而不是删除的 {@code IllegalStateException}，
+     * 这是本条要钉的：用户操作的是上传，出问题时提示里该出现的是与上传有关的原因，
+     * 补偿是他看不见的内部动作，它失败不该顶掉真正的错误。
+     *
+     * <p>代价是留下一个真孤儿对象——{@code note_file} 里根本没有那一行，
+     * 定时对账的候选集正是从那张表来的，扫不到（见 {@code purgeQuietly} 的注释），只能人工清理。
+     * 这是刻意的取舍：宁可留一个对象，也不能让上传以一个莫名的异常收场。
+     */
+    @Test
+    void aFailedCompensationDeleteDoesNotMaskTheOriginalInsertFailure() {
+        String key = "notes/2026/10/" + UUID.randomUUID() + ".png";
+        when(storageService.upload(eq(Bucket.NOTE), anyString(), any(), anyLong(), anyString(), isNull()))
+                .thenReturn(new StoredObject(key, "image/png", PNG.length));
+        doThrow(new IllegalStateException("模拟 OSS 故障"))
+                .when(storageService).delete(Bucket.NOTE, key);
 
         noteService.upload(uploaderId, request("第一篇", null, null, List.of()));
 
