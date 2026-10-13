@@ -1,12 +1,5 @@
-# RabbitMQ：异步任务队列。当前唯一用途是密码找回的重置邮件（《概要设计》§6.6）——
-# 这一条链路需要异步的原因不是「慢」（本机 SMTP 也就几百毫秒），而是**防枚举**：
-# 同步发信会让「邮箱存在」与「邮箱不存在」两条分支的耗时明显不同，成为一个时间侧信道。
-#
-# 注意：应用只在 jotang.mail.mode=queue 时才会连过来（默认是 smtp，见 application.yaml）。
-# 起来了这个容器 ≠ 应用就在用它。
-#
-# 只起 RabbitMQ，不含 MySQL / Redis：那两个本机已有实例（Redis 在 WSL 里），
-# 再起一份会争 3306 / 6379 端口。将来要迁进来时再单独加 service。
+# 起 RabbitMQ 与 Redis。不含 MySQL：本机已有实例，再起一份会争 3307 端口。
+# 将来 MySQL 要迁进来时再单独加 service。
 #
 # 密码不落仓库，从同目录 .env 读取（Compose 会自动加载该文件）。
 # 与 application.yaml 里 jwt.secret / OSS AccessKey 的做法一致：仓库只存占位，
@@ -28,8 +21,6 @@ services:
       # :? 让变量缺失时直接报错退出，而不是静默用空密码起一个连不上的实例
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?缺少 .env 或未设置 RABBITMQ_PASSWORD}
     volumes:
-      # 队列和消息存在这个卷里，docker rm 掉容器数据也不丢。
-      # 左边是卷名不是 Windows 路径——容器内是 Linux，挂宿主机目录会因为权限起不来。
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
       # ping 只探「节点是否响应」。不探 15672 端口：管理插件比 AMQP 后起，
@@ -41,7 +32,21 @@ services:
       # 首次启动要初始化 mnesia 库，这期间失败不计入 retries
       start_period: 40s
 
+  redis:
+    # 不设密码：与 application.yaml 里 ${REDIS_PASSWORD:} 的空默认值对齐，本地图省事。
+    # 生产那份是另一回事，见 .trae/documents/docker-prod-deploy-plan.md。
+    image: redis:8-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    # 不挂卷，Redis 在这里只是读缓存，掉了重新查库就是。
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
   rabbitmq-data:
-    # 显式命名，避免带上目录名前缀导致换目录后找不到旧卷
-    name: rabbitmq-data
+#    name: rabbitmq-data

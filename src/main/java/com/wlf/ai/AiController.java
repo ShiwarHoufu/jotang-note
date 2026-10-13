@@ -17,10 +17,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * AI 模块的接口层：摘要（上传 / 编辑两条链路）与对话。
- *
- * <p>登录由 {@code SecurityConfig} 的 {@code anyRequest().authenticated()} 统一拦截。
- * 登录者一律取自 JWT 而非请求参数——否则调用方就能决定「按谁计费、按谁的配额限频、
- * 读写谁的会话」。
  */
 @RestController
 public class AiController {

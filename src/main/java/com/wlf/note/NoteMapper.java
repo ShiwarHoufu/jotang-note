@@ -288,21 +288,7 @@ public interface NoteMapper extends BaseMapper<Note> {
     int updateStatus(@Param("id") Long id, @Param("status") String status);
 
     /**
-     * 软删除：把状态置为传入值并写下删除时刻。见 §4.1、§3.3。
-     *
-     * <p><b>只写这两列，一个都不能多：</b>
-     * <ul>
-     *   <li><b>不写 {@code updated_at}</b>。它的语义是「用户最后编辑笔记的时间」（§3.3），
-     *       删除不是编辑。建表语句刻意不带 {@code ON UPDATE CURRENT_TIMESTAMP} 就是为了这个，
-     *       在这里顺手写一个 {@code NOW()} 等于把它偷偷加回来——
-     *       守卫用例见 {@code NoteDetailServiceTest#viewingDoesNotTouchUpdatedAt}。</li>
-     *   <li><b>不写 {@code favorite_count}</b>。§6.5 要求删除后收藏关系仍在（收藏列表渲染
-     *       「已删除」占位），删笔记去减收藏数会把两者弄得不一致。</li>
-     * </ul>
-     *
-     * <p>不带 {@code status} 守卫，理由见 {@link #selectOwnershipForUpdate}：调用方在同一事务里
-     * 已经持有该行的 X 锁。状态字面量仍由调用方传（{@code NoteStatus} 的取值不写死在 SQL 里），
-     * 与 {@link #incrementViewCount} 同规矩。
+     * 软删除：把状态置为传入值并写下删除时刻。
      */
     @Update("UPDATE note SET status = #{status}, deleted_at = NOW() WHERE id = #{id}")
     int markDeleted(@Param("id") Long id, @Param("status") String status);
