@@ -174,6 +174,42 @@ class MyNoteListServiceTest {
         assertThat(items.get(1).tags()).isEmpty();
     }
 
+    /**
+     * {@code isFavorited} 是<b>浏览者视角</b>：自己收藏了自己的笔记就是 {@code true}。
+     *
+     * <p>挑两篇（一篇收藏了、一篇没有）而不是只挑一篇：只验「收藏了的那个」的话，
+     * 把 {@code contains} 写成恒 {@code true} 也能过。
+     */
+    @Test
+    void isFavoritedReflectsTheViewersOwnFavorite() {
+        Long me = insertUser("me");
+        LocalDateTime base = LocalDateTime.of(2026, 1, 1, 0, 0);
+        Long favorited = insertNote(me, NoteStatus.ONLINE, MARKER + "收藏了", base.plusDays(1));
+        Long bare = insertNote(me, NoteStatus.ONLINE, MARKER + "没收藏", base);
+        insertFavorite(me, favorited);
+
+        List<MyNoteItemResponse> items = list(me).items();
+
+        assertThat(items.get(0).id()).isEqualTo(favorited);
+        assertThat(items.get(0).isFavorited()).isTrue();
+        assertThat(items.get(1).id()).isEqualTo(bare);
+        assertThat(items.get(1).isFavorited()).isFalse();
+    }
+
+    /**
+     * 别人的收藏不算数——本字段按<b>浏览者</b>查 {@code favorite}，问的是「我收藏了吗」，
+     * 不是「这篇被收藏过没有」（那是 {@code favoriteCount}）。
+     */
+    @Test
+    void isFavoritedIgnoresOtherPeoplesFavorites() {
+        Long me = insertUser("me");
+        Long other = insertUser("other");
+        Long mine = insertNote(me, NoteStatus.ONLINE, MARKER + "被别人收藏", LocalDateTime.now());
+        insertFavorite(other, mine);
+
+        assertThat(list(me).items().get(0).isFavorited()).isFalse();
+    }
+
     /** 空页要看得出「没数据」，且不能因为 {@code IN ()} 语法错误炸掉 */
     @Test
     void anUploaderWithNoNotesGetsAnEmptyPage() {
@@ -245,6 +281,11 @@ class MyNoteListServiceTest {
         for (Long tagId : tagIds) {
             jdbcTemplate.update("INSERT INTO note_tag (note_id, tag_id) VALUES (?, ?)", noteId, tagId);
         }
+    }
+
+    /** 直接插库，不走 {@code FavoriteService#favorite}——它要求笔记是 ONLINE，还会顺带自增计数 */
+    private void insertFavorite(Long userId, Long noteId) {
+        jdbcTemplate.update("INSERT INTO favorite (user_id, note_id) VALUES (?, ?)", userId, noteId);
     }
 
     private Long insertCollege() {

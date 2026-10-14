@@ -45,7 +45,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 笔记核心业务。见《概要设计》§6.1（上传）、§6.2（预览与下载）、§5.4（详情 / 编辑 / 删除）。
+ * 笔记核心业务。
  *
  * <p>当前已落地上传、详情、列表、我的上传、编辑、删除、预览；搜索 / 下载待后续切片。
  */
@@ -58,21 +58,28 @@ public class NoteService {
 
     /**
      * 详情缓存的存活时间。
-     *
-     * <p>这个数字同时是「写路径不失效缓存」这一取舍的<b>代价上限</b>：按约定，本版不在
-     * 编辑 / 删除 / 下架 / 恢复里删缓存，所以那些写操作之后，详情页最多脏这么久。
-     * 它是用户可见的（管理员下架后前端仍在显示「在线」），不是理论上的边界情况——
-     * 将来若把这个窗口收到不可感知的范围，要么改小 TTL，要么给写路径补失效。
      */
     private static final Duration DETAIL_CACHE_TTL = Duration.ofMinutes(10);
 
     /**
-     * 标题精确检索的硬上限。它只是护栏——真正取几条由调用方决定；设它是为了不让一个传错的
-     * 大数字变成一条扫回半个表的查询。
+     * 负缓存的占位值。
+     */
+    private static final NoteMeta ABSENT = new NoteMeta(null, List.of());
+
+    /**
+     * 负缓存的存活时间。
+     *
+     * <p>比正常 TTL 短的多：要挡的是「同一个人反复刷同一个不存在的 id」，重复的间隔是秒级；
+     * 短 TTL 顺带把「万一判错」的窗口也压到最小。
+     */
+    private static final Duration ABSENT_CACHE_TTL = Duration.ofMinutes(1);
+
+    /**
+     * 标题精确检索的硬上限。
      */
     private static final int MAX_TITLE_SEARCH_LIMIT = 20;
 
-    /** 图片预览签名 URL 的存活时间（§6.2）。TTL 越短，「URL 被转发给未登录者」的窗口越小 */
+    /** 图片预览签名 URL 的存活时间。 */
     private static final Duration PREVIEW_URL_TTL = Duration.ofMinutes(5);
 
     private final NoteMapper noteMapper;
@@ -80,23 +87,15 @@ public class NoteService {
     private final NoteTagMapper noteTagMapper;
     private final CourseService courseService;
     private final TagService tagService;
-    /**
-     * 详情页要填「是否已收藏」，这是 note 模块第一次反向依赖 favorite 模块。
-     *
-     * <p><b>这个方向不能反过来。</b>{@code FavoriteService} 判笔记状态时走它自己的 SQL
-     * （§6.5 的收藏列表本来就是 {@code favorite JOIN note}），不调本类；哪天有人图省事
-     * 让它注入 {@code NoteService} 来「复用一下状态判断」，两边就成了构造器循环依赖，
-     * 应用连启动都起不来。
-     */
+    /** 详情页要填「是否已收藏」，这是 note 模块第一次反向依赖 favorite 模块。*/
     private final FavoriteService favoriteService;
     private final NoteFilePolicy filePolicy;
     private final StorageService storageService;
-    /** 状态迁移的合法性判据。见 {@code NoteStateMachine}（删除与管理员的下架/恢复共用） */
     private final NoteStateMachine stateMachine;
     private final TransactionTemplate transactionTemplate;
 
     /**
-     * 详情页的读缓存（《技术选型》§5 的 V2 缓存条目）。<b>目前只有 {@link #detail} 用它。</b>
+     * 详情页的读缓存。
      *
      * <p>键 {@code note:meta:{noteId}}，值是 {@link NoteMeta} 的 JSON——序列化规则见
      * {@code RedisConfig}。读写与降级都在 {@link #loadMeta} 里。
@@ -130,21 +129,9 @@ public class NoteService {
     }
 
     /**
-     * 上传笔记：校验 → 解析标签 → 流式传 OSS → 事务落库。见 §6.1。
+     * 上传笔记：校验 → 解析标签 → 流式传 OSS → 事务落库。
      *
-     * <p><b>三步的先后顺序都是有意的</b>：
-     * <ol>
-     *   <li>课程与文件校验放在最前，不合格就不碰 OSS——对象存下来再发现参数错，
-     *       只能靠补偿删除收场</li>
-     *   <li>标签解析放在 OSS 之前：它会往 {@code tag} 表写新标签，但如果标签集合本身超标，
-     *       异常会在这里抛出，此时还没有对象产生</li>
-     *   <li>OSS 上传放在事务<b>之外</b>：单文件可达 100MB，把一次上百 MB 的网络传输
-     *       圈进数据库事务，会让一个连接被占住整个上传时长。代价是「对象已存、入库失败」
-     *       这个窗口真实存在，由下面的补偿删除兜住；补偿再失败就留下无人认领的孤儿对象，
-     *       不影响用户请求的成败</li>
-     * </ol>
-     *
-     * @param uploaderId 上传者，取自 JWT，不接受请求体传入——否则可以冒名顶替他人上传
+     * @param uploaderId 上传者，取自 JWT。
      */
     public NoteCreatedResponse upload(Long uploaderId, NoteUploadRequest request) {
         MultipartFile file = request.getFile();
@@ -155,9 +142,12 @@ public class NoteService {
         StoredObject stored = store(file, decision, uploaderId);
 
         try {
-            return transactionTemplate.execute(
+            NoteCreatedResponse created = transactionTemplate.execute(
                     status -> insertNote(uploaderId, request, decision, stored, tagIds)
             );
+            // 新 id 有可能已经被负缓存占住了
+            evictMeta(created.id());
+            return created;
         } catch (RuntimeException e) {
             purgeQuietly(stored.key());
             throw e;
@@ -165,35 +155,37 @@ public class NoteService {
     }
 
     /**
-     * 详情：读取元数据与标签、判断是否已收藏，并在 ONLINE 时把浏览量 +1。
+     * 笔记详情。
      *
-     * <p><b>本方法刻意不开事务。</b>里面的写语句只有浏览量自增一条，而把它圈进事务的后果是：
-     * {@code note} 那一行的排他锁会一直持有到方法返回——这中间还夹着标签查询、收藏查询与响应体装配。
-     * 详情页是最热的读接口，为一个统计计数把行锁按住整个请求时长，代价远大于收益；
-     * 不圈事务则 UPDATE 立即提交、锁立即释放。代价是「自增」与「读取」之间可能插进别人的自增，
-     * 于是返回的 {@code viewCount} 可能略大于自己那一次 +1——计数本身就没有去重
-     * （D2 对下载量也是这个口径），多算一两次不改变它的性质。
-     *
-     * <p><b>主干与标签走读缓存</b>（见 {@link #loadMeta}）
-     *
-     * @param viewerId 当前登录者，只用于判断「他收藏过没有」；取自 JWT
-     * @throws BusinessException 40400 笔记不存在
+     * @param viewerId      当前登录者，取自 JWT
+     * @param viewerIsAdmin 当前登录者是否为管理员，取自 JWT 的 role claim
+     * @throws BusinessException 40400 笔记不存在；40301 无权查看
      */
-    public NoteDetailResponse detail(Long noteId, Long viewerId) {
-        // id 不存在时这条 UPDATE 影响 0 行，无害；真正的 404 判定交给下面的 loadMeta。
-        // 自增不参与缓存——它每次请求都要落库。两者于是出现可见差值，直到 TTL 到期 ViewCount 才跳到最新。
-        noteMapper.incrementViewCount(noteId, NoteStatus.ONLINE.name());
-
+    public NoteDetailResponse detail(Long noteId, Long viewerId, boolean viewerIsAdmin) {
+        // 从缓存里取。
         NoteMeta meta = loadMeta(noteId);
         if (meta == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND);
         }
         NoteDetailRow row = meta.row();
 
+        // 校验可见性。
         NoteStatus status = NoteStatus.valueOf(row.getStatus());
-        boolean online = status == NoteStatus.ONLINE;
+        requireReadable(status, row.getUploaderId(), viewerId, viewerIsAdmin);
 
-        //装配响应
+        // ONLINE 状态的笔记浏览量自增。
+        noteMapper.incrementViewCount(noteId, NoteStatus.ONLINE.name());
+
+        return toDetailResponse(row, meta.tags(), status, viewerId);
+    }
+
+    /**
+     * 详情接口出参的装配。
+     */
+    private NoteDetailResponse toDetailResponse(NoteDetailRow row,
+                                                List<TagResponse> tags,
+                                                NoteStatus status,
+                                                Long viewerId) {
         return new NoteDetailResponse(
                 row.getId(),
                 row.getTitle(),
@@ -204,58 +196,97 @@ public class NoteService {
                 new UploaderResponse(
                         row.getUploaderId(), row.getNickname(),
                         avatarUrl(row.getAvatar()), row.getCollegeName()),
-                meta.tags(),
+                tags,
                 row.getViewCount(),
                 row.getDownloadCount(),
                 row.getFavoriteCount(),
                 row.getCreatedAt(),
                 row.getUpdatedAt(),
                 // 非 ONLINE 时整个 file 置空
-                online ? fileInfoOf(row) : null,
+                status == NoteStatus.ONLINE ? fileInfoOf(row) : null,
                 // 非 ONLINE 也照查：收藏关系不因下架而解除
-                favoriteService.isFavorited(viewerId, noteId));
+                favoriteService.isFavorited(viewerId, row.getId()));
     }
 
     /**
-     * 取详情的主干与标签：<b>读穿 + 降级</b>。命中缓存就直接返回，未命中才查那两条 SQL 并回填。
+     * 详情的可见性闸门。
      *
-     * <p>两件事刻意不做（对应「暂不处理穿透 / 击穿」）：<b>不缓存 null</b>——笔记不存在时直接返回
-     * {@code null} 交给上层抛 40400，不让空值占住 key；<b>不防击穿</b>——热点 key 失效的瞬间，
-     * 并发请求会一起查库。
+     * <p>ONLINE 放行全体登录用户；OFFLINE 只放行上传者本人与管理员；DELETED 对谁也不放行.
+     */
+    private static void requireReadable(NoteStatus status, Long uploaderId, Long viewerId, boolean viewerIsAdmin) {
+        if (status == NoteStatus.DELETED) {
+            throw new BusinessException(ErrorCode.NOTE_UNAVAILABLE);
+        }
+        if (status == NoteStatus.OFFLINE
+                && !viewerIsAdmin
+                && !Objects.equals(uploaderId, viewerId)) {
+            throw new BusinessException(ErrorCode.NOTE_UNAVAILABLE);
+        }
+    }
+
+    /**
+     * 取详情的主干与标签。
+     *
+     * <p>暂不防缓存击穿
      *
      * @return 笔记不存在时为 {@code null}，由调用方转 40400
      */
     private NoteMeta loadMeta(Long noteId) {
-        String key = DETAIL_CACHE_PREFIX + noteId;
+        String key = cacheKey(noteId);
 
+        // 判断缓存命中
         try {
-            // 用 instanceof 而不是「先取出来再强转」：缓存里若混进别的类型（换过实现、被手工塞过
-            // 脏数据），强转会抛 ClassCastException 把请求打死；而它本该被当成「没命中」——
-            // 下面照样查库救得回来，下次回填也就覆盖掉了。
             if (redisTemplate.opsForValue().get(key) instanceof NoteMeta cached) {
-                return cached;
+                // 负缓存返回 null
+                return cached.row() == null ? null : cached;
             }
         } catch (RuntimeException e) {
             log.warn("读笔记详情缓存失败，降级直查库 noteId={}", noteId, e);
         }
 
+        // 未命中则查库
         NoteDetailRow row = noteMapper.selectDetail(noteId);
         if (row == null) {
+            // 笔记不存在，写负缓存
+            cacheQuietly(key, ABSENT, ABSENT_CACHE_TTL);
             return null;
         }
         NoteMeta loaded = new NoteMeta(row, noteMapper.selectTagRefs(noteId));
+        cacheQuietly(key, loaded, DETAIL_CACHE_TTL);
 
-        try {
-            redisTemplate.opsForValue().set(key, loaded, DETAIL_CACHE_TTL);
-        } catch (RuntimeException e) {
-            log.warn("回填笔记详情缓存失败，不影响本次请求 noteId={}", noteId, e);
-        }
         return loaded;
     }
 
+    /** 回填缓存。*/
+    private void cacheQuietly(String key, NoteMeta meta, Duration ttl) {
+        try {
+            redisTemplate.opsForValue().set(key, meta, ttl);
+        } catch (RuntimeException e) {
+            log.warn("回填笔记详情缓存失败，不影响本次请求 key={}", key, e);
+        }
+    }
+
     /**
-     * 文件字段的装配。{@code previewMode} 不在库里，由 {@code contentType} 现推（§6.2）——
-     * 它是类型的纯函数，落库等于把函数值再抄一份。
+     * 写路径的缓存失效（删掉详情 key）
+     *
+     * <p>不挂到计数器的写路径上：浏览量是详情接口自己每次请求都在自增的，
+     * 挂上去等于每次读都失效一次缓存，缓存就不再命中。
+     */
+    private void evictMeta(Long noteId) {
+        try {
+            redisTemplate.delete(cacheKey(noteId));
+        } catch (RuntimeException e) {
+            log.warn("失效笔记详情缓存失败，最坏情况靠 TTL 兜底 noteId={}", noteId, e);
+        }
+    }
+
+    private static String cacheKey(Long noteId) {
+        return DETAIL_CACHE_PREFIX + noteId;
+    }
+
+    /**
+     * 文件字段的装配。
+     * {@code previewMode} 不在库里，由 {@code contentType} 现推
      */
     private static NoteDetailResponse.FileInfo fileInfoOf(NoteDetailRow row) {
         return new NoteDetailResponse.FileInfo(
@@ -266,18 +297,14 @@ public class NoteService {
     }
 
     /**
-     * 头像对象键 → 公网直连 URL（§6.7）。
-     *
-     * <p>空值必须在这里短路：{@code StorageService#publicUrl} 是裸字符串拼接，
-     * 喂个 null 会拼出一个以 {@code /null} 结尾、看着像 URL 的东西——
-     * 前端会安心地拿它去 {@code <img src>}，然后拿到一个 404。
+     * 头像对象键 → 公网直连 URL。
      */
     private String avatarUrl(String avatarKey) {
         return avatarKey == null ? null : storageService.publicUrl(Bucket.AVATAR, avatarKey);
     }
 
     /**
-     * 列表：按最近更新 / 热门浏览 / 热门下载取一页笔记。见 §5.4。
+     * 列表：按最近更新 / 热门浏览 / 热门下载取一页笔记。
      *
      * <p><b>只出 {@code ONLINE} 的笔记</b>——§4.1 的表里「列表 / 搜索」这一列对
      * OFFLINE、DELETED 是不可见。这与详情页正相反：详情要把状态带出去让前端渲染提示，
@@ -370,11 +397,11 @@ public class NoteService {
      * <p><b>已删除的不出</b>——{@code DELETED} 由 SQL 无条件排除。
      * <p><b>已下架的照出</b>，靠 {@code status} 让前端加「已下架」角标。
      *
-     * <p>与 {@link #list} 一样，一页只有三次数据库交互：主干分页 + 插件改写出的 count
-     * + 标签批量查询。<b>没有第四次</b>——本列表不带 {@code isFavorited}，
-     * 所以不需要 {@code FavoriteService} 那一次批量查询。
+     * <p>与 {@link #list} 一样，一页四次数据库交互：主干分页 + 插件改写出的 count
+     * + 标签批量查询 + {@code FavoriteService} 的收藏批量查询。
      *
-     * @param uploaderId 当前登录者，取自 JWT。本列表只有本人能看，绝不接受请求参数传入
+     * @param uploaderId 当前登录者，取自 JWT。本列表只有本人能看，绝不接受请求参数传入；
+     *                   它同时是 {@code isFavorited} 的判定主体——本列表里上传者恒等于浏览者
      * @throws BusinessException 40001 分页过深（{@code page × size > 1000}，见 {@link Paging#MAX_PAGE_DEPTH}）
      */
     public PageResponse<MyNoteItemResponse> listMyNotes(Long uploaderId, MyNoteListQuery query) {
@@ -387,24 +414,28 @@ public class NoteService {
                 NoteStatus.DELETED.name());
 
         return new PageResponse<>(
-                assembleMyNotes(result.getRecords()),
+                assembleMyNotes(result.getRecords(), uploaderId),
                 result.getTotal(),
                 query.getPage(),
                 query.getSize());
     }
 
     /**
-     * 把一页的行装配成出参：一次批量查询取回整页的标签，再在内存里按 {@code noteId} 归位。
+     * 把一页的行装配成出参：两次批量查询取回整页的标签与收藏关系，再在内存里按 {@code noteId} 归位。
      *
      * <p>空页要在这里短路——{@code IN ()} 是语法错误，标签查询吃不下空集合
      * （与 {@link #assemble} 同一处守卫，两处都不能省）。
+     *
+     * @param viewerId 收藏关系的判定主体。本列表里就是上传者本人，但仍按浏览者参数向下传，
+     *                 与 {@link #assemble} 的 {@code viewerId} 保持同形
      */
-    private List<MyNoteItemResponse> assembleMyNotes(List<MyNoteRow> rows) {
+    private List<MyNoteItemResponse> assembleMyNotes(List<MyNoteRow> rows, Long viewerId) {
         if (rows.isEmpty()) {
             return List.of();
         }
         List<Long> noteIds = rows.stream().map(MyNoteRow::getId).toList();
         Map<Long, List<TagResponse>> tagsByNote = tagsGroupedByNote(noteIds);
+        Set<Long> favoritedNoteIds = favoriteService.favoritedNoteIds(viewerId, noteIds);
 
         return rows.stream()
                 .map(row -> new MyNoteItemResponse(
@@ -418,7 +449,8 @@ public class NoteService {
                         row.getViewCount(),
                         row.getDownloadCount(),
                         row.getFavoriteCount(),
-                        row.getCreatedAt()))
+                        row.getCreatedAt(),
+                        favoritedNoteIds.contains(row.getId())))
                 .toList();
     }
 
@@ -441,6 +473,7 @@ public class NoteService {
     public void update(Long noteId, Long uploaderId, NoteUpdateRequest request) {
         transactionTemplate.executeWithoutResult(
                 status -> applyUpdate(noteId, uploaderId, request));
+        evictMeta(noteId);
     }
 
     /**
@@ -699,6 +732,7 @@ public class NoteService {
             stateMachine.requireTransition(from, target);
             noteMapper.updateStatus(noteId, target.name());
         });
+        evictMeta(noteId);
     }
 
     /**
@@ -730,6 +764,7 @@ public class NoteService {
             // 将笔记状态置为 DELETED
             noteMapper.markDeleted(noteId, NoteStatus.DELETED.name());
         });
+        evictMeta(noteId);
     }
 
     /**

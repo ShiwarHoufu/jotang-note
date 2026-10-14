@@ -29,11 +29,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 笔记接口。见《概要设计》§5.4。
+ * 笔记接口。
  *
  * <p>当前有上传、详情、列表、我的上传、编辑、删除与预览；搜索 / 下载随后续切片补上。
  * 全部接口都要求登录
- * {@code SecurityConfig} 的 {@code anyRequest().authenticated()} 已经覆盖。
  */
 @RestController
 public class NoteController {
@@ -45,10 +44,9 @@ public class NoteController {
     }
 
     /**
-     * 上传笔记。multipart 表单，文件 + 元数据。见 §6.1。
+     * 上传笔记。
      *
-     * <p>上传者取自 JWT 而非请求体：把「谁传的」交给客户端决定。
-     * 返回体只有新笔记的 id，前端据此跳详情页。
+     * <p>返回体只有新笔记的 id，前端据此跳详情页。
      */
     // multipart/form-data（文件上传表单）不能用 @RequestBody，要用 @ModelAttribute 接收
     @PostMapping("/api/notes")
@@ -60,20 +58,19 @@ public class NoteController {
     /**
      * 笔记详情。
      *
-     * <p>登录者取自 JWT，只用于填 {@code isFavorited}——它不该由客户端传，
-     * 否则任何人都能问出「别人收藏过这篇没有」。
-     *
-     * <p>已下架 / 已删除的笔记同样返回 200：提示「已下架」是详情页的职责，
-     * 40301 留给预览 / 下载 / 收藏（§4.1）。只有 id 不存在才是 40400。
+     * <p>已下架的笔记只对上传者本人与管理员开放，其余人 40301；
+     * 已删除的对所有人 40301。
+     * id 不存 40400。
      */
     @GetMapping("/api/notes/{id}")
     public ApiResponse<NoteDetailResponse> detail(@AuthenticationPrincipal AuthenticatedUser user,
                                                   @PathVariable Long id) {
-        return ApiResponse.ok(noteService.detail(id, user.userId()));
+        return ApiResponse.ok(noteService.detail(id, user.userId(), user.isAdmin()));
     }
 
     /**
-     * 图片预览：返回 OSS 签名 URL，前端 {@code <img>} 直出。
+     * 图片预览：
+     * 返回 OSS 签名 URL，前端 {@code <img>} 直出。
      */
     @GetMapping("/api/notes/{id}/preview-url")
     public ApiResponse<NotePreviewUrlResponse> previewUrl(@PathVariable Long id) {
@@ -81,10 +78,11 @@ public class NoteController {
     }
 
     /**
-     * 文本预览：后端代理返回原文
+     * 文本预览：
+     * 后端代理返回原文
      *
-     * <p><b>全仓唯一不套 {@code ApiResponse} 的接口</b>：成功时响应体是文件原文本身；失败仍由
-     * {@code GlobalExceptionHandler} 写回 JSON 信封。
+     * <p>不套 {@code ApiResponse} ：成功时响应体是文件原文本身；
+     * 失败仍由 {@code GlobalExceptionHandler} 写回 JSON 信封。
      */
     @GetMapping("/api/notes/{id}/raw")
     public ResponseEntity<InputStreamResource> raw(@PathVariable Long id) {
@@ -97,7 +95,7 @@ public class NoteController {
     }
 
     /**
-     * 笔记列表。见 §5.4。
+     * 笔记列表。
      *
      * <p>参数收进 {@link NoteListQuery} 而不是一串 {@code @RequestParam}：校验与类型转换失败
      * 才能落成 40001 加字段明细，而不是掉进兜底变成 50000（理由见该类的注释）。
@@ -113,7 +111,7 @@ public class NoteController {
     }
 
     /**
-     * 我的上传，按上传时间倒序分页。
+     * 我的上传。按上传时间倒序分页。
      *
      * <p><b>已删除的不展示</b>（§4.1 的表里这一列对 {@code DELETED} 是不可见）；
      * 已下架的照常返回，由 {@code status} 让前端标注。

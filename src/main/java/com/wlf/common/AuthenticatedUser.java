@@ -14,4 +14,16 @@ package com.wlf.common;
  * @param role     USER / ADMIN，管理员接口据此判定
  */
 public record AuthenticatedUser(Long userId, String username, String role) {
+
+    private static final String ADMIN_ROLE = "ADMIN";
+
+    /**
+     * 是否管理员。
+     *
+     * <p>管理端整条路径的权限由 {@code SecurityConfig} 的 {@code /api/admin/**} 规则判；
+     * 这里给「同一个接口内按角色分流」的场合用，见 {@code NoteService#requireReadable}。
+     */
+    public boolean isAdmin() {
+        return ADMIN_ROLE.equals(role);
+    }
 }

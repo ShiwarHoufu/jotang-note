@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -93,11 +94,13 @@ class NoteControllerTest {
 
     private Long courseId;
     private Long uploaderId;
+    private Long adminId;
 
     @BeforeEach
     void setUp() {
         courseId = courseMapper.selectList(Wrappers.<Course>lambdaQuery().last("LIMIT 1")).get(0).getId();
         uploaderId = insertUploader();
+        adminId = insertAdmin();
         when(storageService.upload(eq(Bucket.NOTE), anyString(), any(), anyLong(), anyString(), isNull()))
                 .thenAnswer(invocation -> new StoredObject(
                         invocation.getArgument(1, String.class),
@@ -190,14 +193,14 @@ class NoteControllerTest {
     }
 
     /**
-     * §4.1 那条边界在 HTTP 层的样子：已下架的笔记是 <b>200 + status=OFFLINE</b>，
-     * 不是 40301——40301 只发给预览 / 下载 / 收藏。同时文件字段整体为 null。
+     * §4.1 那条边界在 HTTP 层的样子：已下架的笔记对<b>上传者本人</b>是 200 + status=OFFLINE，
+     * 文件字段整体为 null——下架是「内容不可取」，不是「这一页不存在」。
      *
      * <p>{@code file} 断言用 {@code nullValue()} 而不是 {@code doesNotExist()}：
      * 这个键是<b>存在且为 null</b>，不是从响应里消失，两者对前端不是一回事。
      */
     @Test
-    void detailServesOfflineNoteWithNullFile() throws Exception {
+    void detailServesOwnOfflineNoteWithNullFile() throws Exception {
         Long noteId = insertNote(courseId, MARKER + "已下架", NoteStatus.OFFLINE);
 
         mockMvc.perform(get("/api/notes/" + noteId).header("Authorization", token()))
@@ -207,6 +210,44 @@ class NoteControllerTest {
                 .andExpect(jsonPath("$.data.title").value(MARKER + "已下架"))
                 .andExpect(jsonPath("$.data.file").value(nullValue()))
                 .andExpect(jsonPath("$.data.isFavorited").value(false));
+    }
+
+    /**
+     * 管理员用<b>同一个接口</b>看已下架的笔记，靠 JWT 里的 role 放行——
+     * 详情页要给管理员显示下架 / 恢复按钮（§5.6），拿不到详情就无处点。
+     */
+    @Test
+    void detailServesOfflineNoteToAdmin() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "管理员看的已下架", NoteStatus.OFFLINE);
+
+        mockMvc.perform(get("/api/notes/" + noteId).header("Authorization", adminToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.status").value("OFFLINE"));
+    }
+
+    /** 他人看已下架的：40301，与预览 / 下载 / 收藏同一口径 */
+    @Test
+    void detailRejectsSomebodyElseOnAnOfflineNote() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "别人的已下架", NoteStatus.OFFLINE);
+        Long intruderId = insertStranger();
+
+        mockMvc.perform(get("/api/notes/" + noteId).header("Authorization", tokenOf(intruderId)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40301));
+    }
+
+    /** 已删除对谁都不开：本人、管理员、他都一样是 40301 */
+    @Test
+    void detailRejectsDeletedNoteToEverybody() throws Exception {
+        Long noteId = insertNote(courseId, MARKER + "已删除", NoteStatus.DELETED);
+        Long intruderId = insertStranger();
+
+        for (String authorization : List.of(token(), adminToken(), tokenOf(intruderId))) {
+            mockMvc.perform(get("/api/notes/" + noteId).header("Authorization", authorization))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value(40301));
+        }
     }
 
     // ==================== GET /api/notes/{id}/preview-url & /raw ====================
@@ -398,11 +439,11 @@ class NoteControllerTest {
 
     /**
      * 删除成功是「无数据的成功」（{@code data} 为 null），与退出登录同款；
-     * 而删完之后<b>详情页照常返回 200</b>——§4.1 说详情是唯一要把状态带出去的读接口，
-     * 前端据此渲染「已删除」提示，文件字段整体置空。
+     * 而删完之后<b>详情页连本人也打不开了</b>——已删除对所有人 40301（§4.1）。
+     * 「笔记已删除」这个提示改由收藏列表的占位项承担（§6.5）。
      */
     @Test
-    void deleteReturnsNoDataAndTheNoteStaysReadableAsDeleted() throws Exception {
+    void deleteReturnsNoDataAndTheNoteIsNoLongerReadable() throws Exception {
         Long noteId = insertNote(courseId, MARKER + "待删除", NoteStatus.ONLINE);
 
         mockMvc.perform(delete("/api/notes/{id}", noteId).header("Authorization", token()))
@@ -411,10 +452,8 @@ class NoteControllerTest {
                 .andExpect(jsonPath("$.data").value(nullValue()));
 
         mockMvc.perform(get("/api/notes/{id}", noteId).header("Authorization", token()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("DELETED"))
-                .andExpect(jsonPath("$.data.title").value(MARKER + "待删除"))
-                .andExpect(jsonPath("$.data.file").value(nullValue()));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40301));
     }
 
     /** 幂等：连点两次不该有一次报错 */
@@ -565,11 +604,11 @@ class NoteControllerTest {
 
     /**
      * 只出自己<b>未删除</b>的笔记，已下架的照常返回并带着 {@code OFFLINE}。
-     * 同时验证响应体里<b>没有 {@code uploader} 与 {@code isFavorited}</b>——
-     * 上传者恒等于自己、收藏自己的笔记没有意义，恒等于一个值的字段不给。
+     * 同时验证响应体里<b>没有 {@code uploader}</b>——上传者恒等于自己，恒等于一个值的字段不给。
+     * {@code isFavorited} 则照常给：它按<b>浏览者</b>查，不是恒定值（自己也可能收藏过自己的某几篇）。
      */
     @Test
-    void myNotesReturnsOwnUndeltedNotesAndOmitsConstantFields() throws Exception {
+    void myNotesReturnsOwnUndeltedNotesAndOmitsUploader() throws Exception {
         insertNote(courseId, MARKER + "在线的", NoteStatus.ONLINE);
         insertNote(courseId, MARKER + "已下架的", NoteStatus.OFFLINE);
         insertNote(courseId, MARKER + "已删除的", NoteStatus.DELETED);
@@ -587,7 +626,7 @@ class NoteControllerTest {
                 .andExpect(jsonPath("$.data.items[0].course.id").value(courseId))
                 .andExpect(jsonPath("$.data.items[0].tags").isArray())
                 .andExpect(jsonPath("$.data.items[0].uploader").doesNotExist())
-                .andExpect(jsonPath("$.data.items[0].isFavorited").doesNotExist());
+                .andExpect(jsonPath("$.data.items[0].isFavorited").value(false));
     }
 
     /** 分页外壳与参数守卫，与其余列表同一套（§3.3 的上限对所有列表统一生效） */
@@ -661,6 +700,14 @@ class NoteControllerTest {
         return "Bearer " + jwtTokenProvider.issue(uploaderId, MARKER + "uploader", "USER");
     }
 
+    /**
+     * 管理员 token。{@code /api/notes/{id}} 不在 {@code /api/admin/**} 下，
+     * 走不到 SecurityConfig 的角色规则，角色是业务层从 JWT claim 里读的。
+     */
+    private String adminToken() {
+        return "Bearer " + jwtTokenProvider.issue(adminId, MARKER + "admin", "ADMIN");
+    }
+
     /** 签指定用户的 token。用于「非本人」这类要区分身份的用例 */
     private String tokenOf(Long userId) {
         return "Bearer " + jwtTokenProvider.issue(userId, MARKER + "stranger", "USER");
@@ -699,6 +746,23 @@ class NoteControllerTest {
         user.setPasswordHash("$2a$10$test-only-not-a-real-bcrypt-hash");
         user.setNickname(MARKER + "上传者");
         user.setCollegeId(college.getId());
+        userMapper.insert(user);
+        return user.getId();
+    }
+
+    /** 管理员账号。详情接口只看角色，学院是什么无所谓 */
+    private Long insertAdmin() {
+        College college = new College();
+        college.setName(MARKER + "管理员学院");
+        collegeMapper.insert(college);
+
+        User user = new User();
+        user.setUsername(MARKER + "admin");
+        user.setEmail(MARKER + "admin-note@example.com");
+        user.setPasswordHash("$2a$10$test-only-not-a-real-bcrypt-hash");
+        user.setNickname(MARKER + "管理员");
+        user.setCollegeId(college.getId());
+        user.setRole("ADMIN");
         userMapper.insert(user);
         return user.getId();
     }

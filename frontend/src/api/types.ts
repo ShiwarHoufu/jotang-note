@@ -148,6 +148,7 @@ export interface MyNoteItem {
   downloadCount: number
   favoriteCount: number
   createdAt: string
+  isFavorited: boolean
 }
 
 /**

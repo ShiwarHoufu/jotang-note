@@ -41,8 +41,9 @@ import static org.mockito.Mockito.when;
  * <p>重点不在「字段有没有搬对地方」，而在几条<b>容易实现成另一个样子</b>的规则：
  *
  * <ul>
- *   <li><b>非 ONLINE 照常返回</b>，且只丢文件字段、元数据一条不少（§4.1）</li>
- *   <li><b>浏览量只在 ONLINE 时涨</b>，且返回值含本次（§5.4）</li>
+ *   <li><b>非 ONLINE 的可见性闸门</b>：已下架只给上传者本人与管理员，已删除对谁都不开（§4.1）</li>
+ *   <li><b>放行时只丢文件字段、元数据一条不少</b>（§4.1）</li>
+ *   <li><b>浏览量只在 ONLINE 时涨</b>，且自增发生在可见性闸门之后（§5.4）</li>
  *   <li><b>收藏关系不因下架而消失</b>（§6.5）</li>
  *   <li><b>没设头像时 avatarUrl 是 null</b>，不是拼出来的半截 URL</li>
  * </ul>
@@ -116,7 +117,7 @@ class NoteDetailServiceTest {
         Long reviewTag = attachTag(fixture.noteId(), MARKER + "标签甲");
         Long finalTag = attachTag(fixture.noteId(), MARKER + "标签乙");
 
-        NoteDetailResponse detail = noteService.detail(fixture.noteId(), viewerId);
+        NoteDetailResponse detail = noteService.detail(fixture.noteId(), viewerId, false);
 
         assertThat(detail.id()).isEqualTo(fixture.noteId());
         assertThat(detail.title()).isEqualTo(MARKER + "标题");
@@ -148,20 +149,19 @@ class NoteDetailServiceTest {
     }
 
     /**
-     * §4.1：详情页对已下架 / 已删除的笔记是「提示」，不是「禁止」——
-     * 所以照常 200、元数据照给，只把文件字段整体丢掉。
-     *
-     * <p>两种状态写在同一个用例里：它们在这件事上必须是同一个行为，
-     * 分开写反而会掩盖「其中一个被特判了」这种情况。
+     * §4.1：已下架对上传者本人与管理员放行，拿到的仍是完整元数据 + 空的文件字段——
+     * 下架是「内容不可取」，不是「这一页不存在」；前端据此渲染「已下架」横幅与下架 / 恢复按钮。
      */
     @Test
-    void nonOnlineNoteKeepsMetadataButDropsTheFile() {
-        for (NoteStatus status : List.of(NoteStatus.OFFLINE, NoteStatus.DELETED)) {
-            Fixture fixture = createNote(status, AVATAR_KEY);
+    void offlineNoteKeepsMetadataForOwnerAndAdminButDropsTheFile() {
+        Fixture fixture = createNote(NoteStatus.OFFLINE, AVATAR_KEY);
 
-            NoteDetailResponse detail = noteService.detail(fixture.noteId(), viewerId);
+        for (boolean viewerIsAdmin : List.of(false, true)) {
+            Long viewer = viewerIsAdmin ? viewerId : fixture.uploaderId();
 
-            assertThat(detail.status()).isEqualTo(status);
+            NoteDetailResponse detail = noteService.detail(fixture.noteId(), viewer, viewerIsAdmin);
+
+            assertThat(detail.status()).isEqualTo(NoteStatus.OFFLINE);
             assertThat(detail.file()).isNull();
 
             // 元数据一条不少：已下架的笔记仍是可展示、可分享的页面
@@ -172,15 +172,45 @@ class NoteDetailServiceTest {
         }
     }
 
+    /** 已下架对他人 40301——与预览 / 下载 / 收藏同一口径，本人与管理员是仅有的两个例外 */
+    @Test
+    void offlineNoteIsForbiddenToEverybodyElse() {
+        Fixture fixture = createNote(NoteStatus.OFFLINE, null);
+
+        assertThatThrownBy(() -> noteService.detail(fixture.noteId(), viewerId, false))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.NOTE_UNAVAILABLE));
+    }
+
     /**
-     * §5.4 的原语义是「仅 ONLINE 计数，且返回的值含本次浏览」。加了详情缓存之后
-     * <b>只有前半句还成立</b>：第二次调用命中缓存，回的是回填那一刻的快照，
+     * 已删除对谁都不开：本人、管理员、他人走同一个 40301。
+     *
+     * <p>不做「本人给 40400、他人给 40301」这类区分——笔记 id 的存在性在收藏列表的占位项里
+     * 本来就可见（§6.5），藏它换不来任何东西。
+     */
+    @Test
+    void deletedNoteIsForbiddenToEverybody() {
+        Fixture fixture = createNote(NoteStatus.DELETED, null);
+
+        for (Long viewer : List.of(fixture.uploaderId(), viewerId)) {
+            for (boolean viewerIsAdmin : List.of(false, true)) {
+                assertThatThrownBy(() -> noteService.detail(fixture.noteId(), viewer, viewerIsAdmin))
+                        .isInstanceOfSatisfying(BusinessException.class,
+                                e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.NOTE_UNAVAILABLE));
+            }
+        }
+    }
+
+    /**
+     * §5.4 的原语义是「仅 ONLINE 计数，且返回的值含本次浏览」。详情缓存落地之后
+     * <b>只有前半句还成立</b>：回给前端的是「读到缓存 / 库那一刻的快照」，
      * 而这期间库里的自增照常发生。
      *
      * <p>所以这里如实钉住<b>新行为</b>，把取舍写进断言、而不是留给后人踩：
-     * 第一次返回 1，再调仍返回 1（命中缓存），但库里已经是 2。
+     * 两次都返回 0（冷启动那次的读发生在自增之前，第二次命中缓存回的是那一刻的快照），
+     * 但库里已经是 2。计数照涨，只是不再回显本次浏览。
      *
-     * <p><b>本用例是本类唯一直接读写 Redis 的</b>，因此必须先清缓存拿到确定的冷启动——
+     * <p><b>本类里直接读写 Redis 的用例之一</b>，因此必须先清缓存拿到确定的冷启动——
      * 缓存不在 {@code @Transactional} 的回滚范围内，本类其它用例写进去的条目会跨用例残留。
      */
     @Test
@@ -189,17 +219,17 @@ class NoteDetailServiceTest {
         Fixture offline = createNote(NoteStatus.OFFLINE, null);
         redisTemplate.delete(redisTemplate.keys("note:meta:*"));
 
-        // 冷缓存：未命中 → 查库 → 回填。返回的值含本次浏览（自增先于读取）
-        assertThat(noteService.detail(online.noteId(), viewerId).viewCount()).isEqualTo(1L);
-        // 命中缓存：回的还是上面那一刻的快照，不是 2。这就是被接受的滞后
-        assertThat(noteService.detail(online.noteId(), viewerId).viewCount()).isEqualTo(1L);
+        // 冷缓存：未命中 → 查库 → 回填。自增在闸门之后，这一次读到的还是自增前的值
+        assertThat(noteService.detail(online.noteId(), viewerId, false).viewCount()).isZero();
+        // 命中缓存：回的还是上面那一刻的快照，同样不含本次
+        assertThat(noteService.detail(online.noteId(), viewerId, false).viewCount()).isZero();
 
         // 但库里确实涨到了 2——缓存既没让自增失效，也没动写路径
         assertThat(noteMapper.selectById(online.noteId()).getViewCount()).isEqualTo(2L);
 
-        // OFFLINE 不参与自增，返回值恒为 0，与缓存无关
-        assertThat(noteService.detail(offline.noteId(), viewerId).viewCount()).isZero();
-        assertThat(noteService.detail(offline.noteId(), viewerId).viewCount()).isZero();
+        // OFFLINE 不参与自增，返回值恒为 0，与缓存无关。下架后只有本人与管理员进得来，故用上传者当浏览者
+        assertThat(noteService.detail(offline.noteId(), offline.uploaderId(), false).viewCount()).isZero();
+        assertThat(noteService.detail(offline.noteId(), offline.uploaderId(), false).viewCount()).isZero();
         assertThat(noteMapper.selectById(offline.noteId()).getViewCount()).isZero();
     }
 
@@ -209,18 +239,20 @@ class NoteDetailServiceTest {
         Fixture fixture = createNote(NoteStatus.ONLINE, null);
         favorite(viewerId, fixture.noteId());
 
-        assertThat(noteService.detail(fixture.noteId(), viewerId).isFavorited()).isTrue();
+        assertThat(noteService.detail(fixture.noteId(), viewerId, false).isFavorited()).isTrue();
         assertThat(noteService.detail(fixture.noteId(),
-                insertUser("other", null, uploaderCollegeId)).isFavorited()).isFalse();
+                insertUser("other", null, uploaderCollegeId), false).isFavorited()).isFalse();
     }
 
     /** §6.5：下架不解除收藏关系。若实现里顺手加了「非 ONLINE 一律 false」，这条会红 */
     @Test
     void favoritedRelationshipSurvivesOffline() {
         Fixture fixture = createNote(NoteStatus.OFFLINE, null);
-        favorite(viewerId, fixture.noteId());
+        // 收藏者用上传者本人：下架后进得来详情的只有本人与管理员，而他人收藏的关系由
+        // FavoriteService 的批量路径（收藏列表）覆盖，不必在这里再走一遍闸门
+        favorite(fixture.uploaderId(), fixture.noteId());
 
-        NoteDetailResponse detail = noteService.detail(fixture.noteId(), viewerId);
+        NoteDetailResponse detail = noteService.detail(fixture.noteId(), fixture.uploaderId(), false);
 
         assertThat(detail.status()).isEqualTo(NoteStatus.OFFLINE);
         assertThat(detail.isFavorited()).isTrue();
@@ -235,12 +267,12 @@ class NoteDetailServiceTest {
     void missingAvatarYieldsNullRatherThanABrokenUrl() {
         Fixture fixture = createNote(NoteStatus.ONLINE, null);
 
-        assertThat(noteService.detail(fixture.noteId(), viewerId).uploader().avatarUrl()).isNull();
+        assertThat(noteService.detail(fixture.noteId(), viewerId, false).uploader().avatarUrl()).isNull();
     }
 
     @Test
     void unknownNoteIsNotFound() {
-        assertThatThrownBy(() -> noteService.detail(999_999_999L, viewerId))
+        assertThatThrownBy(() -> noteService.detail(999_999_999L, viewerId, false))
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
     }
@@ -261,22 +293,71 @@ class NoteDetailServiceTest {
         LocalDateTime editedAt = LocalDateTime.of(2020, 1, 1, 0, 0);
         jdbcTemplate.update("UPDATE note SET updated_at = ? WHERE id = ?", editedAt, fixture.noteId());
 
-        noteService.detail(fixture.noteId(), viewerId);
+        noteService.detail(fixture.noteId(), viewerId, false);
 
         assertThat(noteMapper.selectById(fixture.noteId()).getUpdatedAt()).isEqualTo(editedAt);
         // 顺带确认这次调用确实发生了自增——否则「时间没变」可能只是因为压根什么都没干
         assertThat(noteMapper.selectById(fixture.noteId()).getViewCount()).isEqualTo(1L);
     }
 
-    /** 不存在的笔记不该被那次「先自增」的 UPDATE 影响——它的 WHERE 根本匹配不到行 */
+    /** 不存在的笔记在闸门之前就被 {@code loadMeta} 判成 40400，走不到自增那条语句；同一次请求里别的行也不该被动到 */
     @Test
     void unknownNoteIsNotCountedAsAView() {
         Fixture fixture = createNote(NoteStatus.ONLINE, null);
 
-        assertThatThrownBy(() -> noteService.detail(999_999_999L, viewerId))
+        assertThatThrownBy(() -> noteService.detail(999_999_999L, viewerId, false))
                 .isInstanceOf(BusinessException.class);
 
         assertThat(noteMapper.selectById(fixture.noteId()).getViewCount()).isZero();
+    }
+
+    /**
+     * 自增在可见性闸门之后：闸门拒掉的请求一次都不写库。
+     *
+     * <p>这条只有靠「缓存里的 {@code status} 与库里的不一致」才看得出来——两者一致时，
+     * 闸门拒的正是那条 SQL 守卫也挡的，写不写这次 UPDATE 从计数上分不出来。这里先让上传者本人
+     * 看一眼，把 {@code OFFLINE} 那一刻灌进缓存，再<b>绕过 Service</b> 直接改库（故不触发缓存失效），
+     * 于是缓存停在 {@code OFFLINE}、库里已是 {@code ONLINE}：陌生人过不了闸门（40301），
+     * 但他这次请求打的那个 id 在库里是 {@code ONLINE}。若自增哪天又被挪回闸门之前，计数会变成 1。
+     */
+    @Test
+    void rejectedRequestDoesNotIncrementViewCount() {
+        Fixture fixture = createNote(NoteStatus.OFFLINE, null);
+        noteService.detail(fixture.noteId(), fixture.uploaderId(), false);
+
+        jdbcTemplate.update("UPDATE note SET status = ? WHERE id = ?",
+                NoteStatus.ONLINE.name(), fixture.noteId());
+
+        assertThatThrownBy(() -> noteService.detail(fixture.noteId(), viewerId, false))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.NOTE_UNAVAILABLE));
+
+        assertThat(noteMapper.selectById(fixture.noteId()).getViewCount()).isZero();
+    }
+
+    /**
+     * 负缓存：不存在的 id 也占住 key，第二次请求不再查库。
+     *
+     * <p>分辨的办法只能是「绕过 Service 把那一行插进库」——第二次仍拿到 40400，说明它回的是缓存里
+     * 那条占位值。负缓存一旦被去掉，第二次就会读到这一行、返回 200，这条随即变红。
+     *
+     * <p>走真 Redis，与 {@code viewCountIsServedFromCacheWithinTtl} 一样先清 key 拿确定的冷启动。
+     */
+    @Test
+    void unknownNoteIsNegativelyCached() {
+        Long noteId = 900_000_001L;
+        redisTemplate.delete("note:meta:" + noteId);
+
+        assertThatThrownBy(() -> noteService.detail(noteId, viewerId, false))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
+
+        insertNoteRowWithId(noteId);
+
+        assertThat(noteMapper.selectById(noteId)).as("库里已经有这一行了，读不到只可能是缓存答的").isNotNull();
+        assertThatThrownBy(() -> noteService.detail(noteId, viewerId, false))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
     }
 
     // ==================== 夹具 ====================
@@ -307,6 +388,23 @@ class NoteDetailServiceTest {
         noteFileMapper.insert(file);
 
         return new Fixture(note.getId(), uploaderId);
+    }
+
+    /**
+     * 按指定 id 造一整行（含 {@code note_file}）。id 由参数给定，用 {@code jdbcTemplate} 绕过
+     * Service 与 MyBatis-Plus 的自增——{@link #unknownNoteIsNegativelyCached} 要的正是
+     * 「第一条请求之后这一行才存在」，而且不许触发缓存失效。
+     */
+    private void insertNoteRowWithId(Long noteId) {
+        Long uploaderId = insertUser("late", null, uploaderCollegeId);
+        jdbcTemplate.update("""
+                        INSERT INTO note (id, uploader_id, course_id, title, status)
+                        VALUES (?, ?, ?, ?, ?)""",
+                noteId, uploaderId, courseId, MARKER + "后补的标题", NoteStatus.ONLINE.name());
+        jdbcTemplate.update("""
+                        INSERT INTO note_file (note_id, storage_key, original_name, size, content_type)
+                        VALUES (?, ?, ?, ?, ?)""",
+                noteId, "notes/2026/10/" + UUID.randomUUID() + ".png", "课件.png", 1048576L, "image/png");
     }
 
     /**
