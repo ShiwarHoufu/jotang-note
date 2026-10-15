@@ -47,7 +47,8 @@ public class CatalogController {
     }
 
     /**
-     * 标签列表。
+     * 候选标签：
+     * 最常用的若干个，按使用量倒序。
      * 筛选栏与上传表单的候选标签。
      */
     @GetMapping("/api/tags")

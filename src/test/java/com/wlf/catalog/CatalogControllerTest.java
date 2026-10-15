@@ -98,6 +98,8 @@ class CatalogControllerTest {
                 // 种子里已有若干标签，用 hasItem 断言包含而不锁定位置
                 .andExpect(jsonPath("$.data[*].name", hasItem(MARKER + "-标签")))
                 .andExpect(jsonPath("$.data[*].id").exists());
+        // 注意这行标签一个 note_tag 都没有，使用量为 0，在候选列表里排在最后。
+        // 它还在，是因为本机标签总数没到上限；上限与截断行为由 TagServiceTest 盯着
     }
 
     private String bearer() {

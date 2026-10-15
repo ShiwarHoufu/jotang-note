@@ -1,6 +1,7 @@
 package com.wlf.catalog;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.wlf.catalog.dto.TagResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
@@ -8,6 +9,7 @@ import com.wlf.entity.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,12 +20,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 验证 {@link TagService#resolveIds} 的按名解析与按名创建。
+ * 验证 {@link TagService#resolveIds} 的按名解析与按名创建，以及
+ * {@link TagService#list} 的候选列表口径。
  *
  * <p>用例自造的标签名一律带 {@link #MARKER}：{@code tag.name} 上有 {@code uk_name}，
  * 而 data.sql 已种入真实标签，撞名会直接报 DuplicateKeyException。
  *
  * <p>用例随事务回滚。
+ *
+ * <p><b>候选列表那几条有同一条前提：本地库的标签总数没到上限。</b>几个「没人用」的标签
+ * 排在候选列表最末尾，库里的标签一旦超过上限就会先被截掉。本机数据量远没到这个数，
+ * 真撞上了说明该回头审视上限本身，让它红比让它悄悄跳过有用。
  */
 @SpringBootTest
 @ActiveProfiles("local")
@@ -37,6 +44,9 @@ class TagServiceTest {
 
     @Autowired
     private TagMapper tagMapper;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void resolvesExistingTagToItsId() {
@@ -123,6 +133,107 @@ class TagServiceTest {
 
         // 校验在写库之前完成，不能出现「拒了请求却留下一半标签」
         assertThat(countByName(MARKER + "0")).isZero();
+    }
+
+    // ==================== 候选列表 ====================
+
+    /**
+     * 上限真的生效：造出超过上限的标签，返回的仍只有上限个。
+     *
+     * <p>不写成「造 5 个、拿到 5 个」——那在没有上限时也照样通过。先把总数顶过上限，
+     * 断言才有意义；{@code 20} 是 {@code TagService.CANDIDATE_LIMIT} 的取值，
+     * 它是私有的，这里只能照抄一份。
+     */
+    @Test
+    void listIsCappedAtTheCandidateLimit() {
+        insertTags(40);
+        assertThat(tagMapper.selectCount(null)).isGreaterThan(20);
+
+        assertThat(tagService.list()).hasSize(20);
+    }
+
+    /**
+     * 用过的排在没用过的之前——这条盯「按使用量倒序」。
+     *
+     * <p>只断言自己造的那三个标签之间的<b>相对</b>顺序，不碰绝对位置：本地库里可能有
+     * 使用量更高的标签插在中间（与 {@code CatalogControllerTest} 用 {@code hasItem} 同规矩）。
+     */
+    @Test
+    void mostUsedTagsComeFirst() {
+        Long hot = insertTag(MARKER + "热门");
+        Long warm = insertTag(MARKER + "一般");
+        Long cold = insertTag(MARKER + "没人用");
+        attachNotes(hot, 3);
+        attachNotes(warm, 1);
+
+        List<String> names = namesOfList();
+
+        assertThat(names).contains(MARKER + "热门", MARKER + "一般", MARKER + "没人用");
+        assertThat(names.indexOf(MARKER + "热门")).isLessThan(names.indexOf(MARKER + "一般"));
+        assertThat(names.indexOf(MARKER + "一般")).isLessThan(names.indexOf(MARKER + "没人用"));
+    }
+
+    /**
+     * 一个 {@code note_tag} 行都没有的标签，<b>仍然在候选里</b>，只是排在用过之后。
+     *
+     * <p>这条是 {@code LEFT JOIN} 那个选择的守卫，也是本次改动的核心风险点：换成
+     * {@code INNER JOIN} 的话，data.sql 种下的这四个常用标签会因为没人用过而整个消失，
+     * 「预置一批候选标签」就成了空话——而这件事在有真实数据之前完全看不出来。
+     * 所以这里把种子里那四个名字写死。
+     */
+    @Test
+    void unusedSeededTagsAreStillCandidates() {
+        assertThat(namesOfList()).contains("期末复习", "课堂笔记", "习题解答", "实验报告");
+    }
+
+    // ==================== 辅助 ====================
+
+    private List<String> namesOfList() {
+        return tagService.list().stream().map(TagResponse::name).toList();
+    }
+
+    private void insertTags(int count) {
+        for (int i = 0; i < count; i++) {
+            insertTag(MARKER + "批量" + i);
+        }
+    }
+
+    /**
+     * 给标签挂上若干篇笔记，撑出使用量。
+     *
+     * <p>走原生 SQL 而不走 Mapper：这里要的只是「note 与 note_tag 各有一行」，
+     * 走实体类还得先备好学院 / 课程 / 上传者的 id，反而是更长的路。
+     *
+     * <p>每次调用建一个上传者——{@code uk_email} 挡着，同一个测试里不能共用。
+     * 用 {@code tagId} 当后缀，天然不会重复。
+     */
+    private void attachNotes(Long tagId, int count) {
+        Long uploaderId = insertUploader(tagId);
+        Long courseId = jdbcTemplate.queryForObject("SELECT id FROM course LIMIT 1", Long.class);
+
+        for (int i = 0; i < count; i++) {
+            String title = MARKER + "笔记-" + tagId + "-" + i;
+            jdbcTemplate.update("INSERT INTO note (uploader_id, course_id, title) VALUES (?, ?, ?)",
+                    uploaderId, courseId, title);
+            // 用刚写的标题查回来，不依赖 LAST_INSERT_ID()：那是连接级的，
+            // 连接池下要它成立得先证明两次调用走的是同一条连接
+            Long noteId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM note WHERE title = ?", Long.class, title);
+            jdbcTemplate.update("INSERT INTO note_tag (note_id, tag_id) VALUES (?, ?)", noteId, tagId);
+        }
+    }
+
+    /** data.sql 只种了学院与课程，没有用户，上传者得自己造一个 */
+    private Long insertUploader(Long tagId) {
+        Long collegeId = jdbcTemplate.queryForObject("SELECT id FROM college LIMIT 1", Long.class);
+        String username = MARKER + "u" + tagId;
+        jdbcTemplate.update("""
+                        INSERT INTO `user` (username, email, password_hash, nickname, college_id)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                username, username + "@example.com", "not-a-real-hash", MARKER + "u", collegeId);
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM `user` WHERE username = ?", Long.class, username);
     }
 
     private Long insertTag(String name) {

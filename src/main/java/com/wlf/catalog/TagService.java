@@ -40,6 +40,23 @@ public class TagService {
      */
     private static final int MAX_TAGS_PER_NOTE = 10;
 
+    /**
+     * 候选标签的条数上限。
+     *
+     * <p>需求与设计文档都没定这个数，取 20 作护栏。它<b>不是分页</b>：超出的部分前端拿不到，
+     * 想用的冷门标签只能自己敲——输入框本来就允许打新词，所以这不是「用不了」，
+     * 只是不给候选。
+     *
+     * <p>为什么要封顶：标签是按名自由创建的（见上），数量没有上界，而这一份「候选」
+     * 要经过筛选栏、上传、编辑三处。不封顶的话，随着标签越积越多，这个接口的响应体
+     * 和前端下拉的渲染会跟着一起长。
+     *
+     * <p><b>封顶 20 意味着 {@code data.sql} 那 4 个预置标签的保护期很短</b>：它们一个
+     * {@code note_tag} 行都没有、计数为 0，排在最后，站上只要有 20 个标签各自被用过，
+     * 就会被挤出候选。要让它们常驻，得改成「预置标签优先返回」而不是纯按热度排。
+     */
+    private static final int CANDIDATE_LIMIT = 20;
+
     private final TagMapper tagMapper;
 
     public TagService(TagMapper tagMapper) {
@@ -47,17 +64,11 @@ public class TagService {
     }
 
     /**
-     * 全部标签，用作筛选栏与上传表单的候选。
-     *
-     * <p>按 id 升序：先是 data.sql 里的常用标签，其后是用户新增的。
-     * 与学院、课程同理，不按 name 排——默认排序规则对中文按 Unicode 码点而非拼音排序。
-     *
-     * <p>不分页：标签量级有限，前端整份拉走做本地筛选。
+     * 候选标签：
+     * 最常用的前 {@link #CANDIDATE_LIMIT} 个，按使用量倒序。
      */
     public List<TagResponse> list() {
-        return tagMapper.selectList(
-                        Wrappers.<Tag>lambdaQuery().orderByAsc(Tag::getId))
-                .stream()
+        return tagMapper.selectMostUsed(CANDIDATE_LIMIT).stream()
                 .map(TagResponse::from)
                 .toList();
     }
