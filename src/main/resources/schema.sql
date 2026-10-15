@@ -129,8 +129,10 @@ CREATE TABLE IF NOT EXISTS `password_reset_token` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- AI 对话消息（服务端保存多轮记忆）
--- 一轮问答两行。历史按 id 正序就是模型要的顺序，不做任何裁剪——
--- DeepSeek 的前缀缓存按「从 token 0 起逐字相同的公共前缀」命中，裁剪会让缓存失效
+-- 一轮问答两行。历史按 id 正序就是模型要的顺序，落库不做任何裁剪。
+-- 送模型的那份过一道滑动窗口（AiService.MAX_CONTEXT_MESSAGES，40 条）：未超限时前缀
+-- 逐轮只增不变，DeepSeek 的前缀缓存按「从 token 0 起逐字相同的公共前缀」照常命中；
+-- 超限后窗口每轮滑一位、前缀从滑动点起失效，是拿有界的单次成本换掉撑爆上下文的故障风险
 CREATE TABLE IF NOT EXISTS `ai_message` (
   `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id`         BIGINT UNSIGNED NOT NULL,

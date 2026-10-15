@@ -11,7 +11,8 @@ import java.time.LocalDateTime;
 /**
  * ai_message 表。一轮问答两行（用户一条、助手一条）。
  *
- * <p>历史按 {@code id} 正序读出来就是模型要的顺序，不做裁剪。
+ * <p>历史按 {@code id} 正序读出来就是模型要的顺序。
+ * <b>落库不裁剪</b>，只有送模型的那份过一道滑动窗口（{@code AiService#MAX_CONTEXT_MESSAGES}）。
  */
 @Getter
 @Setter

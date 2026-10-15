@@ -1,5 +1,5 @@
 import { api } from './http'
-import type { AiChatResponse, AiSummaryResponse } from './types'
+import type { AiChatHistoryResponse, AiChatResponse, AiSummaryResponse } from './types'
 
 /**
  * AI 接口（§5.8）。42900（限频烧钱护栏）与 50300（上游不可用）都在
@@ -36,4 +36,7 @@ export const aiApi = {
   /** 一问一答；conversationId 传上一轮返回值即延续会话，留空开新会话 */
   chat: (message: string, conversationId?: string) =>
     api.post<AiChatResponse>('/ai/chat', { message, conversationId }),
+
+  /** 恢复最近一次会话；一条会话都没有时回 { conversationId: null, messages: [] }，不是错误 */
+  latest: () => api.get<AiChatHistoryResponse>('/ai/chat/latest'),
 }

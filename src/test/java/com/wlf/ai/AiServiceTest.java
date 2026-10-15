@@ -1,5 +1,6 @@
 package com.wlf.ai;
 
+import com.wlf.ai.dto.AiChatHistoryResponse;
 import com.wlf.ai.dto.AiChatResponse;
 import com.wlf.ai.dto.AiSummaryRequest;
 import com.wlf.ai.dto.AiSummaryResponse;
@@ -28,6 +29,7 @@ import org.springframework.util.MimeTypeUtils;
 import java.io.ByteArrayInputStream;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Consumer;
@@ -567,7 +569,113 @@ class AiServiceTest {
         assertThat(service.chat(USER_ID, MESSAGE, null).reply()).isEqualTo("回答正文");
     }
 
+    // ==================== 恢复最近会话 ====================
+
+    @Test
+    void historyReturnsLatestConversationInOrder() {
+        when(aiMessageMapper.selectLatestConversationId(USER_ID)).thenReturn(CONVERSATION_ID);
+        when(aiMessageMapper.selectList(any())).thenReturn(List.of(
+                row(AiMessageRole.USER, "第一个问题"),
+                row(AiMessageRole.ASSISTANT, "第一个回答")));
+
+        AiChatHistoryResponse history = service.history(USER_ID);
+
+        assertThat(history.conversationId()).isEqualTo(CONVERSATION_ID);
+        assertThat(history.messages()).extracting(AiChatHistoryResponse.Message::role)
+                .containsExactly(AiMessageRole.USER.name(), AiMessageRole.ASSISTANT.name());
+        assertThat(history.messages()).extracting(AiChatHistoryResponse.Message::content)
+                .containsExactly("第一个问题", "第一个回答");
+    }
+
+    /**
+     * 新用户：没有任何会话是<b>常态</b>，回空载荷而不是 40400。
+     * 40400 会让前端 http 层弹全局提示，页面一打开就弹「资源不存在」不可接受。
+     */
+    @Test
+    void historyReturnsEmptyPayloadWhenUserHasNoConversation() {
+        AiChatHistoryResponse history = service.history(USER_ID);
+
+        assertThat(history.conversationId()).isNull();
+        assertThat(history.messages()).isEmpty();
+        // 取不到 id 就不该再发第二条查询——空会话是能提前判定的
+        verify(aiMessageMapper, never()).selectList(any());
+    }
+
+    /** 并发删会话的兜底：宁可让前端停在空状态，也不回一个「发出去就 40400」的 id */
+    @Test
+    void historyReturnsEmptyPayloadWhenConversationVanished() {
+        when(aiMessageMapper.selectLatestConversationId(USER_ID)).thenReturn(CONVERSATION_ID);
+        when(aiMessageMapper.selectList(any())).thenReturn(List.of());
+
+        AiChatHistoryResponse history = service.history(USER_ID);
+
+        assertThat(history.conversationId()).isNull();
+        assertThat(history.messages()).isEmpty();
+    }
+
+    // ==================== 滑动窗口 ====================
+
+    /** 50 条（25 轮）只发最近 40 条：单次成本的上界靠它，没有它长会话会撑爆模型上下文窗口 */
+    @Test
+    void askSendsOnlyTheWindowWhenHistoryIsOverLimit() {
+        when(aiMessageMapper.selectList(any())).thenReturn(historyOf(50));
+        stubModel("回答");
+
+        service.chat(USER_ID, MESSAGE, CONVERSATION_ID);
+
+        List<Message> sent = sentMessages();
+        // 窗口 40 条 + 本轮新消息
+        assertThat(sent).hasSize(41);
+        assertThat(sent.get(0).getText()).isEqualTo("消息10");
+        assertThat(sent.get(39).getText()).isEqualTo("消息49");
+    }
+
+    /** 未超限时一条不裁——绝大多数会话的常态，也是前缀缓存逐轮照常命中的前提 */
+    @Test
+    void askKeepsWholeHistoryWhenUnderLimit() {
+        when(aiMessageMapper.selectList(any())).thenReturn(historyOf(40));
+        stubModel("回答");
+
+        service.chat(USER_ID, MESSAGE, CONVERSATION_ID);
+
+        List<Message> sent = sentMessages();
+        assertThat(sent).hasSize(41);
+        assertThat(sent.get(0).getText()).isEqualTo("消息0");
+    }
+
+    /** 窗口起点必须落在 USER 行上，否则上下文会从助手的半句说起 */
+    @Test
+    void askWindowStartsOnAUserMessage() {
+        when(aiMessageMapper.selectList(any())).thenReturn(historyOf(50));
+        stubModel("回答");
+
+        service.chat(USER_ID, MESSAGE, CONVERSATION_ID);
+
+        assertThat(sentMessages().get(0)).isInstanceOf(UserMessage.class);
+    }
+
+    /** 切片之后本轮新消息仍在最后——顺序错了模型就答非所问 */
+    @Test
+    void askAppendsNewMessageAfterTheWindow() {
+        when(aiMessageMapper.selectList(any())).thenReturn(historyOf(50));
+        stubModel("回答");
+
+        service.chat(USER_ID, "本轮问题", CONVERSATION_ID);
+
+        List<Message> sent = sentMessages();
+        assertThat(sent.get(sent.size() - 1).getText()).isEqualTo("本轮问题");
+    }
+
     // ==================== 辅助 ====================
+
+    /** USER / ASSISTANT 交替的一段历史，内容带序号，便于断言窗口切到了第几条 */
+    private static List<AiMessage> historyOf(int size) {
+        List<AiMessage> rows = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            rows.add(row(i % 2 == 0 ? AiMessageRole.USER : AiMessageRole.ASSISTANT, "消息" + i));
+        }
+        return rows;
+    }
 
     private AiSummaryRequest uploadRequest(byte[] content, String filename) {
         AiSummaryRequest request = new AiSummaryRequest();

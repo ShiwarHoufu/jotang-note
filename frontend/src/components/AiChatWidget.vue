@@ -2,7 +2,7 @@
 import { ChatDotRound, Close, Loading, Plus } from '@element-plus/icons-vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 
 import { aiApi } from '@/api/ai'
 
@@ -19,11 +19,60 @@ const input = ref('')
 const conversationId = ref<string>()
 const messages = ref<ChatMessage[]>([])
 const listEl = ref<HTMLElement>()
+/** 本次页面生命周期内已经尝试过恢复——避免反复展开面板重复请求 */
+const resumeAttempted = ref(false)
+const resuming = ref(false)
 
 async function scrollToBottom() {
   await nextTick()
   listEl.value?.scrollTo({ top: listEl.value.scrollHeight })
 }
+
+/**
+ * 接回最近一次会话。挂在「首次展开面板」而不是 onMounted 上：组件挂在 MainLayout 里，
+ * 每个页面都会加载它，而失败时 http 层会弹全局提示——挂 mount 上等于让从不使用 AI 的
+ * 用户在翻页时也可能吃到一条无关报错。挂首次展开既贴合「打开对话界面时自动对接」，
+ * 也把提示限定在用户主动打开面板的那一刻。
+ */
+async function resume() {
+  if (resumeAttempted.value) {
+    return
+  }
+  resumeAttempted.value = true
+  resuming.value = true
+  try {
+    const res = await aiApi.latest()
+    // 用户手快、在响应回来之前已经自己发出消息：放弃回填。
+    // 否则旧会话的展示会盖掉刚发出去的气泡，conversationId 也会被覆盖回旧会话
+    if (!res.conversationId || messages.value.length) {
+      return
+    }
+    conversationId.value = res.conversationId
+    messages.value = await Promise.all(
+      res.messages.map(async (msg) => ({
+        role: msg.role,
+        content: msg.content,
+        // 与 send() 走同一条 marked + DOMPurify 路径，不另起炉灶
+        html:
+          msg.role === 'ASSISTANT' && msg.content
+            ? DOMPurify.sanitize(await marked.parse(msg.content))
+            : '',
+      })),
+    )
+  } catch {
+    // 网络 / 服务异常：什么都不做，消息还在库里，刷新页面再试。
+    // 这里不把 resumeAttempted 置回 false——否则每次展开面板都会失败重试并重弹一次全局提示
+  } finally {
+    resuming.value = false
+    await scrollToBottom()
+  }
+}
+
+watch(open, (opened) => {
+  if (opened) {
+    resume()
+  }
+})
 
 async function send() {
   const text = input.value.trim()
@@ -87,6 +136,12 @@ function reset() {
             </div>
           </div>
         </template>
+        <!-- 恢复期间先占位，避免闪一下「还没有消息」的空状态再被历史顶上 -->
+        <div v-else-if="resuming" class="row theirs">
+          <div class="bubble assistant pending">
+            <el-icon class="is-loading"><Loading /></el-icon>
+          </div>
+        </div>
         <el-empty
           v-else
           :image-size="80"

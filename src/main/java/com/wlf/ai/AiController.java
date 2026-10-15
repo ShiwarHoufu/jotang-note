@@ -1,5 +1,6 @@
 package com.wlf.ai;
 
+import com.wlf.ai.dto.AiChatHistoryResponse;
 import com.wlf.ai.dto.AiChatRequest;
 import com.wlf.ai.dto.AiChatResponse;
 import com.wlf.ai.dto.AiSummaryRequest;
@@ -8,6 +9,7 @@ import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -56,5 +58,14 @@ public class AiController {
     public ApiResponse<AiChatResponse> chat(@AuthenticationPrincipal AuthenticatedUser user,
                                             @Valid @RequestBody AiChatRequest request) {
         return ApiResponse.ok(aiService.chat(user.userId(), request.getMessage(), request.getConversationId()));
+    }
+
+    /**
+     * 恢复。
+     * 把该用户最近一次会话及其历史交回前端，刷新页面后据此接回上一段对话。
+     */
+    @GetMapping("/api/ai/chat/latest")
+    public ApiResponse<AiChatHistoryResponse> latest(@AuthenticationPrincipal AuthenticatedUser user) {
+        return ApiResponse.ok(aiService.history(user.userId()));
     }
 }

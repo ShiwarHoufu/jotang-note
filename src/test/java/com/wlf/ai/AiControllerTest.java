@@ -1,5 +1,6 @@
 package com.wlf.ai;
 
+import com.wlf.ai.dto.AiChatHistoryResponse;
 import com.wlf.ai.dto.AiChatResponse;
 import com.wlf.ai.dto.AiSummaryResponse;
 import com.wlf.common.BusinessException;
@@ -15,6 +16,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
+
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -22,6 +25,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -53,7 +57,8 @@ class AiControllerTest {
 
     // ==================== 鉴权 ====================
 
-    /** 三个端点都是付费调用，绝不能匿名可打（§8.3「所有内容接口要求登录」） */
+    /** 三个端点都是付费调用，绝不能匿名可打（§8.3「所有内容接口要求登录」）；
+     *  {@code latest} 不花钱，但读的是本人的会话内容，同样只能凭 token 认人 */
     @Test
     void allEndpointsRequireLogin() throws Exception {
         mockMvc.perform(multipart("/api/ai/summary")
@@ -67,6 +72,10 @@ class AiControllerTest {
         mockMvc.perform(post("/api/ai/chat")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"你好\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+
+        mockMvc.perform(get("/api/ai/chat/latest"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(40100));
     }
@@ -276,6 +285,49 @@ class AiControllerTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value(50300))
                 .andExpect(jsonPath("$.message").value("对话服务暂不可用，请稍后重试"));
+    }
+
+    // ==================== 恢复最近会话 ====================
+
+    @Test
+    void latestReturnsHistoryInTheCommonEnvelope() throws Exception {
+        when(aiService.history(USER_ID)).thenReturn(new AiChatHistoryResponse(CONVERSATION_ID, List.of(
+                new AiChatHistoryResponse.Message("USER", "第一个问题"),
+                new AiChatHistoryResponse.Message("ASSISTANT", "第一个回答"))));
+
+        mockMvc.perform(get("/api/ai/chat/latest").header("Authorization", bearer(USER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.conversationId").value(CONVERSATION_ID))
+                .andExpect(jsonPath("$.data.messages[0].role").value("USER"))
+                .andExpect(jsonPath("$.data.messages[0].content").value("第一个问题"))
+                .andExpect(jsonPath("$.data.messages[1].role").value("ASSISTANT"));
+    }
+
+    /**
+     * 空载荷的 JSON 形态钉在这里：{@code conversationId} 是 {@code null}、{@code messages} 是空数组，
+     * 状态码 200、业务码 0。前端恢复流程只判这个形态，它变了前端就跟着错。
+     */
+    @Test
+    void latestReturnsEmptyPayloadWhenThereIsNothingToResume() throws Exception {
+        when(aiService.history(USER_ID)).thenReturn(AiChatHistoryResponse.empty());
+
+        mockMvc.perform(get("/api/ai/chat/latest").header("Authorization", bearer(USER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.conversationId").value(nullValue()))
+                .andExpect(jsonPath("$.data.messages").isEmpty());
+    }
+
+    /** 读谁的会话由 token 决定，不能由请求参数决定 */
+    @Test
+    void latestReadsTheSessionOfTheTokenOwner() throws Exception {
+        when(aiService.history(USER_ID)).thenReturn(AiChatHistoryResponse.empty());
+
+        mockMvc.perform(get("/api/ai/chat/latest").header("Authorization", bearer(USER_ID)))
+                .andExpect(status().isOk());
+
+        verify(aiService).history(USER_ID);
     }
 
     private String bearer(Long userId) {

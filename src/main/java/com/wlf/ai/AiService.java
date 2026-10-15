@@ -1,6 +1,7 @@
 package com.wlf.ai;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.wlf.ai.dto.AiChatHistoryResponse;
 import com.wlf.ai.dto.AiChatResponse;
 import com.wlf.ai.dto.AiSummaryRequest;
 import com.wlf.ai.dto.AiSummaryResponse;
@@ -51,6 +52,17 @@ public class AiService {
 
     /** 用户没填时的占位文案，而不是留空——空串会让模型以为「标题是空的」并自行编一个 */
     private static final String BLANK_CONTEXT = "（用户未填写）";
+
+    /**
+     * 送模型的上下文上限，只裁送出去的那一份；界面照常全量显示、库里照常全量落库。
+     *
+     * <p>没有它，第 N 轮的输入就是前 N−1 轮的总和：成本线性上涨，最终撑爆模型上下文窗口 →
+     * 50300，而且刷新恢复回来的正是这个永久坏掉的会话。
+     *
+     * <p><b>取偶数是有用的</b>：一轮问答固定落两行，历史长度恒为偶数，从这里减一个偶数
+     * 之后的切片起点必然落在 USER 行上，不会出现「上下文从助手的半句说起」。
+     */
+    private static final int MAX_CONTEXT_MESSAGES = 40;
 
     /** 指令放 system 段、用户可控的内容放 user 段，让「用户输入没法伪装成指令」由协议结构承担 */
     private static final String SUMMARY_IMAGE_SYSTEM_PROMPT = """
@@ -365,6 +377,26 @@ public class AiService {
         return new AiChatResponse(reply, conversation);
     }
 
+    /**
+     * 该用户最近一次会话及其历史。刷新页面后前端靠它接回上一段对话。
+     *
+     * <p>不限频。
+     */
+    public AiChatHistoryResponse history(Long userId) {
+        String conversationId = aiMessageMapper.selectLatestConversationId(userId);
+        if (conversationId == null) {
+            return AiChatHistoryResponse.empty();
+        }
+        List<AiMessage> rows = loadHistory(userId, conversationId);
+        // 并发删会话的兜底：宁可让前端停在空状态，也不回一个「发出去就 40400」的 id
+        if (rows.isEmpty()) {
+            return AiChatHistoryResponse.empty();
+        }
+        return new AiChatHistoryResponse(conversationId, rows.stream()
+                .map(row -> new AiChatHistoryResponse.Message(row.getRole(), row.getContent()))
+                .toList());
+    }
+
     /** 归属校验与取历史是同一次查询：条件里带 {@code user_id}，别人的会话自然查不出来 */
     private List<AiMessage> loadHistory(Long userId, String conversationId) {
         return aiMessageMapper.selectList(Wrappers.<AiMessage>lambdaQuery()
@@ -379,12 +411,19 @@ public class AiService {
      *
      * <p>工具也进同一个前缀，所以 {@link NoteTools} 的实例状态不能影响 tool 定义——
      * 见该类的类注释。
+     *
+     * <p>历史再过一道 {@link #MAX_CONTEXT_MESSAGES} 滑动窗口。窗口对前缀缓存的影响是分段的：
+     * 未超限时（绝大多数会话的常态）前缀逐轮只增不变，缓存照常命中，与没有窗口时完全一致；
+     * 超限后窗口每轮滑一位，前缀从滑动点起失效——这是用「有界的单次成本」换「无界的故障风险」。
      */
     private String ask(Long userId, List<AiMessage> history, String message) {
 
-        // 组装历史会话记录
-        List<Message> messages = new ArrayList<>(history.size() + 1);
-        history.forEach(row -> messages.add(toModelMessage(row)));
+        // 组装历史会话记录，超出窗口的旧消息只留在库里和界面上，不再参与模型计算
+        List<AiMessage> window = history.size() > MAX_CONTEXT_MESSAGES
+                ? history.subList(history.size() - MAX_CONTEXT_MESSAGES, history.size())
+                : history;
+        List<Message> messages = new ArrayList<>(window.size() + 1);
+        window.forEach(row -> messages.add(toModelMessage(row)));
         messages.add(new UserMessage(message));
 
         try {

@@ -189,3 +189,15 @@ export interface AiChatResponse {
   reply: string
   conversationId: string
 }
+
+/** 恢复会话时的一条历史消息，只带 role 与 content */
+export interface AiChatHistoryMessage {
+  role: 'USER' | 'ASSISTANT'
+  content: string
+}
+
+/** 恢复最近一次会话的出参；一条会话都没有时 conversationId 为 null、messages 为空数组 */
+export interface AiChatHistoryResponse {
+  conversationId: string | null
+  messages: AiChatHistoryMessage[]
+}
