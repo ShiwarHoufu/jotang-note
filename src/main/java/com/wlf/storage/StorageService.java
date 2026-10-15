@@ -13,7 +13,7 @@ import java.time.Duration;
 public interface StorageService {
 
     /**
-     * 流式上传，不把内容整体读进内存（单文件可达 100MB）。
+     * 流式上传，不把内容整体读进内存。
      *
      * @param size 字节数，<b>必须准确</b>——以 InputStream 入参时 SDK 无法自行推断长度
      * @param contentType 服务端判定值，写入对象元数据。读取时不再覆写（§6.2），故这里定下的就是最终值
@@ -66,11 +66,13 @@ public interface StorageService {
     String publicUrl(Bucket bucket, String key);
 
     /**
-     * 删除对象，不可恢复。对象不存在时同样成功（OSS 返回 204），调用方无需先判存在。
+     * 删除对象，不可恢复。对象不存在时同样成功（OSS 返回 204），调用方无需先判存在——
+     * 「重跑安全」正是这条链路上所有重试与对账的前提。
      *
-     * <p>三个调用方都是"收尾"性质，没有一个是用户请求的主路径：笔记的对象回收走
-     * {@code OrphanObjectSweeper} 的定时对账（§3.3、§7.3），上传与头像那两处是为
-     * 「对象已存、入库失败」补的一次补偿删除（§6.1、§6.7）。删除接口本身不碰本方法。
+     * <p>四个调用方都是"收尾"性质，没有一个是用户请求的主路径：笔记的对象回收走
+     * {@code OrphanObjectSweeper} 的定时对账（§3.3、§7.3），孤儿对象队列的消费者走
+     * {@code OrphanObjectConsumer}，上传与头像那两处是为「对象已存、入库失败」补的一次
+     * 补偿删除（§6.1、§6.7）。删除接口本身不碰本方法。
      */
     void delete(Bucket bucket, String key);
 }

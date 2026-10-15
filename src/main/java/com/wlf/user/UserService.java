@@ -8,6 +8,7 @@ import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
 import com.wlf.entity.User;
 import com.wlf.storage.Bucket;
+import com.wlf.storage.OrphanObjectPublisher;
 import com.wlf.storage.StorageService;
 import com.wlf.storage.StoredObject;
 import com.wlf.user.dto.UpdateProfileRequest;
@@ -52,14 +53,19 @@ public class UserService {
 
     private final StorageService storageService;
 
+    /** 补偿删除的第二道通道，与 note 上传那条共用同一个队列。见《功能说明：笔记上传》§2.5 */
+    private final OrphanObjectPublisher orphanObjectPublisher;
+
     public UserService(UserMapper userMapper,
                        CollegeService collegeService,
                        AvatarFilePolicy avatarFilePolicy,
-                       StorageService storageService) {
+                       StorageService storageService,
+                       OrphanObjectPublisher orphanObjectPublisher) {
         this.userMapper = userMapper;
         this.collegeService = collegeService;
         this.avatarFilePolicy = avatarFilePolicy;
         this.storageService = storageService;
+        this.orphanObjectPublisher = orphanObjectPublisher;
     }
 
     /**
@@ -207,8 +213,22 @@ public class UserService {
         }
     }
 
-    /** 补偿删除：更新失败时刚上传的对象已无人引用。删不掉也只记日志，不掩盖原始异常 */
+    /**
+     * 补偿删除：更新失败时刚上传的对象已无人引用。两步各自尽力、也都许失败——删不掉只记日志，
+     * 不掩盖原始异常。
+     *
+     * <p>与 {@code NoteService#purgeQuietly} 逐字同形，连顺序的理由都一样：先上报后删，消息的语义
+     * 是「这个 key 是垃圾」而不依赖删除的结果。两处各留一份是因为它们分属两个模块（§1.1 的跨模块
+     * 规矩），而不是疏忽。
+     *
+     * <p>这类孤儿同样没有库行（用户行上的 {@code avatar} 还指着旧键），定时对账扫不到。
+     */
     private void purgeQuietly(String key) {
+        try {
+            orphanObjectPublisher.publish(Bucket.AVATAR, key);
+        } catch (RuntimeException e) {
+            log.error("补偿删除上报失败，退化为仅内联删除 key={}", key, e);
+        }
         try {
             storageService.delete(Bucket.AVATAR, key);
         } catch (RuntimeException e) {

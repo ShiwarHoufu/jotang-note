@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { Search } from '@element-plus/icons-vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { notesApi, type NoteListParams } from '@/api/notes'
 import type { NoteListItem, NoteSort } from '@/api/types'
@@ -10,11 +11,18 @@ const catalog = useCatalogStore()
 
 const PAGE_SIZE = 20
 
-const filters = ref<{ courseId?: number; tagId?: number; sort: NoteSort }>({ sort: 'LATEST' })
+/** 搜索词防抖窗口。手写而不引 lodash-es：整个前端只有这一处需要防抖 */
+const KEYWORD_DEBOUNCE_MS = 300
+
+const filters = ref<{ courseId?: number; tagId?: number; keyword?: string; sort: NoteSort }>({
+  sort: 'LATEST',
+})
 const items = ref<NoteListItem[]>([])
 const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
+
+let keywordTimer: ReturnType<typeof setTimeout> | undefined
 
 async function load() {
   loading.value = true
@@ -30,6 +38,11 @@ async function load() {
     if (filters.value.tagId !== undefined) {
       params.tagId = filters.value.tagId
     }
+    // 空串与纯空白都当没搜——与后端 escapeLikeKeyword 的口径一致，不把空串发上去
+    const keyword = filters.value.keyword?.trim()
+    if (keyword) {
+      params.keyword = keyword
+    }
     const res = await notesApi.list(params)
     items.value = res.items
     total.value = res.total
@@ -38,31 +51,78 @@ async function load() {
   }
 }
 
-/** 筛选或排序变化回到第 1 页；翻页只换页码 */
-watch(
-  () => [filters.value.courseId, filters.value.tagId, filters.value.sort],
-  () => {
-    page.value = 1
+/**
+ * 回到第 1 页并加载。
+ *
+ * 页码确实变了就直接返回，交给下面那条 watch(page) 去发请求——否则在第 3 页改条件会发两遍：
+ * page 从 3 拨回 1 会触发一次，这里再 load() 一次。
+ */
+function reloadFromFirstPage() {
+  if (page.value === 1) {
     load()
+  } else {
+    page.value = 1
+  }
+}
+
+/**
+ * 筛选条件变化。四项收在同一个 watch 里，不是一项一条。
+ *
+ * 分开写的话，「清除筛选」一次改三项就会连着发三次请求，拉的是同一份数据。
+ * 收在一起，一个 tick 内只触发一次（Vue 对 pre-flush watcher 有去重）。
+ *
+ * 只有「搜索词变了、且变成了非空」才等防抖窗口——那是用户还在打字。切课程、清空搜索词、
+ * 点清除筛选都是一次明确的动作，立即加载。
+ */
+watch(
+  () => [filters.value.courseId, filters.value.tagId, filters.value.sort, filters.value.keyword],
+  (next, prev) => {
+    clearTimeout(keywordTimer)
+    if (next[3] !== prev[3] && next[3]) {
+      keywordTimer = setTimeout(reloadFromFirstPage, KEYWORD_DEBOUNCE_MS)
+    } else {
+      reloadFromFirstPage()
+    }
   },
 )
 
+// 翻页只换页码，不重置筛选条件
 watch(page, load)
 
+/** 回车立即搜，不等防抖窗口走完；顺手取消挂着的定时器，免得随后又发一次 */
+function searchNow() {
+  clearTimeout(keywordTimer)
+  reloadFromFirstPage()
+}
+
 function clearFilters() {
+  clearTimeout(keywordTimer)
   filters.value.courseId = undefined
   filters.value.tagId = undefined
+  filters.value.keyword = undefined
 }
 
 onMounted(async () => {
   await catalog.ensureLoaded()
   await load()
 })
+
+onUnmounted(() => clearTimeout(keywordTimer))
 </script>
 
 <template>
   <div class="home">
     <div class="toolbar">
+      <!-- maxlength 与后端 @Size(max = 50) 对齐，免得敲满再被 40001 打回 -->
+      <el-input
+        v-model="filters.keyword"
+        placeholder="搜索笔记标题"
+        clearable
+        maxlength="50"
+        :prefix-icon="Search"
+        style="width: 240px"
+        @keyup.enter="searchNow"
+      />
       <el-select
         v-model="filters.courseId"
         placeholder="全部课程"
@@ -87,7 +147,9 @@ onMounted(async () => {
         <el-radio-button value="HOT_DOWNLOAD">最多下载</el-radio-button>
       </el-radio-group>
       <el-button
-        v-if="filters.courseId !== undefined || filters.tagId !== undefined"
+        v-if="
+          filters.courseId !== undefined || filters.tagId !== undefined || !!filters.keyword?.trim()
+        "
         link
         @click="clearFilters"
       >

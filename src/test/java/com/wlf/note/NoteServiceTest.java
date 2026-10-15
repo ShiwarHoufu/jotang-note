@@ -14,6 +14,7 @@ import com.wlf.catalog.CollegeMapper;
 import com.wlf.note.dto.NoteCreatedResponse;
 import com.wlf.note.dto.NoteUploadRequest;
 import com.wlf.storage.Bucket;
+import com.wlf.storage.OrphanObjectPublisher;
 import com.wlf.storage.StorageService;
 import com.wlf.storage.StoredObject;
 import com.wlf.user.UserMapper;
@@ -89,6 +90,15 @@ class NoteServiceTest {
 
     @MockitoBean
     private StorageService storageService;
+
+    /**
+     * 补偿删除的上报通道也换成 mock。
+     *
+     * <p>默认（{@code jotang.purge.mode=none}）注入的是那个空实现，换掉它只为能断言
+     * 「报了什么」——真投递由 {@code OrphanObjectMqTest} 覆盖。
+     */
+    @MockitoBean
+    private OrphanObjectPublisher orphanObjectPublisher;
 
     private Long courseId;
     private Long uploaderId;
@@ -229,7 +239,8 @@ class NoteServiceTest {
      * 补偿是他看不见的内部动作，它失败不该顶掉真正的错误。
      *
      * <p>代价是留下一个真孤儿对象——{@code note_file} 里根本没有那一行，
-     * 定时对账的候选集正是从那张表来的，扫不到（见 {@code purgeQuietly} 的注释），只能人工清理。
+     * 定时对账的候选集正是从那张表来的，扫不到（见 {@code purgeQuietly} 的注释）；
+     * 上报通道（{@code jotang.purge.mode=queue}）就是为它补的，下一节那两条钉的是同一个口子。
      * 这是刻意的取舍：宁可留一个对象，也不能让上传以一个莫名的异常收场。
      */
     @Test
@@ -239,6 +250,46 @@ class NoteServiceTest {
                 .thenReturn(new StoredObject(key, "image/png", PNG.length));
         doThrow(new IllegalStateException("模拟 OSS 故障"))
                 .when(storageService).delete(Bucket.NOTE, key);
+
+        noteService.upload(uploaderId, request("第一篇", null, null, List.of()));
+
+        assertThatThrownBy(() -> noteService.upload(uploaderId, request("第二篇", null, null, List.of())))
+                .isInstanceOf(DuplicateKeyException.class);
+
+        verify(storageService).delete(Bucket.NOTE, key);
+    }
+
+    /**
+     * 补偿删除必须把这条待办<b>报出去</b>：定时对账扫不到这类孤儿（{@code note_file} 里没有行），
+     * 上报是它唯一落地的地方。见《功能说明：笔记上传》§2.5。
+     */
+    @Test
+    void compensationReportsTheOrphanSoItCanBePickedUpLater() {
+        String key = "notes/2026/10/" + UUID.randomUUID() + ".png";
+        when(storageService.upload(eq(Bucket.NOTE), anyString(), any(), anyLong(), anyString(), isNull()))
+                .thenReturn(new StoredObject(key, "image/png", PNG.length));
+
+        noteService.upload(uploaderId, request("第一篇", null, null, List.of()));
+
+        assertThatThrownBy(() -> noteService.upload(uploaderId, request("第二篇", null, null, List.of())))
+                .isInstanceOf(DuplicateKeyException.class);
+
+        verify(orphanObjectPublisher).publish(Bucket.NOTE, key);
+    }
+
+    /**
+     * 上报失败也不能掩盖原始的入库异常，且<b>不能把内联删除一起跳过</b>——两步各自尽力。
+     *
+     * <p>后者是本条真正要钉的：Broker 挂了不等于该放过 OSS 上那个对象，合并成一个 try 就会
+     * 在这种「MQ 不可用但 OSS 好好的」情况下白留一个孤儿。
+     */
+    @Test
+    void aFailedReportStillDeletesInlineAndDoesNotMaskTheOriginalFailure() {
+        String key = "notes/2026/10/" + UUID.randomUUID() + ".png";
+        when(storageService.upload(eq(Bucket.NOTE), anyString(), any(), anyLong(), anyString(), isNull()))
+                .thenReturn(new StoredObject(key, "image/png", PNG.length));
+        doThrow(new IllegalStateException("模拟 Broker 不可达"))
+                .when(orphanObjectPublisher).publish(Bucket.NOTE, key);
 
         noteService.upload(uploaderId, request("第一篇", null, null, List.of()));
 

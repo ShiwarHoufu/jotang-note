@@ -65,11 +65,23 @@ class JwtTokenProviderTest {
         assertThatThrownBy(() -> expired.parse(token)).isInstanceOf(ExpiredJwtException.class);
     }
 
+    /**
+     * 篡改签名的<b>第一个</b>字符，不是最后一个。
+     *
+     * <p>末位不能碰：HS256 的签名是 32 字节，base64url 编码后末组只剩 2 个有效字节，于是末位
+     * 字符里有 2 位是「无关位」。原字符若落在 {@code A}~{@code D}（高 2 位为 00），翻转它解出的
+     * 字节一个都没变，验签照样通过——{@code assertThatThrownBy} 扑空。约 1/16 的概率，
+     * 加上 {@code jti} 随机、签名每次都不同，就成了会真的碰上的偶发。
+     *
+     * <p>签名段首位 6 位全部有效，动它必然改变解出的字节。
+     */
     @Test
     void tamperedTokenIsRejected() {
-        String token = provider.issue(1L, "zhangsan", "USER");
-        char last = token.charAt(token.length() - 1);
-        String tampered = token.substring(0, token.length() - 1) + (last == 'A' ? 'B' : 'A');
+        String[] parts = provider.issue(1L, "zhangsan", "USER").split("\\.");
+        String signature = parts[2];
+        parts[2] = (signature.charAt(0) == 'A' ? 'B' : 'A') + signature.substring(1);
+
+        String tampered = String.join(".", parts);
 
         assertThatThrownBy(() -> provider.parse(tampered)).isInstanceOf(JwtException.class);
     }

@@ -162,6 +162,14 @@ jotang:
 
   # 孤儿对象对账：定期把已删除但对象还没清掉的笔记补清一次。
   purge:
+    # 上传入库失败后的补偿删除走哪条路：
+    #   none  = 只内联删一次（默认）
+    #   queue = 额外把这条待办投进 RabbitMQ 兜底，重试耗尽后进死信队列等人工处理
+    # 默认 none，理由与 jotang.mail.mode 相同：新克隆的仓库不装中间件也能 ./mvnw test 全绿。
+    # 这里比邮件那边更需要这个开关——补偿路径是测试真的会走的（NoteServiceTest），
+    # 没有开关就会在无 Broker 的机器上撞连接超时。
+    # 注意它只影响「补偿删除」这一条链路；下面的 enabled 管的是定时对账，两者互不相干。
+    mode: ${JOTANG_PURGE_MODE:none}
     # 关掉则 OrphanObjectSweeper 这个 Bean 根本不注册，也就没有定时任务
     enabled: ${JOTANG_PURGE_ENABLED:true}
     # 启动后多久跑第一轮。对账是兜底，晚一小时没有代价，而应用刚起时正忙着建连接池；
@@ -171,3 +179,8 @@ jotang:
     fixed-delay: ${JOTANG_PURGE_FIXED_DELAY:1h}
     # 一轮最多处理多少条，没做完的下一轮自然接上
     batch-size: ${JOTANG_PURGE_BATCH_SIZE:100}
+    # 死信队列深度巡检：非空说明有对象没删掉、在等人处理。只在 mode=queue 时有意义。
+    # 比邮箱那条链路便宜得多（一次查询，不打 OSS），所以节奏可以密一些。
+    dlq-check:
+      initial-delay: ${JOTANG_PURGE_DLQ_CHECK_INITIAL_DELAY:5m}
+      fixed-delay: ${JOTANG_PURGE_DLQ_CHECK_FIXED_DELAY:30m}

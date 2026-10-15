@@ -47,7 +47,8 @@ public class CatalogController {
     }
 
     /**
-     * 标签列表。筛选栏与上传表单的候选标签。<br>
+     * 标签列表。
+     * 筛选栏与上传表单的候选标签。
      */
     @GetMapping("/api/tags")
     public ApiResponse<List<TagResponse>> tags() {

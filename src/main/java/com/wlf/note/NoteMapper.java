@@ -66,13 +66,17 @@ public interface NoteMapper extends BaseMapper<Note> {
      * @param tagId 非 null 时按标签筛选。对应的 JOIN 带着 {@code tag_id = ?} 的等值条件，
      *              而 {@code note_tag} 的主键是 {@code (note_id, tag_id)}，所以每篇笔记至多匹配一行，
      *              <b>不会让分页的行数翻倍</b>——这一点是分页查询里最容易被忽略的坑
+     * @param keyword 非 null 时按标题模糊匹配。参数是<b>已经转义过</b>的模式字面量，
+     *                转义交给 {@code NoteService#escapeLikeKeyword}——LIKE 的元字符归属
+     *                那一层，mapper 只负责把值填进 {@code ESCAPE '/'} 划定的模式里
      * @return 一页数据；{@code total} 等由 MP 回填到返回的 {@code IPage} 上
      */
     IPage<NoteListRow> selectListPage(IPage<NoteListRow> page,
                                       @Param("status") String status,
                                       @Param("sort") String sort,
                                       @Param("courseId") Long courseId,
-                                      @Param("tagId") Long tagId);
+                                      @Param("tagId") Long tagId,
+                                      @Param("keyword") String keyword);
 
     /**
      * 一批笔记的标签，用于列表装配——<b>一次查一页，避免 N+1</b>。
@@ -316,7 +320,7 @@ public interface NoteMapper extends BaseMapper<Note> {
      * 调用方在同一事务里已用 {@link #selectOwnershipForUpdate} 持有该行的 X 锁，
      * 归属与状态在提交前不可能变，再写一遍只是把同一条规则说两遍。
      *
-     * <p>用五个 {@code @Param} 而不是收进一个参数对象：{@link #selectListPage} 已有同样多的入参，
+     * <p>用五个 {@code @Param} 而不是收进一个参数对象：{@link #selectListPage} 的入参比这还多，
      * 为一个只在两处出现的调用多开一个类不划算。
      */
     @Update("""

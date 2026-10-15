@@ -355,7 +355,6 @@ public class AiService {
         }
 
         // 取配额放在 40400 之后：会话 id 无效是调用方自己的错，不该为此扣掉一小时里的一个名额。
-        // 与摘要那条「先本地校验、再取配额、最后调用」同序
         chatRateLimiter.requireSlot(userId);
 
         // 组装请求，发起call
@@ -412,8 +411,8 @@ public class AiService {
     }
 
     /**
-     * 两条消息一起写：先落用户消息的话，模型失败就会在
-     * 历史里留下一条没有回复的孤行，用户重试后上下文里就多出一句重复的话。
+     * 两条消息一起写。
+     * 先落用户消息的话，模型失败就会在历史里留下一条没有回复的孤行，用户重试后上下文里就多出一句重复的话。
      */
     private void appendTurn(Long userId, String conversationId, String message, String reply) {
         transactionTemplate.executeWithoutResult(status -> {

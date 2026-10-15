@@ -11,6 +11,8 @@ import type {
 export interface NoteListParams {
   courseId?: number
   tagId?: number
+  /** 标题关键词。空串与纯空白都当没搜，不上送 */
+  keyword?: string
   sort?: NoteSort
   page?: number
   size?: number

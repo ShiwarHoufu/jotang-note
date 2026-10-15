@@ -26,6 +26,7 @@ import com.wlf.note.dto.NoteUpdateRequest;
 import com.wlf.note.dto.NoteUploadRequest;
 import com.wlf.note.dto.UploaderResponse;
 import com.wlf.storage.Bucket;
+import com.wlf.storage.OrphanObjectPublisher;
 import com.wlf.storage.StorageService;
 import com.wlf.storage.StoredObject;
 import lombok.extern.slf4j.Slf4j;
@@ -91,6 +92,8 @@ public class NoteService {
     private final FavoriteService favoriteService;
     private final NoteFilePolicy filePolicy;
     private final StorageService storageService;
+    /** 补偿删除的第二道通道：定时对账够不着那类孤儿（没有库行），只能这样留个待办。*/
+    private final OrphanObjectPublisher orphanObjectPublisher;
     private final NoteStateMachine stateMachine;
     private final TransactionTemplate transactionTemplate;
 
@@ -110,6 +113,7 @@ public class NoteService {
                        FavoriteService favoriteService,
                        NoteFilePolicy filePolicy,
                        StorageService storageService,
+                       OrphanObjectPublisher orphanObjectPublisher,
                        NoteStateMachine stateMachine,
                        RedisTemplate<String, Object> redisTemplate,
                        PlatformTransactionManager transactionManager) {
@@ -121,6 +125,7 @@ public class NoteService {
         this.favoriteService = favoriteService;
         this.filePolicy = filePolicy;
         this.storageService = storageService;
+        this.orphanObjectPublisher = orphanObjectPublisher;
         this.stateMachine = stateMachine;
         this.redisTemplate = redisTemplate;
         // 自己 new 而不依赖 Spring Boot 的自动配置：本类要的是「一段明确可控的事务边界」，
@@ -135,20 +140,25 @@ public class NoteService {
      */
     public NoteCreatedResponse upload(Long uploaderId, NoteUploadRequest request) {
         MultipartFile file = request.getFile();
+        // 校验课程和标签合法性
         requireCourse(request.getCourseId());
         List<Long> tagIds = tagService.resolveIds(request.getTags());
 
+        // 校验文件合法性
         FileDecision decision = inspect(file, uploaderId);
+        // 上传到 OSS
         StoredObject stored = store(file, decision, uploaderId);
 
+        // 事务落库三张表
         try {
             NoteCreatedResponse created = transactionTemplate.execute(
                     status -> insertNote(uploaderId, request, decision, stored, tagIds)
             );
-            // 新 id 有可能已经被负缓存占住了
+            // 新 id 可能已经被负缓存占住了
             evictMeta(created.id());
             return created;
         } catch (RuntimeException e) {
+            // 补偿删除对象
             purgeQuietly(stored.key());
             throw e;
         }
@@ -328,7 +338,8 @@ public class NoteService {
                 NoteStatus.ONLINE.name(),
                 query.getSort().name(),
                 query.getCourseId(),
-                query.getTagId());
+                query.getTagId(),
+                escapeLikeKeyword(query.getKeyword()));
 
         // total 取插件回填的真实总数，不封顶；page/size 回显入参而不是 result.getCurrent()，
         // 免得前端收到一个与它请求时不一致的页码（插件内部对越界页有它自己的处理）
@@ -337,6 +348,35 @@ public class NoteService {
                 result.getTotal(),
                 query.getPage(),
                 query.getSize());
+    }
+
+    /**
+     * 关键词 → LIKE 模式里的字面量：转义元字符，转义符取 {@code /}。
+     *
+     * <p>不转义的话，搜 {@code 100%} 会变成「100 后面随便跟什么」，搜 {@code a_b} 也会匹配到
+     * {@code axb}——用户看到的是「搜出来的东西不对」，原因却在服务端。
+     *
+     * <p><b>转义符不用 MySQL 默认的 {@code \}</b>：{@code \} 只在 {@code sql_mode} 不含
+     * {@code NO_BACKSLASH_ESCAPES} 时才是 LIKE 的转义符。那个模式一开，用户输入的 {@code %}
+     * 直接变回通配符，下面这几行同时失效；改用显式的 {@code ESCAPE '\\'} 也救不回来——
+     * 此时它是个两字符的字符串，MySQL 直接报 {@code Incorrect arguments to ESCAPE}。
+     * {@code /} 在两种模式下行为一致，顺带省掉 Java 字面量与 SQL 字面量之间的双重转义。
+     *
+     * <p>与 XML 里的 {@code ESCAPE '/'} 是一对，改一处必须改另一处。
+     *
+     * @return 去空白后的关键词；null 或全空白时返回 {@code null}，调用方与 XML 的 {@code <if>}
+     *         都据此判定「不筛」
+     */
+    private static String escapeLikeKeyword(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
+        String trimmed = keyword.strip();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        // 顺序不能换：先转义符本身，再用它去转义 % 和 _，否则 // 会被再转义一遍
+        return trimmed.replace("/", "//").replace("%", "/%").replace("_", "/_");
     }
 
     /**
@@ -853,8 +893,24 @@ public class NoteService {
 
     /**
      * 补偿删除：入库失败时刚上传的对象已无人引用。
+     *
+     * <p>两步各自尽力，谁失败都不牵连谁，也都不许冒出去——用户操作的是上传，出问题时提示里该
+     * 出现的是与上传有关的原因，补偿是他看不见的内部动作（见 {@code NoteServiceTest} 那条
+     * 「补偿失败不掩盖原始入库失败」）。所以这里是两个 catch 而不是一个：合并成一个的话，
+     * 上报一失败就会把内联删除整个跳过，那恰恰是「Broker 挂了但 OSS 好好的」这种情况下的下策。
+     *
+     * <p>顺序是先上报后删。消息的语义是「这个 key 是垃圾」，不依赖内联那一步的结果，于是投递点
+     * 只有一个；代价只是消费者会对已经删掉的对象再删一次，而那是 no-op。
+     *
+     * <p><b>这类孤儿定时对账扫不到</b>：{@code note_file} 里根本没有它的行，而对账候选集正是
+     * 从那张表来的。上报通道（{@code jotang.purge.mode=queue}）就是为它补的。
      */
     private void purgeQuietly(String key) {
+        try {
+            orphanObjectPublisher.publish(Bucket.NOTE, key);
+        } catch (RuntimeException e) {
+            log.error("补偿删除上报失败，退化为仅内联删除 key={}", key, e);
+        }
         try {
             storageService.delete(Bucket.NOTE, key);
         } catch (RuntimeException e) {

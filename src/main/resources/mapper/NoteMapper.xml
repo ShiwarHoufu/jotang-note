@@ -110,6 +110,19 @@
             AND n.course_id = #{courseId}
         </if>
         <!--
+          标题模糊匹配。keyword 进来之前已经由 NoteService.escapeLikeKeyword 转义过 % 和 _，
+          所以这里只负责把它拼进模式里。
+
+          ESCAPE '/' 必须显式写：不要依赖 MySQL 的默认转义符 \，它在 sql_mode 开着
+          NO_BACKSLASH_ESCAPES 时不是转义符（见 NoteService 那个方法的注释）。
+          两处是一对，改一处必须改另一处。
+
+          前置 % 用不上索引，全表扫描；这是 §3.3 认下的代价，量级到了再上 FULLTEXT。
+        -->
+        <if test="keyword != null and keyword != ''">
+            AND n.title LIKE CONCAT('%', #{keyword}, '%') ESCAPE '/'
+        </if>
+        <!--
           排序走 <choose> + 写死的字面量，全程不出现 ${}。ORDER BY 没法用 #{} 参数化，
           只能拼接字符串，所以排序键必须来自这份白名单，绝不能是用户传来的字面量。
           分支按 sort 的字符串取值（NoteListQuery.Sort 的 name()）来选。

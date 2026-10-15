@@ -206,6 +206,110 @@ class NoteListServiceTest {
         assertThat(ids(pageOf(query))).containsExactly(both);
     }
 
+    // ==================== 关键词检索 ====================
+
+    /** 匹配的是标题的**片段**，不是前缀也不是整串——搜「线性代数」要能命中带前后缀的标题 */
+    @Test
+    void keywordMatchesTitleFragment() {
+        Long hit = insertNote("线性代数期末复习提纲", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+        insertNote("高等数学期末复习提纲", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+
+        assertThat(ids(pageOf(withKeyword("线性代数")))).containsExactly(hit);
+    }
+
+    /** 关键词与既有筛选是「与」关系，不是「或」 */
+    @Test
+    void keywordCombinesWithOtherFiltersAsAnd() {
+        Long both = insertNote("线性代数 甲", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+        Long onlyKeyword = insertNote("线性代数 乙", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+        Long onlyTag = insertNote("高等数学 甲", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+        Long tagId = attachTag(both, MARKER + "线代");
+        attachTag(onlyTag, MARKER + "高数");
+        // 别的课程里也有一篇同名笔记，courseId 这一层要把它挡住
+        insertNote(insertCourse(), "线性代数 甲", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+
+        NoteListQuery query = withKeyword("线性代数");
+        query.setTagId(tagId);
+
+        // 关键词先圈出两篇，再叠标签只剩一篇
+        assertThat(ids(pageOf(withKeyword("线性代数")))).containsExactlyInAnyOrder(both, onlyKeyword);
+        assertThat(ids(pageOf(query))).containsExactly(both);
+    }
+
+    /**
+     * LIKE 的元字符必须当字面量。
+     *
+     * <p><b>这条是 {@code ESCAPE '/'} 那个决定的守卫。</b>若转义被删掉，三种情形会同时坏：
+     * 搜 {@code 100%} 变成「100 后面随便跟什么」，搜 {@code 第一章_绪论} 会多捞 {@code 第一章A绪论}，
+     * 而搜含 {@code /} 的关键词会**一篇都搜不到**——因为此时 {@code /} 是转义符，
+     * {@code 高数/线代} 被读成「高数 + 字面量 线代」。三种都只在服务端看得见，页面上只表现为「搜得不对」。
+     */
+    @Test
+    void likeMetacharactersInKeywordAreLiteral() {
+        Long percent = insertNote("正确率 100% 的方法", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+        Long longer = insertNote("正确率 1000 的方法", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+        Long underscore = insertNote("第一章_绪论", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+        insertNote("第一章A绪论", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+        Long slash = insertNote("高数/线代 复习", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+        insertNote("高数线代 复习", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+
+        // % 是字面量：只命中含 "100%" 的那篇，不把 "1000" 也捎上
+        assertThat(ids(pageOf(withKeyword("100%")))).containsExactly(percent);
+        assertThat(ids(pageOf(withKeyword("1000")))).containsExactly(longer);
+        // _ 是字面量：不匹配任意单字符
+        assertThat(ids(pageOf(withKeyword("第一章_绪论")))).containsExactly(underscore);
+        // / 是转义符本身，也得能当普通字符搜
+        assertThat(ids(pageOf(withKeyword("高数/线代")))).containsExactly(slash);
+    }
+
+    /** trim 后为空的词等同不筛——与 XML 的 {@code <if>} 和前端「不发空串」三处口径一致 */
+    @Test
+    void blankKeywordIsNotAFilter() {
+        Long note = insertNote("任意标题", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+
+        assertThat(ids(pageOf(withKeyword(null)))).containsExactly(note);
+        assertThat(ids(pageOf(withKeyword("")))).containsExactly(note);
+        assertThat(ids(pageOf(withKeyword("   ")))).containsExactly(note);
+    }
+
+    /** 关键词命中一篇非 ONLINE 笔记时也不返回：status 条件与关键词是 AND */
+    @Test
+    void keywordStillOnlyMatchesOnlineNotes() {
+        insertNote("财务笔记", NoteStatus.OFFLINE, 0, 0, BASE_TIME);
+        insertNote("财务笔记", NoteStatus.DELETED, 0, 0, BASE_TIME);
+        Long online = insertNote("财务笔记", NoteStatus.ONLINE, 0, 0, BASE_TIME);
+
+        assertThat(ids(pageOf(withKeyword("财务")))).containsExactly(online);
+    }
+
+    /**
+     * 带关键词翻页不重不漏，且 {@code total} 是关键词筛过的数。
+     *
+     * <p>{@code total} 那一项盯的是 count 语句：它由 MP 插件从主干 SQL 改写而来，
+     * 若哪天 WHERE 里多出的条件没被一起带过去，页数会按课程总数算，前端就会多排出几页空白。
+     */
+    @Test
+    void keywordResultPagesAreStable() {
+        Long newest = insertNote("检索词 甲", NoteStatus.ONLINE, 0, 0, LocalDateTime.of(2026, 3, 1, 0, 0));
+        Long middle = insertNote("检索词 乙", NoteStatus.ONLINE, 0, 0, LocalDateTime.of(2026, 2, 1, 0, 0));
+        Long oldest = insertNote("检索词 丙", NoteStatus.ONLINE, 0, 0, LocalDateTime.of(2026, 1, 1, 0, 0));
+        // 更新、但不含关键词的一篇：它不该出现在任何一页，也不该被 count 数进去
+        insertNote("不相关的笔记", NoteStatus.ONLINE, 0, 0, LocalDateTime.of(2026, 4, 1, 0, 0));
+
+        NoteListQuery firstPage = withKeyword("检索词");
+        firstPage.setSize(2);
+        PageResponse<NoteListItemResponse> page1 = noteService.list(viewerId, firstPage);
+
+        assertThat(ids(page1)).containsExactly(newest, middle);
+        assertThat(page1.total()).isEqualTo(3);
+
+        NoteListQuery secondPage = withKeyword("检索词");
+        secondPage.setSize(2);
+        secondPage.setPage(2);
+
+        assertThat(ids(noteService.list(viewerId, secondPage))).containsExactly(oldest);
+    }
+
     // ==================== 装配 ====================
 
     /**
@@ -355,6 +459,13 @@ class NoteListServiceTest {
     private NoteListQuery query() {
         NoteListQuery query = new NoteListQuery();
         query.setCourseId(courseId);
+        return query;
+    }
+
+    /** 在 {@link #query()} 之上挂关键词；传 null 表示「不搜」，用于验证空白词等同不筛 */
+    private NoteListQuery withKeyword(String keyword) {
+        NoteListQuery query = query();
+        query.setKeyword(keyword);
         return query;
     }
 

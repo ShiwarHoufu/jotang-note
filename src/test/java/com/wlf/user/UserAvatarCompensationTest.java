@@ -2,6 +2,7 @@ package com.wlf.user;
 
 import com.wlf.entity.User;
 import com.wlf.storage.Bucket;
+import com.wlf.storage.OrphanObjectPublisher;
 import com.wlf.storage.StorageService;
 import com.wlf.storage.StoredObject;
 import org.junit.jupiter.api.Test;
@@ -55,6 +56,10 @@ class UserAvatarCompensationTest {
     @MockitoBean
     private StorageService storageService;
 
+    /** 补偿删除的上报通道也换成 mock：默认（{@code jotang.purge.mode=none}）注入的是那个空实现 */
+    @MockitoBean
+    private OrphanObjectPublisher orphanObjectPublisher;
+
     @Test
     void objectIsPurgedWhenAvatarUpdateFails() {
         User user = new User();
@@ -77,5 +82,32 @@ class UserAvatarCompensationTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
 
         verify(storageService).delete(Bucket.AVATAR, KEY);
+    }
+
+    /**
+     * 与 note 那条同理：这类孤儿没有库行（用户行上的 {@code avatar} 还指着旧键），
+     * 定时对账扫不到，上报是它唯一落地的地方。桶要报 {@code AVATAR}——
+     * 消费者只照载荷里的桶去删，报错了就去删笔记桶里的同名对象了。
+     */
+    @Test
+    void compensationReportsTheOrphanWithTheAvatarBucket() {
+        User user = new User();
+        user.setId(7L);
+        user.setUsername("someone");
+        user.setNickname("昵称");
+        user.setCollegeId(1L);
+        user.setRole("USER");
+        doReturn(user).when(userMapper).selectById(7L);
+        when(storageService.upload(any(), anyString(), any(), anyLong(), anyString(), anyString()))
+                .thenReturn(new StoredObject(KEY, "image/png", PNG.length));
+        doThrow(new DataIntegrityViolationException("boom"))
+                .when(userMapper).update(isNull(), any());
+
+        MultipartFile file = new MockMultipartFile("file", "头像.png", "image/png", PNG);
+
+        assertThatThrownBy(() -> userService.uploadAvatar(7L, file))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        verify(orphanObjectPublisher).publish(Bucket.AVATAR, KEY);
     }
 }

@@ -397,6 +397,14 @@ class NoteControllerTest {
     }
 
     @Test
+    void listRejectsKeywordAboveFifty() throws Exception {
+        mockMvc.perform(get("/api/notes").param("keyword", "长".repeat(51)).header("Authorization", token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001))
+                .andExpect(jsonPath("$.data[0].field").value("keyword"));
+    }
+
+    @Test
     void listRejectsDeepPagination() throws Exception {
         mockMvc.perform(get("/api/notes").param("page", "51").header("Authorization", token()))
                 .andExpect(status().isBadRequest())
@@ -424,6 +432,28 @@ class NoteControllerTest {
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.page").value(1))
                 .andExpect(jsonPath("$.data.size").value(20));
+    }
+
+    /**
+     * 关键词是个普通查询参数（{@code @ModelAttribute NoteListQuery.keyword}），不经 {@code @RequestParam}。
+     *
+     * <p>{@code total} 也必须是筛过的数：它来自 MP 从主干 SQL 改写出的 count，
+     * 若关键词没被带进那条 count，页数就会按整个课程算。
+     */
+    @Test
+    void listFiltersByKeyword() throws Exception {
+        Long isolatedCourse = insertCourse();
+        insertNote(isolatedCourse, MARKER + "线性代数提纲", NoteStatus.ONLINE);
+        insertNote(isolatedCourse, MARKER + "高等数学提纲", NoteStatus.ONLINE);
+
+        mockMvc.perform(get("/api/notes")
+                        .param("courseId", String.valueOf(isolatedCourse))
+                        .param("keyword", "线性代数")
+                        .header("Authorization", token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].title").value(MARKER + "线性代数提纲"))
+                .andExpect(jsonPath("$.data.total").value(1));
     }
 
     // ==================== 删除 ====================
