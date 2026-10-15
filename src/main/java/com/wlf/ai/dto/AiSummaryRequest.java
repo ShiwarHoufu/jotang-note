@@ -7,7 +7,7 @@ import lombok.Setter;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * 上传场景的入参：一张图片 + 可选的上下文。见《概要设计》§5.8。
+ * 上传场景的入参：一个文件（图片或 md / txt）+ 可选的上下文。见《概要设计》§5.8。
  *
  * <p>用 {@code @ModelAttribute} 绑定而不是 {@code @RequestBody}：multipart 请求里
  * 文件部分不是 JSON，只能按表单字段逐个绑定——与 {@code NoteUploadRequest} 同理。
@@ -26,8 +26,8 @@ import org.springframework.web.multipart.MultipartFile;
 @Setter
 public class AiSummaryRequest {
 
-    /** 待摘要的图片。交给模型前会过 {@code AiSummaryImagePolicy} 的白名单与大小上限 */
-    @NotNull(message = "请选择图片")
+    /** 待摘要的文件。交给模型前会过 {@code AiSummaryFilePolicy} 的白名单与大小上限 */
+    @NotNull(message = "请选择文件")
     private MultipartFile file;
 
     @Size(max = 128, message = "标题不超过 128 个字符")

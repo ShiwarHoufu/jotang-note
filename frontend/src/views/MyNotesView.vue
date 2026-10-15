@@ -3,6 +3,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { onMounted, ref, watch } from 'vue'
 
 import { notesApi } from '@/api/notes'
+import { favoritesApi } from '@/api/favorites'
 import type { MyNoteItem } from '@/api/types'
 import { formatTime } from '@/utils/format'
 
@@ -26,6 +27,22 @@ async function load() {
 
 watch(page, load)
 onMounted(load)
+
+const favoriteActing = ref<number | null>(null)
+
+/** 收藏 / 取消拿响应里的最新计数直接覆盖，与 NoteCard 同一套本地覆盖模式 */
+async function toggleFavorite(item: MyNoteItem) {
+  favoriteActing.value = item.id
+  try {
+    const res = item.isFavorited
+      ? await favoritesApi.unfavorite(item.id)
+      : await favoritesApi.favorite(item.id)
+    item.isFavorited = !item.isFavorited
+    item.favoriteCount = res.favoriteCount
+  } finally {
+    favoriteActing.value = null
+  }
+}
 
 async function remove(item: MyNoteItem) {
   await ElMessageBox.confirm('删除后其他人将无法看到这篇笔记，确定删除？', '删除笔记', {
@@ -51,7 +68,6 @@ async function remove(item: MyNoteItem) {
                 <router-link :to="{ name: 'note-detail', params: { id: item.id } }" class="title">
                   {{ item.title }}
                 </router-link>
-                <el-tag size="small" type="info" effect="plain">{{ item.course.name }}</el-tag>
                 <el-tag v-if="item.status === 'OFFLINE'" size="small" type="warning">已下架</el-tag>
               </div>
               <div v-if="item.tags.length" class="tags">
@@ -59,17 +75,30 @@ async function remove(item: MyNoteItem) {
                   {{ tag.name }}
                 </el-tag>
               </div>
-              <div class="meta">
-                {{ item.viewCount }} 浏览 · {{ item.downloadCount }} 下载 · {{ item.favoriteCount }} 收藏 ·
-                上传于 {{ formatTime(item.createdAt) }}
+              <div class="meta-row">
+                <div class="meta">
+                  {{ item.viewCount }} 浏览 · {{ item.downloadCount }} 下载 · {{ item.favoriteCount }} 收藏 ·
+                  上传于 {{ formatTime(item.createdAt) }}
+                </div>
+                <div class="actions">
+                  <el-button size="small" @click="$router.push({ name: 'note-edit', params: { id: item.id } })">
+                    编辑
+                  </el-button>
+                  <el-button size="small" type="danger" plain @click="remove(item)">删除</el-button>
+                  <!-- 与首页 NoteCard 同款 link 收藏按钮：已收藏 warning 色，未收藏默认色 -->
+                  <el-button
+                    link
+                    :type="item.isFavorited ? 'warning' : 'default'"
+                    :loading="favoriteActing === item.id"
+                    @click="toggleFavorite(item)"
+                  >
+                    {{ item.isFavorited ? '已收藏' : '收藏' }}
+                  </el-button>
+                </div>
               </div>
             </div>
-            <div class="ops">
-              <el-button size="small" @click="$router.push({ name: 'note-edit', params: { id: item.id } })">
-                编辑
-              </el-button>
-              <el-button size="small" type="danger" plain @click="remove(item)">删除</el-button>
-            </div>
+            <!-- 课程标签固定在卡片右上角 -->
+            <el-tag size="small" type="info" effect="plain" class="course-tag">{{ item.course.name }}</el-tag>
           </div>
         </el-card>
       </template>
@@ -145,21 +174,33 @@ async function remove(item: MyNoteItem) {
   margin-top: 6px;
 }
 
-.meta {
+.meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 6px;
+}
+
+.meta {
   font-size: 12px;
   color: #909399;
 }
 
-.ops {
+.actions {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
 
-.ops .el-button {
+.actions .el-button {
   margin-left: 0;
+}
+
+.course-tag {
+  flex-shrink: 0;
+  align-self: flex-start;
 }
 
 .pager {

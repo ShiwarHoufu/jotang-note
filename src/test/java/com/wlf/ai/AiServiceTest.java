@@ -22,6 +22,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.util.MimeType;
 import org.springframework.util.MimeTypeUtils;
 
 import java.io.ByteArrayInputStream;
@@ -49,13 +50,15 @@ import static org.mockito.Mockito.when;
  *
  * <p>重点是<b>编排</b>而不是模型本身：什么情况下不该去调模型（省一次计费）、
  * 以什么 MIME 交给模型、上游失败翻成哪个错误码、回程截断、system / user 分段。
- * 判定规则的细节在 {@link AiSummaryImagePolicyTest}，这里不重复。
+ * 判定规则的细节在 {@link AiSummaryFilePolicyTest}，这里不重复。
  */
 class AiServiceTest {
 
     private static final byte[] PNG = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00};
-    /** note 收、但模型读不了的类型（§6.8）：拿它验「本地就拦下，不白花一次计费」 */
+    /** 走纯文本调用的一档：正文原样进 user 段，不进 media */
     private static final byte[] MD = "# 第一章 绪论".getBytes();
+    /** 白名单之外：拿它验「本地就拦下，不白花一次计费」 */
+    private static final byte[] PDF = {0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37};
     private static final Long USER_ID = 7L;
     private static final Long NOTE_ID = 42L;
     private static final String MESSAGE = "帮我解释一下拉格朗日中值定理";
@@ -89,7 +92,7 @@ class AiServiceTest {
         // 各持一个实例」的用法，共用一个实例的写法在这里会立刻暴露出额度被互相挤占
         summaryRateLimiter = new AiRateLimiter(10, Duration.ofHours(1), "生成");
         AiRateLimiter chatRateLimiter = new AiRateLimiter(30, Duration.ofHours(1), "对话");
-        service = new AiService(chatClient, new AiSummaryImagePolicy(), summaryRateLimiter, chatRateLimiter,
+        service = new AiService(chatClient, new AiSummaryFilePolicy(), summaryRateLimiter, chatRateLimiter,
                 noteService, storageService, aiMessageMapper, transactionManager);
     }
 
@@ -123,8 +126,8 @@ class AiServiceTest {
 
     /** 类型不合法是本地就能判的，不该白花一次计费去撞上游 */
     @Test
-    void uploadRejectsNonImageWithoutCallingModel() {
-        assertThatThrownBy(() -> service.summarizeUpload(USER_ID, uploadRequest(MD, "笔记.md")))
+    void uploadRejectsUnsupportedTypeWithoutCallingModel() {
+        assertThatThrownBy(() -> service.summarizeUpload(USER_ID, uploadRequest(PDF, "讲义.pdf")))
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
 
@@ -133,13 +136,79 @@ class AiServiceTest {
 
     @Test
     void uploadRejectsOversizedImageWithoutCallingModel() {
-        byte[] tooBig = Arrays.copyOf(PNG, (int) AiSummaryImagePolicy.MAX_SIZE_BYTES + 1);
+        byte[] tooBig = Arrays.copyOf(PNG, (int) AiSummaryFilePolicy.MAX_SIZE_BYTES + 1);
 
         assertThatThrownBy(() -> service.summarizeUpload(USER_ID, uploadRequest(tooBig, "巨图.png")))
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
 
         verify(chatClient, never()).prompt();
+    }
+
+    // ==================== 摘要：文本路径 ====================
+
+    /**
+     * 正文进 user 段、<b>不带 media</b>——这是文本路径与图片路径唯一的分野，
+     * 写错的后果是把一段 md 当成二进制图塞进多模态输入。同时断言正文真的进了请求体。
+     */
+    @Test
+    void uploadSendsTextBodyWithoutMedia() {
+        stubModel("摘要");
+
+        service.summarizeUpload(USER_ID, uploadRequest(MD, "笔记.md"));
+
+        ChatClient.PromptUserSpec userSpec = stubUserSpec();
+        userSpecCaptor().getValue().accept(userSpec);
+
+        verify(userSpec, never()).media(any(MimeType.class), any(Resource.class));
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        verify(userSpec).text(sent.capture());
+        assertThat(sent.getValue())
+                .contains("# 第一章 绪论")
+                // 正文要包在信封锁标里，且标记只出现一次——多了就等于自己伪造了闭合
+                .containsOnlyOnce(UntrustedContent.BEGIN)
+                .containsOnlyOnce(UntrustedContent.END);
+    }
+
+    /** 正文超长是本地就能判的，且判在取配额之前，所以这一趟既不花计费也不花额度 */
+    @Test
+    void overlongTextIsRejectedWithoutCallingModel() {
+        assertThatThrownBy(() -> service.summarizeUpload(USER_ID, uploadRequest(longText(), "长笔记.md")))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
+
+        verify(chatClient, never()).prompt();
+    }
+
+    /** 校验不过的请求不该消耗配额：顺序写反的话，第二次调用会直接撞限频 */
+    @Test
+    void overlongTextDoesNotConsumeQuota() {
+        AiService oneShotSummary = new AiService(chatClient, new AiSummaryFilePolicy(),
+                new AiRateLimiter(1, Duration.ofHours(1), "生成"), new AiRateLimiter(30, Duration.ofHours(1), "对话"),
+                noteService, storageService, aiMessageMapper, transactionManager);
+        stubModel("摘要");
+
+        assertThatThrownBy(() -> oneShotSummary.summarizeUpload(USER_ID, uploadRequest(longText(), "长笔记.md")))
+                .isInstanceOf(BusinessException.class);
+
+        assertThat(oneShotSummary.summarizeUpload(USER_ID, uploadRequest(MD, "笔记.md")).summary())
+                .isEqualTo("摘要");
+    }
+
+    /**
+     * 文本路径的上游失败仍归 50300。
+     *
+     * <p>这条和上一条一起钉住错误码的分界：<b>输入不合法是 42200、上游不可用才是 50300</b>。
+     * 若把解码与长度判定包进 {@link AiService} 那个 catch，超长会被报成「稍后重试可能有救」，
+     * 而用户重试永远不会成功（§5.7 对 50300 的定义）。
+     */
+    @Test
+    void textPathUpstreamFailureIsStill503Not422() {
+        when(chatClient.prompt()).thenThrow(new IllegalStateException("connection reset"));
+
+        assertThatThrownBy(() -> service.summarizeUpload(USER_ID, uploadRequest(MD, "笔记.md")))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.AI_UNAVAILABLE));
     }
 
     // ==================== 摘要：回程截断 ====================
@@ -214,10 +283,10 @@ class AiServiceTest {
         verify(storageService, never()).open(any(), anyString());
     }
 
-    /** 附件不是图片：不去读 OSS，更不去调模型 */
+    /** 附件类型不支持：不去读 OSS，更不去调模型 */
     @Test
-    void editScenarioRejectsNonImageAttachmentWithoutTouchingOss() {
-        when(noteService.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("text/markdown", 1024L));
+    void editScenarioRejectsUnsupportedAttachmentWithoutTouchingOss() {
+        when(noteService.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("application/pdf", 1024L));
 
         assertThatThrownBy(() -> service.summarizeExistingNote(USER_ID, NOTE_ID, null, null))
                 .isInstanceOfSatisfying(BusinessException.class,
@@ -227,6 +296,65 @@ class AiServiceTest {
         verify(chatClient, never()).prompt();
     }
 
+    /** 落库的 content_type 认不出来（含 null）：42200，不读 OSS、不调模型，也不是 NPE */
+    @Test
+    void editScenarioRejectsUnknownStoredContentTypeWithoutTouchingOss() {
+        when(noteService.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf(null, 1024L));
+
+        assertThatThrownBy(() -> service.summarizeExistingNote(USER_ID, NOTE_ID, null, null))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
+
+        verify(storageService, never()).open(any(), anyString());
+        verify(chatClient, never()).prompt();
+    }
+
+    /** 编辑场景的同一个分野：从 note 桶读回来的文本也走纯文本调用，不带 media */
+    @Test
+    void editScenarioReadsTextObjectAndSendsStoredMimeWithoutMedia() {
+        when(noteService.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("text/markdown", 1024L));
+        when(storageService.open(Bucket.NOTE, "notes/2026/10/x.jpg"))
+                .thenReturn(new ByteArrayInputStream(MD));
+        stubModel("摘要");
+
+        AiSummaryResponse response = service.summarizeExistingNote(USER_ID, NOTE_ID, "标题", "张老师");
+
+        assertThat(response.summary()).isEqualTo("摘要");
+        ChatClient.PromptUserSpec userSpec = stubUserSpec();
+        userSpecCaptor().getValue().accept(userSpec);
+        verify(userSpec, never()).media(any(MimeType.class), any(Resource.class));
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        verify(userSpec).text(sent.capture());
+        assertThat(sent.getValue()).contains("# 第一章 绪论");
+    }
+
+    /** 文本的「先拦后读」：库里那列 size 超了就不打开对象 */
+    @Test
+    void editScenarioRejectsOverlongTextWithoutOpeningIt() {
+        when(noteService.requireOwnFile(NOTE_ID, USER_ID))
+                .thenReturn(fileOf("text/markdown", AiSummaryFilePolicy.MAX_TEXT_BYTES + 1));
+
+        assertThatThrownBy(() -> service.summarizeExistingNote(USER_ID, NOTE_ID, null, null))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
+
+        verify(storageService, never()).open(any(), anyString());
+    }
+
+    /**
+     * 防御性用例：{@code size} 列本身是 {@code NOT NULL}，造一个 null 行是为了覆盖「投影一旦
+     * 被改坏（漏选 / 列名写错）」的那条路——不该 NPE，也不该因此整份拉进堆。
+     */
+    @Test
+    void editScenarioHandlesMissingSizeDefensively() {
+        when(noteService.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("text/plain", null));
+        when(storageService.open(Bucket.NOTE, "notes/2026/10/x.jpg"))
+                .thenReturn(new ByteArrayInputStream(MD));
+        stubModel("摘要");
+
+        assertThat(service.summarizeExistingNote(USER_ID, NOTE_ID, null, null).summary()).isEqualTo("摘要");
+    }
+
     /**
      * 编辑场景没有 multipart 的 size 可判，只能先用库里那一列拦一道。
      * <b>不先拦的话会把一个上百 MB 的对象整个读进堆里</b>再拒掉。
@@ -234,7 +362,7 @@ class AiServiceTest {
     @Test
     void editScenarioRejectsOversizedObjectWithoutOpeningIt() {
         when(noteService.requireOwnFile(NOTE_ID, USER_ID))
-                .thenReturn(fileOf("image/png", AiSummaryImagePolicy.MAX_SIZE_BYTES + 1));
+                .thenReturn(fileOf("image/png", AiSummaryFilePolicy.MAX_SIZE_BYTES + 1));
 
         assertThatThrownBy(() -> service.summarizeExistingNote(USER_ID, NOTE_ID, null, null))
                 .isInstanceOfSatisfying(BusinessException.class,
@@ -297,7 +425,7 @@ class AiServiceTest {
      */
     @Test
     void chatSpendsItsOwnQuotaNotTheSummaryOne() {
-        AiService oneShotChat = new AiService(chatClient, new AiSummaryImagePolicy(),
+        AiService oneShotChat = new AiService(chatClient, new AiSummaryFilePolicy(),
                 summaryRateLimiter, new AiRateLimiter(1, Duration.ofHours(1), "对话"),
                 noteService, storageService, aiMessageMapper, transactionManager);
         stubModel("回答");
@@ -317,7 +445,7 @@ class AiServiceTest {
      */
     @Test
     void rateLimitedChatNeverReachesTheModel() {
-        AiService oneShotChat = new AiService(chatClient, new AiSummaryImagePolicy(),
+        AiService oneShotChat = new AiService(chatClient, new AiSummaryFilePolicy(),
                 summaryRateLimiter, new AiRateLimiter(1, Duration.ofHours(1), "对话"),
                 noteService, storageService, aiMessageMapper, transactionManager);
         stubModel("回答");
@@ -445,6 +573,11 @@ class AiServiceTest {
         AiSummaryRequest request = new AiSummaryRequest();
         request.setFile(new MockMultipartFile("file", filename, "application/octet-stream", content));
         return request;
+    }
+
+    /** 一段刚好超过字符上限的正文：字节数远小于字节预筛，只有 code point 计数拦得住它 */
+    private static byte[] longText() {
+        return "a".repeat(AiSummaryFilePolicy.MAX_TEXT_CHARS + 1).getBytes();
     }
 
     private static NoteFileOwnershipRow fileOf(String contentType, Long size) {

@@ -30,7 +30,7 @@ public class AiController {
     // ==================== 摘要 ====================
 
     /**
-     * 上传场景：把待上传的图片交给模型，拿回一段建议的简介。
+     * 上传场景：把待上传的图片或文本交给模型，拿回一段建议的简介。
      */
     @PostMapping("/api/ai/summary")
     public ApiResponse<AiSummaryResponse> summarizeUpload(@AuthenticationPrincipal AuthenticatedUser user,

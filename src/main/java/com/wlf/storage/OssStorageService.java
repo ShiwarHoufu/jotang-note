@@ -22,10 +22,9 @@ import java.util.Date;
 
 /**
  * StorageService 的阿里云 OSS 实现，数据读写一律走内网 Endpoint。
- * 见《概要设计》§1.2。
  *
  * <p>持有两个客户端：{@code ossServer} 做数据面（上传 / 读取 / 删除），
- * {@code ossBrowser} 只用于签名（原因见 {@link com.wlf.config.OssConfig}）。
+ * {@code ossBrowser} 只用于签名。
  */
 @Slf4j
 @Service
@@ -94,22 +93,20 @@ public class OssStorageService implements StorageService {
             request.setExpiration(new Date(System.currentTimeMillis() + ttl.toMillis()));
 
             // 显式声明 Content-Disposition
-            // 预览声明 inline 只是表达意图，它在默认域名下**并不生效**：OSS 默认域名
-            //（*.aliyuncs.com）会对图片等类型强制附加 Content-Disposition: attachment
-            // 与 x-oss-force-download: true（实测确认，错误码 0048-00000101），策略压过我们写的值。
-            // 该策略只作用于「导航」场景：前端用 <img> 加载子资源时浏览器会忽略它，故图片预览
-            // 依然可用。
+            // 坑：预览声明 inline 在默认域名下并不生效：
+            // OSS 默认域名会对图片等类型强制附加 Content-Disposition: attachment与 x-oss-force-download: true，压过我们写的值。
+            // 但是该策略只作用于导航场景；前端用 <img> 加载子资源时浏览器会忽略它，故图片预览依然可用。
             // 改用自定义域名后该策略不再适用，此处的 inline 才会真正起作用。
             //
             // Content-Type 刻意不碰：它取自对象元数据（上传时由服务端判定并写入），
             // 且 OSS 自 2025-01-20 起禁止签名 URL 覆盖 response-content-type（错误码 0017-00000902）。
             ResponseHeaderOverrides overrides = new ResponseHeaderOverrides();
             overrides.setContentDisposition(downloadName != null
-                    ? attachmentDisposition(downloadName)  // 下载：attachment 触发下载并还原原始文件名
-                    : "inline");                           // 预览：仅表达意图，默认域名下会被 OSS 覆盖
+                    ? attachmentDisposition(downloadName)
+                    : "inline");
             request.setResponseHeaders(overrides);
 
-            // 必须用浏览器面客户端：签名里的主机名取自客户端 Endpoint（见 OssConfig 注释）
+            // 必须用浏览器面客户端
             return ossBrowser.generatePresignedUrl(request).toString();
         } catch (OSSException e) {
             log.error("签发签名 URL 失败 bucket={} key={} ossErrorCode={}", bucketName, key, e.getErrorCode(), e);

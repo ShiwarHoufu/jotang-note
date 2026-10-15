@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import AiChatWidget from '@/components/AiChatWidget.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 
 const router = useRouter()
@@ -49,6 +50,7 @@ async function logout() {
     <el-main class="main">
       <router-view />
     </el-main>
+    <AiChatWidget />
   </el-container>
 </template>
 

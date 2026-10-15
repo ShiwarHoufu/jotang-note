@@ -39,7 +39,7 @@ const rules: FormRules = {
   summary: [{ max: 512, message: '简介不超过 512 个字符', trigger: 'blur' }],
 }
 
-/** 编辑场景按笔记附件生成摘要，仅图片类笔记可用（后端同样只吃图片） */
+/** 编辑场景按笔记附件生成摘要，图片与 md / txt 笔记可用（后端同样只认这两档） */
 const canSummarize = ref(false)
 
 onMounted(async () => {
@@ -54,7 +54,9 @@ onMounted(async () => {
     courseId: res.course.id,
     tags: res.tags.map((t) => t.name),
   }
-  canSummarize.value = res.file?.previewMode === 'IMAGE_INLINE'
+  // TEXT_PROXY 只由 text/markdown 与 text/plain 产生，正好是可摘要的文本集（见 PreviewMode.of）
+  const mode = res.file?.previewMode
+  canSummarize.value = mode === 'IMAGE_INLINE' || mode === 'TEXT_PROXY'
 })
 
 async function summarize() {

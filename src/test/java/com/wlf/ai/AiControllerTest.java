@@ -31,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@link AiController} 的 HTTP 层验证：路由、参数绑定、鉴权与响应形状。
  *
  * <p>{@link AiService} 换成 mock——真调一次会花钱，而且结果取决于模型。
- * 编排在 {@link AiServiceTest} 与 {@link AiSummaryImagePolicyTest} 里验。
+ * 编排在 {@link AiServiceTest} 与 {@link AiSummaryFilePolicyTest} 里验。
  */
 @SpringBootTest
 @AutoConfigureMockMvc

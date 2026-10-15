@@ -11,9 +11,10 @@ import { notesApi } from '@/api/notes'
 import { ErrorCode, type FieldViolation } from '@/api/types'
 import { useCatalogStore } from '@/stores/catalog'
 
-/** 与后端 NoteFilePolicy 的白名单同源；AI 摘要只吃其中的光栅图 */
+/** 与后端 NoteFilePolicy 的白名单同源；后端的 AiSummaryFilePolicy 认其中的图片与 md / txt */
 const ACCEPT = '.md,.txt,.jpg,.jpeg,.png,.gif,.webp'
-const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp'])
+/** 能摘要的两档：光栅图走多模态、md / txt 走纯文本调用 */
+const SUMMARIZABLE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'md', 'txt'])
 const MAX_SIZE = 100 * 1024 * 1024
 
 const router = useRouter()
@@ -42,13 +43,13 @@ const rules: FormRules = {
   summary: [{ max: 512, message: '简介不超过 512 个字符', trigger: 'blur' }],
 }
 
-/** 选中的是光栅图才能让 AI 看图生成简介（§6.8 摘要只支持图片输入） */
+/** 选中图片或 md / txt 才能让 AI 生成简介——前端控可见性，可行性由后端按内容判 */
 const canSummarize = computed(() => {
   if (!file.value) {
     return false
   }
   const ext = file.value.name.split('.').pop()?.toLowerCase() ?? ''
-  return IMAGE_EXTS.has(ext)
+  return SUMMARIZABLE_EXTS.has(ext)
 })
 
 onMounted(() => catalog.ensureLoaded())
@@ -70,14 +71,14 @@ function beforeUpload(file: File): boolean {
   return true
 }
 
-/** 用待上传的图片请 AI 生成简介，回填输入框；限频 / 不可用由 http 层统一提示 */
+/** 用待上传的文件请 AI 生成简介，回填输入框；限频 / 不可用由 http 层统一提示 */
 async function summarize() {
   if (!file.value) {
     return
   }
   summarizing.value = true
   try {
-    const res = await aiApi.summarizeImage(file.value, form.value.title, form.value.teacher)
+    const res = await aiApi.summarizeUpload(file.value, form.value.title, form.value.teacher)
     form.value.summary = res.summary
   } finally {
     summarizing.value = false
@@ -165,7 +166,7 @@ function applyFieldErrors(error: unknown) {
               简介（可选，≤512 字）
               <el-tooltip
                 :disabled="canSummarize"
-                content="选择图片类文件（jpg / png / gif / webp）后可用"
+                content="选择图片或 md / txt 文件后可用"
                 placement="top"
               >
                 <span>
@@ -189,7 +190,7 @@ function applyFieldErrors(error: unknown) {
             :rows="4"
             maxlength="512"
             show-word-limit
-            placeholder="给这份笔记写几句说明，或让 AI 根据图片生成"
+            placeholder="给这份笔记写几句说明，或让 AI 根据文件内容生成"
           />
         </el-form-item>
         <el-form-item label="文件" prop="file" :error="fieldErrors.file">

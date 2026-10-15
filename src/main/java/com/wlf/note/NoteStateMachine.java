@@ -7,7 +7,7 @@ import java.util.Set;
 
 /**
  * 笔记状态迁移：ONLINE / OFFLINE / DELETED，DELETED 为终态。
- * 状态变更集中在此，禁止 Controller 直接改 status。见《概要设计》§4.1。
+ * 状态变更集中在此，禁止 Controller 直接改 status。
  *
  * <pre>
  *   ONLINE --管理员下架--&gt; OFFLINE --管理员恢复--&gt; ONLINE

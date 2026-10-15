@@ -631,10 +631,7 @@ public class NoteService {
     }
 
     /**
-     * 图片预览：签发 OSS 直连的签名 URL。见 §5.4、§6.2。
-     *
-     * <p>模式校验不是冗余：存量行里还有上传白名单收窄之前的 pdf / Office / 压缩包（§6.9），
-     * 若其中混有 svg / html，不校验就会签出一条以该 {@code Content-Type} 交付的直连 URL。
+     * 图片预览：签发 OSS 直连的签名 URL。
      *
      * @throws BusinessException 40400 笔记不存在；40301 非 ONLINE；42200 该类型不走内联预览
      */
@@ -648,7 +645,7 @@ public class NoteService {
     }
 
     /**
-     * 文本预览：把原文交给调用方代理转发（{@code /raw}）。见 §5.4、§6.2。
+     * 文本预览：把原文交给调用方代理转发（{@code /raw}）。
      *
      * <p>流由写出方负责关闭。
      *
@@ -663,25 +660,12 @@ public class NoteService {
         return new NoteRawContent(row.getSize(), storageService.open(Bucket.NOTE, row.getStorageKey()));
     }
 
-    /**
-     * 管理员下架：{@code ONLINE → OFFLINE}。见 §5.6、§4.1。
-     *
-     * <p><b>刻意不做归属校验</b>——管理员可以下架任何人的笔记，这与本类其余写方法
-     * 「一律本人」的口径正相反。方法名带 {@code admin} 前缀就是为了让这件事在<b>调用点</b>
-     * 就看得见：谁想在用户路径上复用它，应当立刻意识到这里没有 40300。
-     * 「谁能调到这里」由 {@code SecurityConfig} 的 {@code /api/admin/**} 规则保证，
-     * 40300 在那条链上产出，不在本类里判。
-     *
-     * <p><b>下架是可逆的，所以不动 OSS 对象</b>：对象必须留着，否则恢复之后笔记就打不开了
-     * （这与删除那个不可逆的操作正相反）。
-     *
-     * @throws BusinessException 40400 笔记不存在；40301 笔记已删除
-     */
+    /** 管理员下架：{@code ONLINE → OFFLINE}。*/
     public void adminOffline(Long noteId) {
         transition(noteId, NoteStatus.OFFLINE);
     }
 
-    /** 管理员恢复：{@code OFFLINE → ONLINE}。见 {@link #adminOffline}，除目标状态外完全同构。 */
+    /** 管理员恢复：{@code OFFLINE → ONLINE}。 */
     public void adminRestore(Long noteId) {
         transition(noteId, NoteStatus.ONLINE);
     }
@@ -702,24 +686,15 @@ public class NoteService {
      *       同理，{@code from == to} 在状态机那里也是非法迁移</li>
      * </ol>
      *
-     * <p>收掉这三支之后，走到状态机的必然是一次真实的 {@code ONLINE ↔ OFFLINE} 迁移，
-     * 于是 {@code requireTransition} 退化成一道纯粹的安全网——它再抛异常就一定是代码缺陷，
-     * 而不是某个用户的动作。这正是 {@code NoteStateMachine} 想要的用法。
-     *
-     * <p><b>不碰 {@code updated_at}</b>：写语句里根本没有这一列（见
-     * {@link NoteMapper#updateStatus}），§3.3 要求管理员的「下架 / 恢复」与删除一样不刷新它。
-     *
-     * <p>用 {@code transactionTemplate} 而不是 {@code @Transactional}，与
-     * {@link #update} 保持一致：本类所有写方法都显式持有事务边界，读起来不必去猜
-     * 注解在哪一层生效。这里没有提交后要做的事，所以用 {@code executeWithoutResult}。
      */
     private void transition(Long noteId, NoteStatus target) {
         transactionTemplate.executeWithoutResult(status -> {
             String current = noteMapper.selectStatusForUpdate(noteId);
+
+            // 排除掉 不存在、终态、原地不动 三种情况
             if (current == null) {
                 throw new BusinessException(ErrorCode.NOT_FOUND);
             }
-
             NoteStatus from = NoteStatus.valueOf(current);
             if (from == NoteStatus.DELETED) {
                 throw new BusinessException(ErrorCode.NOTE_UNAVAILABLE);
@@ -728,10 +703,10 @@ public class NoteService {
                 return;
             }
 
-            // 走到这里必然是一次真实迁移；上面三支已经把「不存在 / 终态 / 原地不动」都收掉了
             stateMachine.requireTransition(from, target);
             noteMapper.updateStatus(noteId, target.name());
         });
+
         evictMeta(noteId);
     }
 
@@ -866,8 +841,7 @@ public class NoteService {
     }
 
     /**
-     * 校验课程合法性。走 {@link CourseService} 而不是直接查 {@code course} 表：§1.1 约定
-     * 跨模块的校验一律经对方 Service。
+     * 校验课程合法性。
      */
     private void requireCourse(Long courseId) {
         if (!courseService.exists(courseId)) {
@@ -878,12 +852,7 @@ public class NoteService {
     }
 
     /**
-    /**
      * 补偿删除：入库失败时刚上传的对象已无人引用。
-     *
-     * <p><b>这一处不受孤儿对象对账保护，是有意的区分。</b>触发它的前提是落库事务已回滚，
-     * {@code note_file} 里没有那一行，而对账的候选集正是从那张表来的——没有行就无从发现。
-     * 只有「库里有行可对账」的清理才适合交给定时路径。
      */
     private void purgeQuietly(String key) {
         try {

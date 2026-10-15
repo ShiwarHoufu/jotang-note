@@ -6,8 +6,9 @@ import type { AiChatResponse, AiSummaryResponse } from './types'
  * FORM_LEVEL_CODES 之外，http 层会弹全局提示，调用方无需重复处理
  */
 export const aiApi = {
-  /** 上传场景：把待上传的图片交给模型（base64 内联，不走签名 URL）。title / teacher 为可选上下文 */
-  summarizeImage: (file: File, title?: string, teacher?: string) => {
+  /** 上传场景：把待上传的图片或文本交给模型（图片 base64 内联、文本直接进请求体，都不走签名 URL）。
+   *  title / teacher 为可选上下文 */
+  summarizeUpload: (file: File, title?: string, teacher?: string) => {
     const form = new FormData()
     form.append('file', file)
     if (title) {

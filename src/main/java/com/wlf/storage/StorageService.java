@@ -5,8 +5,7 @@ import java.time.Duration;
 
 /**
  * 存储抽象：流式上传、读取、签发签名 URL、删除对象。
- * 所有 OSS 操作收敛于此，业务层不感知底层存储；OSS 为首个实现，V2 可平替 MinIO。
- * 见《概要设计》§1.1、§6.2、§6.7。
+ * 所有 OSS 操作收敛于此，业务层不感知底层存储，后续可平替为 MinIO。
  *
  * <p>本层只提供「存 / 读 / 签 / 删」四件原语，<b>不含任何业务策略</b>：
  * 这样 note 的单元测试可以直接 mock 本接口，不必碰 OSS SDK。
@@ -14,7 +13,7 @@ import java.time.Duration;
 public interface StorageService {
 
     /**
-     * 流式上传，不把内容整体读进内存（单文件可达 100MB，§6.1）。
+     * 流式上传，不把内容整体读进内存（单文件可达 100MB）。
      *
      * @param size 字节数，<b>必须准确</b>——以 InputStream 入参时 SDK 无法自行推断长度
      * @param contentType 服务端判定值，写入对象元数据。读取时不再覆写（§6.2），故这里定下的就是最终值
