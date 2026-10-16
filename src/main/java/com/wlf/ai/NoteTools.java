@@ -20,11 +20,6 @@ import java.util.List;
 
 /**
  * 对话模型可调用的工具
- *
- * <p><b>每次对话 new 一个，不做成 Bean</b>——它带着调用者身份。Spring AI 的
- * {@code MethodToolCallback} 持有的是对象引用，实例字段照常可用；参数 schema 由方法签名
- * 推导，实例状态不进 schema，所以每次 new 不会打穿前缀缓存（前提是 {@code @Tool} 的
- * name / description 都是编译期常量）。
  */
 @Slf4j
 public class NoteTools {
@@ -81,7 +76,7 @@ public class NoteTools {
     }
 
     @Tool(name = "read_note_content",
-            description = "根据笔记 id 读取一篇在线笔记附件的正文，用来回答或总结它。")
+            description = "根据笔记 id 读取一篇在线笔记附件的内容。")
     public String readNoteContent(@ToolParam(description = "取自 search_notes_by_title 的结果") long noteId) {
         String text = readContent(noteId);
         log.info("读取笔记正文：userId={}，noteId={}，返回 {} 字", userId, noteId, text.length());

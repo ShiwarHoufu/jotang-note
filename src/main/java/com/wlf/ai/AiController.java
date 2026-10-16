@@ -62,7 +62,7 @@ public class AiController {
 
     /**
      * 恢复。
-     * 把该用户最近一次会话及其历史交回前端，刷新页面后据此接回上一段对话。
+     * 把该用户最近一次会话及其历史交回前端。
      */
     @GetMapping("/api/ai/chat/latest")
     public ApiResponse<AiChatHistoryResponse> latest(@AuthenticationPrincipal AuthenticatedUser user) {

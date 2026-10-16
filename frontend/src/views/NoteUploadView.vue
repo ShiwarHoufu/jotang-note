@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
-import { UploadFilled } from '@element-plus/icons-vue'
+import { Document, UploadFilled } from '@element-plus/icons-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -54,21 +54,21 @@ const canSummarize = computed(() => {
 
 onMounted(() => catalog.ensureLoaded())
 
-function onFileChange(uploadFile: { raw: File }) {
-  file.value = uploadFile.raw
-}
-
-function onFileRemove() {
-  file.value = null
-}
-
-/** 选文件后立即在客户端挡住明显不合规的，省一次白传；魔数校验仍以后端为准 */
-function beforeUpload(file: File): boolean {
-  if (file.size > MAX_SIZE) {
-    ElMessage.error('文件超过 100MB')
-    return false
+/** 后端只收单文件：选中即替换，拖拽框随之隐藏，天然限一个 */
+function onFileChange(uploadFile: { raw?: File }) {
+  const raw = uploadFile.raw
+  if (!raw) {
+    return
   }
-  return true
+  if (raw.size > MAX_SIZE) {
+    ElMessage.error('文件超过 100MB')
+    return
+  }
+  file.value = raw
+}
+
+function removeFile() {
+  file.value = null
 }
 
 /** 用待上传的文件请 AI 生成简介，回填输入框；限频 / 不可用由 http 层统一提示 */
@@ -195,22 +195,25 @@ function applyFieldErrors(error: unknown) {
         </el-form-item>
         <el-form-item label="文件" prop="file" :error="fieldErrors.file">
           <el-upload
+            v-if="!file"
             drag
             :auto-upload="false"
             :accept="ACCEPT"
-            :max-count="1"
+            :show-file-list="false"
             :on-change="onFileChange"
-            :on-remove="onFileRemove"
-            :before-upload="beforeUpload"
           >
             <div class="upload-hint">
               <el-icon class="el-icon--upload"><upload-filled /></el-icon>
               <div class="el-upload__text">拖拽文件到此处，或 <em>点击选择</em></div>
             </div>
-            <template #tip>
-              <div class="el-upload__tip">支持 md / txt / jpg / png / gif / webp，单个不超过 100MB</div>
-            </template>
           </el-upload>
+          <div v-else class="file-card">
+            <el-icon class="file-icon"><document /></el-icon>
+            <span class="file-name" :title="file.name">{{ file.name }}</span>
+            <span class="file-size">{{ (file.size / 1024 / 1024).toFixed(2) }} MB</span>
+            <el-button link type="danger" @click="removeFile">移除</el-button>
+          </div>
+          <div class="upload-tip">支持 md / txt / jpg / png / gif / webp，单个不超过 100MB</div>
         </el-form-item>
         <el-button class="submit" type="primary" :loading="loading" native-type="submit">上传</el-button>
       </el-form>
@@ -237,6 +240,42 @@ function applyFieldErrors(error: unknown) {
 
 .upload-hint {
   padding: 24px 0;
+}
+
+.file-card {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+}
+
+.file-icon {
+  font-size: 20px;
+  color: var(--el-color-primary);
+}
+
+.file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.upload-tip {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .submit {

@@ -53,36 +53,23 @@ public class AiService {
     /** 用户没填时的占位文案，而不是留空——空串会让模型以为「标题是空的」并自行编一个 */
     private static final String BLANK_CONTEXT = "（用户未填写）";
 
-    /**
-     * 送模型的上下文上限，只裁送出去的那一份；界面照常全量显示、库里照常全量落库。
-     *
-     * <p>没有它，第 N 轮的输入就是前 N−1 轮的总和：成本线性上涨，最终撑爆模型上下文窗口 →
-     * 50300，而且刷新恢复回来的正是这个永久坏掉的会话。
-     *
-     * <p><b>取偶数是有用的</b>：一轮问答固定落两行，历史长度恒为偶数，从这里减一个偶数
-     * 之后的切片起点必然落在 USER 行上，不会出现「上下文从助手的半句说起」。
-     */
+    /** 送模型的上下文上限 */
     private static final int MAX_CONTEXT_MESSAGES = 40;
 
-    /** 指令放 system 段、用户可控的内容放 user 段，让「用户输入没法伪装成指令」由协议结构承担 */
+    /** 图片路径的指令 */
     private static final String SUMMARY_IMAGE_SYSTEM_PROMPT = """
-            你是校园笔记托管站的摘要助手。用户会给你一张笔记图片，你要为这份笔记写一段简介。
+            你是校园笔记托管站的摘要助手。用户会给你一张笔记图片，你要为这份笔记写一段简要的介绍。
 
             要求：
             1. 只写图片里确实有的内容，不要补充图片之外的背景知识，也不要编造；
-            2. 直接输出简介正文，纯文本格式，只允许换行，不能有其他格式符号；
+            2. 直接输出简要的介绍，纯文本格式，只允许换行，不能有其他格式符号；
             3. 用中文，控制在 %d 个字符以内；
             4. 如果图片不是一份可摘要的学习资料（例如与课程无关的生活照），
                就据实说明它是什么，不要硬凑成笔记简介。
+            5. 不要只是简单的罗列讲了什么知识点，要有概括性的总结。
             """;
 
-    /**
-     * 文本路径的指令，与图片那段分开写：介质（正文 / 图片）与末条规则都不一样，
-     * 用 %s 拼一个「介质」进去只会让两边的措辞都变糊。
-     *
-     * <p>第 5 条是文本路径独有的：正文里出现了「下一行指令」的空间（图片里没有），
-     * 而正文又必须保留换行、不能被 {@code sanitize} 折成单行，所以这一层只能靠 prompt 说清楚。
-     */
+    /** 文本路径的指令 */
     private static final String SUMMARY_TEXT_SYSTEM_PROMPT = """
             你是校园笔记托管站的摘要助手。用户会给你一份笔记的正文原文，你要为这份笔记写一段简介。
 
@@ -147,12 +134,15 @@ public class AiService {
 
     // ==================== 摘要 ====================
 
-    /** 上传场景：文件来自请求体。
-     *
-     * <p>准入、解码与长度判定都在取配额之前——参数不合法的情况不应该消耗配额 */
+    /** 上传场景：
+     *  文件来自请求体。
+     */
     public AiSummaryResponse summarizeUpload(Long userId, AiSummaryRequest request) {
+
         MultipartFile file = request.getFile();
+        // 文件准入校验（扩展名、大小、文件头魔数）
         String contentType = inspectUpload(file);
+        // 读出文件字节并组装模型输入
         Payload payload = Payload.of(contentType, bytesOf(file));
 
         summaryRateLimiter.requireSlot(userId);
@@ -161,13 +151,14 @@ public class AiService {
     }
 
     /**
-     * 编辑场景：附件早在 OSS，服务端自取。
+     * 编辑场景：
+     * 附件已在 OSS，服务端自取。
      *
      * <p>{@code title} / {@code teacher} 由前端按表单当前值传来，而不是取库里存的——
      * 用户很可能刚改过标题、还没保存就点了生成。
      */
     public AiSummaryResponse summarizeExistingNote(Long userId, Long noteId, String title, String teacher) {
-        // 归属、状态与附件位置一并校验：非本人 40300、已删除 40301、OFFLINE 放行（同 §5.4 编辑）
+        // 归属、状态与附件位置一并校验
         NoteFileOwnershipRow file = noteService.requireOwnFile(noteId, userId);
 
         // 编辑场景没有字节可验，只能按库里那列 content_type 判。前端本该不给这类笔记显示按钮，
@@ -177,19 +168,16 @@ public class AiService {
         Payload payload = Payload.of(contentType, readObject(contentType, file));
 
         summaryRateLimiter.requireSlot(userId);
+
         return new AiSummaryResponse(summarize(payload, title, teacher));
     }
 
     /**
      * 已经过准入、解码与长度判定的输入。
-     *
-     * <p>{@code body} 是解码后的正文，非文本为 {@code null}——它不是 {@code bytes} 的函数值，
-     * 所以这里不算「同一事实存两份」。
-     *
-     * <p><b>必须在取配额之前造出来</b>：它的构造会抛 42200，而校验不过的请求不该烧掉一次配额。
      */
     private record Payload(String contentType, byte[] bytes, String body) {
 
+        // 文本类会解码出正文，非文本只带字节
         static Payload of(String contentType, byte[] bytes) {
             return AiSummaryFilePolicy.isText(contentType)
                     ? new Payload(contentType, bytes, decodeText(bytes))
@@ -202,8 +190,8 @@ public class AiService {
     }
 
     /**
-     * 按 MIME 分流。两条路给的 system 指令与请求体形态都不同，
-     * 收口处只剩「回程截断」与「上游失败归 50300」。
+     * 按 MIME 分流。
+     * 两条路给的 system 指令与请求体形态都不同，
      */
     private String summarize(Payload payload, String title, String teacher) {
         return payload.isText()
@@ -239,11 +227,10 @@ public class AiService {
     }
 
     /**
-     * 一次模型调用。所有上游异常都在这里收口成 50300；<b>日志只记 MIME 与大小，不记 prompt 正文</b>
-     * ——那里面是用户上传的内容与标题。
+     * 一次模型调用。
      *
      * <p><b>只包 chatClient 这几行</b>：把准入、解码、长度判定一并包进来，那些由输入引起的失败
-     * 就会被报成「上游不可用，稍后重试可能有救」，而用户重试永远不会成功（§5.7 对 50300 的定义）。
+     * 就会被报成「上游不可用，稍后重试可能有救」，而用户重试永远不会成功。
      */
     private String callModel(String source, Supplier<String> call) {
         try {
@@ -307,7 +294,7 @@ public class AiService {
         return flattened.length() > maxLength ? flattened.substring(0, maxLength) : flattened;
     }
 
-    /** 上传场景的准入：读文件头之前先过策略，读完即关流 */
+    /** 上传场景的准入*/
     private String inspectUpload(MultipartFile file) {
         try (InputStream content = file.getInputStream()) {
             return filePolicy.inspect(file.getOriginalFilename(), file.getSize(), content);
@@ -361,12 +348,12 @@ public class AiService {
         String conversation = isNew ? UUID.randomUUID().toString() : conversationId;
 
         List<AiMessage> history = loadHistory(userId, conversation);
-        // 带了conversationId 但查不到 history 报40400
+        // 带了conversationId 但查不到 history
         if (!isNew && history.isEmpty()) {
             throw new BusinessException(ErrorCode.NOT_FOUND);
         }
 
-        // 取配额放在 40400 之后：会话 id 无效是调用方自己的错，不该为此扣掉一小时里的一个名额。
+        // 取配额
         chatRateLimiter.requireSlot(userId);
 
         // 组装请求，发起call
@@ -378,7 +365,8 @@ public class AiService {
     }
 
     /**
-     * 该用户最近一次会话及其历史。刷新页面后前端靠它接回上一段对话。
+     * 该用户最近一次会话及其历史。
+     * 刷新页面后前端靠它接回上一段对话。
      *
      * <p>不限频。
      */
@@ -406,15 +394,7 @@ public class AiService {
     }
 
     /**
-     * 交给模型的只有 {@code (role, content)}，不带时间戳、不带序号：
-     * 任何每轮都变的字段都会让前缀缓存从那里断掉，而历史全量重发之所以负担得起，全靠缓存命中。
-     *
-     * <p>工具也进同一个前缀，所以 {@link NoteTools} 的实例状态不能影响 tool 定义——
-     * 见该类的类注释。
-     *
-     * <p>历史再过一道 {@link #MAX_CONTEXT_MESSAGES} 滑动窗口。窗口对前缀缓存的影响是分段的：
-     * 未超限时（绝大多数会话的常态）前缀逐轮只增不变，缓存照常命中，与没有窗口时完全一致；
-     * 超限后窗口每轮滑一位，前缀从滑动点起失效——这是用「有界的单次成本」换「无界的故障风险」。
+     * 发起 call
      */
     private String ask(Long userId, List<AiMessage> history, String message) {
 

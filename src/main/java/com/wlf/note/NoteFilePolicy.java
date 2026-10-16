@@ -25,17 +25,12 @@ import java.util.function.Predicate;
 
 /**
  * 上传文件的准入判定与对象键生成。
- *
- * <p>这是预览型 XSS 的唯一防线。
- *
- * <p>判定顺序（先便宜的、后昂贵的）：文件名与大小 → 扩展名白名单 → 魔数 →
- * 仅对无魔数的 md/txt 降级做全量 UTF-8 解码。
  */
 @Slf4j
 @Component
 public class NoteFilePolicy {
 
-    /** 单文件上限 100MB（§6.1），与 Nginx 的 {@code client_max_body_size}、后端 multipart 配置同源 */
+    /** 单文件上限 100MB，与 Nginx 的 {@code client_max_body_size}、后端 multipart 配置同源 */
     public static final long MAX_SIZE_BYTES = 100L * 1024 * 1024;
 
     /** 与 {@code note_file.original_name VARCHAR(255)} 对齐。utf8mb4 下 VARCHAR 单位是字符不是字节 */
@@ -49,33 +44,27 @@ public class NoteFilePolicy {
     private static final DateTimeFormatter KEY_MONTH = DateTimeFormatter.ofPattern("yyyy/MM");
 
     /**
-     * 扩展名 → 判定格式。键是小写扩展名（不含点），值为该类型的元信息。
-     *
-     * <p>用 LinkedHashMap 只为让表在源码里保持人类录入的顺序，运行时不依赖顺序。
-     *
-     * <p>表里只放<b>写入侧闸门</b>需要的两样东西——「类型是什么」与「凭什么认它」。
-     * 预览方式不在这里：它是 {@code contentType} 的纯函数，归读取侧，
-     * 由 {@link PreviewMode#of(String)} 推导（§6.1 那张表的「预览方式」列即该映射的出处）。
-     * 两处都写会变成同一规则的两份副本。注意这两处<b>必须同步</b>：新增受支持类型时
-     * 除了往本表加一行，还要看 {@code PreviewMode.of} 是否认得这个新的 {@code contentType}。
-     */
-    private static final Map<String, Format> FORMATS = buildFormats();
-
-    /**
-     * 一种受支持的文件类型，只保留写入侧闸门需要的两样东西。
+     * 一种受支持的文件类型。
      *
      * @param contentType 服务端判定值
-     * @param magic       文件头判定；<b>null 表示该类型没有魔数</b>（只有 md / txt），
-     *                    此时降级为 UTF-8 文本校验。空安全靠调用方判 null，而不是塞个恒真谓词——
-     *                    「没有魔数」和「任何字节都算通过」是两件事，后者会让校验形同虚设
+     * @param magic       文件头判定。null 表示该类型没有魔数（只有 md / txt）
      */
     private record Format(String contentType, Predicate<byte[]> magic) {
     }
 
+    /**
+     * 允许上传的文件类型白名单。
+     * key是小写扩展名，value为该类型的元信息。
+     *
+     * <p>预览方式不在这里。由 {@link PreviewMode#of(String)} 推导。
+     * 新增受支持类型时，除了往本表加一行，还要看 {@code PreviewMode.of} 是否认得这个新的 {@code contentType}。
+     */
+    private static final Map<String, Format> FORMATS = buildFormats();
+
     private static Map<String, Format> buildFormats() {
         Map<String, Format> formats = new LinkedHashMap<>();
 
-        // 无魔数，靠降级校验（见类注释）
+        // 无魔数，靠降级校验
         formats.put("md", new Format("text/markdown", null));
         formats.put("txt", new Format("text/plain", null));
 
@@ -90,18 +79,17 @@ public class NoteFilePolicy {
     }
 
     /**
-     * 判定一份上传文件是否准入，并给出落库与渲染所需的元信息。
+     * 判定待上传文件是否准入，
+     * 并给出落库与渲染所需的元信息。
      *
-     * <p><b>本方法会读取 {@code content}</b>：二进制类型只读文件头，
-     * md / txt 会读到末尾（UTF-8 全量校验）。
-     * 但调用方在上传前需要重新打开一个流——{@code MultipartFile#getInputStream} 可重复调用。
-     *
-     * @param originalName 客户端送来的原始文件名，可含路径（会被清洗掉）
-     * @param size         字节数，取自 multipart；本方法不做与实际内容的交叉核对
+     * @param originalName 客户端送来的原始文件名
+     * @param size         字节数，取自 multipart
      * @throws BusinessException 42200 文件类型 / 大小不合法；50000 读取流本身失败
      */
     public FileDecision inspect(String originalName, long size, InputStream content) {
+        // 清洗文件名
         String safeName = sanitizeName(originalName);
+        // 文件大小校验
         if (size <= 0) {
             throw new BusinessException(ErrorCode.FILE_INVALID, "文件内容为空");
         }
@@ -109,18 +97,18 @@ public class NoteFilePolicy {
             throw new BusinessException(ErrorCode.FILE_INVALID, "文件超过 " + (MAX_SIZE_BYTES >> 20) + "MB");
         }
 
+        // 根据扩展名对文件进行准入判断
         String extension = extensionOf(safeName);
         Format format = FORMATS.get(extension);
         if (format == null) {
-            // 白名单之外：svg / html / js / exe 以及一切没列进来的类型都从这里出去
             throw new BusinessException(ErrorCode.FILE_INVALID, "不支持的文件类型：." + extension);
         }
 
+        // 魔数校验。防止扩展名撒谎
         byte[] head = readHead(content);
         if (format.magic() == null) {
             assertPlainText(head, content, extension);
         } else if (!format.magic().test(head)) {
-            // 魔数与扩展名不符：既可能是改了后缀的伪装文件，也可能是真的损坏了，对外不区分
             throw new BusinessException(ErrorCode.FILE_INVALID, "文件内容与扩展名 ." + extension + " 不符");
         }
 
@@ -128,12 +116,7 @@ public class NoteFilePolicy {
     }
 
     /**
-     * 生成 OSS 对象键 {@code notes/yyyy/MM/{uuid}.{ext}}（§6.1）。
-     *
-     * <p>不用原始文件名：原始名可能重名、可能含 OSS 不接受的字符，也可能带上路径。
-     * 它在库里另存为 {@code note_file.original_name}，下载时再还原。
-     *
-     * @param extension {@link FileDecision#extension()}，已归一化为小写
+     * 生成 OSS 对象键 {@code notes/yyyy/MM/{uuid}.{ext}}。
      */
     public String objectKey(String extension) {
         return "notes/" + LocalDate.now().format(KEY_MONTH) + "/" + UUID.randomUUID() + "." + extension;

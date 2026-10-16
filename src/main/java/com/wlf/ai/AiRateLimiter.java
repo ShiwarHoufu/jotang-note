@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * AI 接口限频：按用户维度；本地内存实现。
  *
- * <b>对话与摘要两者各持一个实例、各算各的额度</b>
+ * <p>对话与摘要两者各持一个实例、各算各的额度。
  *
  * <p>实现沿用 {@code LoginAttemptLimiter} / {@code PasswordResetRateLimiter} 的做法
  * （{@link ConcurrentHashMap} + 惰性过期，不引入 Redis、也不起清理线程）：MVP 单实例，
@@ -39,15 +39,12 @@ public class AiRateLimiter {
     }
 
     /**
-     * 取一个名额；已超额则抛 42900 且<b>不消耗名额</b>。
+     * 取一个配额
      *
      * <p><b>判断与计数在同一次 {@link ConcurrentHashMap#compute} 里完成</b>，不是「先查再记」。
      * 分成两步的话，两个并发请求可以同时读到「还没满」然后各记一次，把上限顶穿——
-     * 这与 {@code LoginAttemptLimiter} 用 {@code compute} 原子替换 {@code Attempt}
-     * 是同一个理由。抛异常时映射不变（{@code compute} 的约定），所以被拒的请求不计入。
      *
-     * @throws BusinessException 42900 已超额，data 由 {@code BusinessException} 传空
-     *                            （剩余时间通过文案表达，不单独占一个 data 字段）
+     * @throws BusinessException 42900 已超额
      */
     public void requireSlot(Long userId) {
         Instant now = Instant.now();
