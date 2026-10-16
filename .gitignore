@@ -34,5 +34,8 @@ build/
 
 ### 本地敏感配置（明文密码 / AccessKey，禁止提交） ###
 application-local.yaml
+
+### Redis 落盘文件，误跟踪过一次 ###
+dump.rdb
 # Compose 的环境变量文件，含 RabbitMQ 密码；仓库里只提交 .env.example
 .env

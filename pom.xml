@@ -103,9 +103,8 @@
             空转（见《技术选型》§5 的原话）。现在有了第一条真正需要异步的链路，理由才成立。
 
             「有没有 Broker 都不影响其余功能」这件事由配置保证，不由这个依赖保证：
-            jotang.mail.mode 的默认值是 smtp，队列相关的 Bean（发布者、消费者）都挂在
-            @ConditionalOnProperty 上，默认压根不注册——所以新克隆的仓库 ./mvnw test 不需要
-            任何中间件就能全绿。详见 RabbitConfig 与 QueuedMailService 的类注释。
+            队列相关的 Bean（发布者、消费者）都挂在 @ConditionalOnProperty 上，
+            mode=smtp 时压根不注册。详见 RabbitConfig 与 QueuedMailService 的类注释。
         -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -157,7 +157,6 @@ jotang:
     # 生产用环境变量覆盖。
     reset-link-base: ${JOTANG_MAIL_RESET_LINK_BASE:http://localhost:5173/reset-password}
     # 发信走哪条路：smtp = 同步直发；queue = 投进 RabbitMQ，由消费者发。
-    # 默认 smtp，是为了新克隆的仓库不需要任何中间件就能 ./mvnw test 全绿
     mode: ${JOTANG_MAIL_MODE:queue}
 
   # 孤儿对象对账：定期把已删除但对象还没清掉的笔记补清一次。

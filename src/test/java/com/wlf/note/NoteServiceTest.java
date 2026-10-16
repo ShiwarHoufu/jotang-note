@@ -94,8 +94,7 @@ class NoteServiceTest {
     /**
      * 补偿删除的上报通道也换成 mock。
      *
-     * <p>默认（{@code jotang.purge.mode=none}）注入的是那个空实现，换掉它只为能断言
-     * 「报了什么」——真投递由 {@code OrphanObjectMqTest} 覆盖。
+     * <p>换掉它只为能断言「报了什么」——真投递由 {@code OrphanObjectMqTest} 覆盖。
      */
     @MockitoBean
     private OrphanObjectPublisher orphanObjectPublisher;

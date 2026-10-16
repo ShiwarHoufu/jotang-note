@@ -1,0 +1,26 @@
+[Unit]
+Description=jotang-note backend
+# MySQL、Redis、RabbitMQ 全在 Docker 里，必须先起来：
+# 库连不上时上下文直接起不来，Broker 启动时就会被 @RabbitListener 连。
+After=network-online.target docker.service
+Wants=network-online.target
+# 容器就绪可能比本服务晚，尤其是刚重启完机器时。默认的重启次数上限会让 systemd
+# 在几次失败后彻底放弃，而这里需要它一直重试到依赖就绪（配合下面的 Restart=always）。
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=jotang
+WorkingDirectory=/opt/jotang
+# 明文凭据，属主 root、权限 600。模板见 deploy/jotang.env.example
+EnvironmentFile=/etc/jotang/jotang.env
+# 2 核 2G：三个容器已占掉约 700MB，堆只能给到 512m。
+# 调大之前先看 docs/部署运维.md §2 的内存账，别把机器顶穿。
+ExecStart=/usr/bin/java -Xms256m -Xmx512m -jar /opt/jotang/app.jar
+Restart=always
+RestartSec=10
+# SIGTERM 正常退出不算失败，否则每次 stop 都会记一条失败日志
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target

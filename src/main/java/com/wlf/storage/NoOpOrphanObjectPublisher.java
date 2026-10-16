@@ -4,7 +4,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * 默认形态：<b>什么都不做</b>。{@code jotang.purge.mode=none}（缺省）时顶上，让
+ * 形态：<b>什么都不做</b>。{@code jotang.purge.mode=none} 时顶上，让
  * {@code NoteService} 那类调用方不必知道开关的存在。
  *
  * <p>之所以能是个空实现，是因为「补偿删除失败留下的那一行日志」本就在调用方的 catch 里

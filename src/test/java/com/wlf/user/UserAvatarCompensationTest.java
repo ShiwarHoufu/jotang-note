@@ -56,7 +56,7 @@ class UserAvatarCompensationTest {
     @MockitoBean
     private StorageService storageService;
 
-    /** 补偿删除的上报通道也换成 mock：默认（{@code jotang.purge.mode=none}）注入的是那个空实现 */
+    /** 补偿删除的上报通道也换成 mock，只为能断言「报了什么」 */
     @MockitoBean
     private OrphanObjectPublisher orphanObjectPublisher;
 

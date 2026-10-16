@@ -20,7 +20,7 @@ import java.util.UUID;
  * <b>存在两个</b> {@code MailService} 实现，按接口注入必须有个说法：
  *
  * <ul>
- *   <li>{@code jotang.mail.mode=smtp}（默认）下本类不注册，接口只有一个候选
+ *   <li>{@code jotang.mail.mode=smtp} 下本类不注册，接口只有一个候选
  *       {@code SmtpMailService}，无歧义</li>
  *   <li>{@code mode=queue} 下本类注册并带 {@code @Primary}，指向自己</li>
  * </ul>

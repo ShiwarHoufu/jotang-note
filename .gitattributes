@@ -1,2 +1,8 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+
+# 这三类文件在 Linux 上被直接读取：CRLF 会让 systemd 解析 unit 失败、nginx 报配置错误。
+# 仓库在 Windows 上编辑，scp/checkout 到 ECS 时必须保持 LF。
+*.service text eol=lf
+*.conf text eol=lf
+*.sh text eol=lf
