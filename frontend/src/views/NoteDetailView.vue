@@ -138,7 +138,7 @@ async function adminToggle() {
 
       <div class="head">
         <h1 class="title">{{ detail.title }}</h1>
-        <el-tag size="small" type="info" effect="plain">{{ detail.course.name }}</el-tag>
+        <el-tag size="small" type="primary" effect="light">{{ detail.course.name }}</el-tag>
         <el-tag v-if="detail.teacher" size="small" effect="plain">{{ detail.teacher }}</el-tag>
       </div>
 
@@ -155,7 +155,7 @@ async function adminToggle() {
       </div>
 
       <div v-if="detail.tags.length" class="tags">
-        <el-tag v-for="tag in detail.tags" :key="tag.id" size="small" type="primary" effect="light">
+        <el-tag v-for="tag in detail.tags" :key="tag.id" size="small" type="info" effect="plain">
           {{ tag.name }}
         </el-tag>
       </div>
@@ -224,6 +224,8 @@ async function adminToggle() {
 .title {
   margin: 0;
   font-size: 22px;
+  font-weight: 700;
+  color: var(--jt-ink, #1f2d4d);
   word-break: break-all;
 }
 
@@ -264,8 +266,9 @@ async function adminToggle() {
 .summary {
   margin: 16px 0 0;
   padding: 12px 16px;
-  background: #f5f7fa;
-  border-radius: 4px;
+  background: #f6f8fc;
+  border-left: 3px solid #6a5cff;
+  border-radius: 0 10px 10px 0;
   color: #606266;
   line-height: 1.7;
   white-space: pre-wrap;

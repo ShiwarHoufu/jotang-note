@@ -4,6 +4,7 @@ import { onMounted, ref, watch } from 'vue'
 
 import { favoritesApi } from '@/api/favorites'
 import type { FavoriteItem } from '@/api/types'
+import UserAvatar from '@/components/UserAvatar.vue'
 import { formatTime } from '@/utils/format'
 
 const PAGE_SIZE = 20
@@ -54,40 +55,42 @@ async function unfavorite(item: FavoriteItem) {
         <el-card
           v-for="item in items"
           :key="item.noteId"
-          shadow="never"
-          :body-style="{ padding: '14px 16px' }"
+          shadow="hover"
+          :body-style="{ padding: '16px' }"
         >
-          <div class="row">
-            <div class="info">
-              <div class="line-1">
-                <router-link
-                  v-if="isAvailable(item)"
-                  :to="{ name: 'note-detail', params: { id: item.noteId } }"
-                  class="title"
-                >
-                  {{ item.title }}
-                </router-link>
-                <span v-else class="title disabled">{{ item.title }}</span>
-                <el-tag size="small" type="info" effect="plain">{{ item.course.name }}</el-tag>
-                <el-tag v-if="item.status === 'OFFLINE'" size="small" type="warning">已下架</el-tag>
-                <el-tag v-else-if="item.status === 'DELETED'" size="small" type="danger">笔记已删除</el-tag>
-              </div>
-              <div v-if="isAvailable(item) && item.uploader" class="uploader">
-                {{ item.uploader.nickname }}
-                <span v-if="item.uploader.collegeName" class="college">{{ item.uploader.collegeName }}</span>
-              </div>
-              <div class="meta">
-                <template v-if="isAvailable(item)">
-                  {{ item.viewCount }} 浏览 · {{ item.downloadCount }} 下载 · {{ item.favoriteCount }} 收藏 ·
-                </template>
-                收藏于 {{ formatTime(item.favoritedAt) }}
-              </div>
-            </div>
-            <el-button
-              size="small"
-              :loading="actingId === item.noteId"
-              @click="unfavorite(item)"
+          <div class="card-head">
+            <router-link
+              v-if="isAvailable(item)"
+              :to="{ name: 'note-detail', params: { id: item.noteId } }"
+              class="title"
             >
+              {{ item.title }}
+            </router-link>
+            <span v-else class="title disabled">{{ item.title }}</span>
+            <el-tag size="small" type="primary" effect="light">{{ item.course.name }}</el-tag>
+            <el-tag v-if="item.status === 'OFFLINE'" size="small" type="warning">已下架</el-tag>
+            <el-tag v-else-if="item.status === 'DELETED'" size="small" type="danger">笔记已删除</el-tag>
+          </div>
+          <div v-if="isAvailable(item) && item.tags.length" class="tags">
+            <el-tag v-for="tag in item.tags" :key="tag.id" size="small" type="info" effect="plain">
+              {{ tag.name }}
+            </el-tag>
+          </div>
+          <div v-if="isAvailable(item) && item.uploader" class="uploader">
+            <UserAvatar :url="item.uploader.avatarUrl" :name="item.uploader.nickname" :size="20" />
+            <span class="uploader-name">{{ item.uploader.nickname }}</span>
+            <span v-if="item.uploader.collegeName" class="uploader-college">{{ item.uploader.collegeName }}</span>
+          </div>
+          <div class="card-foot">
+            <span class="stats">
+              <template v-if="isAvailable(item)">
+                <span>{{ item.viewCount }} 浏览</span>
+                <span>{{ item.downloadCount }} 下载</span>
+                <span>{{ item.favoriteCount }} 收藏</span>
+              </template>
+              <span class="time">收藏于 {{ formatTime(item.favoritedAt) }}</span>
+            </span>
+            <el-button link :loading="actingId === item.noteId" @click="unfavorite(item)">
               取消收藏
             </el-button>
           </div>
@@ -125,35 +128,27 @@ async function unfavorite(item: FavoriteItem) {
   min-height: 200px;
 }
 
-.row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.info {
-  flex: 1;
-  min-width: 0;
-}
-
-.line-1 {
+.card-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
 .title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--jt-ink, #1f2d4d);
   text-decoration: none;
-  word-break: break-all;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.2s ease;
 }
 
 .title:hover {
-  color: #409eff;
+  color: var(--jt-brand, #4f7cff);
 }
 
 .title.disabled {
@@ -161,20 +156,42 @@ async function unfavorite(item: FavoriteItem) {
   cursor: default;
 }
 
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .uploader {
-  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
   font-size: 13px;
   color: #606266;
 }
 
-.college {
+.uploader-college {
   color: #909399;
 }
 
-.meta {
-  margin-top: 6px;
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.stats {
+  display: flex;
+  gap: 12px;
   font-size: 12px;
   color: #909399;
+}
+
+.time {
+  margin-left: 4px;
 }
 
 .pager {

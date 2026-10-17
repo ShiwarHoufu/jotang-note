@@ -37,10 +37,10 @@ async function toggleFavorite() {
       <router-link :to="{ name: 'note-detail', params: { id: props.note.id } }" class="title">
         {{ props.note.title }}
       </router-link>
-      <el-tag size="small" type="info" effect="plain">{{ props.note.course.name }}</el-tag>
+      <el-tag size="small" type="primary" effect="light">{{ props.note.course.name }}</el-tag>
     </div>
     <div v-if="props.note.tags.length" class="tags">
-      <el-tag v-for="tag in props.note.tags" :key="tag.id" size="small" type="primary" effect="light">
+      <el-tag v-for="tag in props.note.tags" :key="tag.id" size="small" type="info" effect="plain">
         {{ tag.name }}
       </el-tag>
     </div>
@@ -64,6 +64,14 @@ async function toggleFavorite() {
 </template>
 
 <style scoped>
+.note-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.note-card:hover {
+  transform: translateY(-2px);
+}
+
 .card-head {
   display: flex;
   align-items: center;
@@ -73,17 +81,18 @@ async function toggleFavorite() {
 .title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--jt-ink, #1f2d4d);
   text-decoration: none;
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 0.2s ease;
 }
 
 .title:hover {
-  color: #409eff;
+  color: var(--jt-brand, #4f7cff);
 }
 
 .tags {

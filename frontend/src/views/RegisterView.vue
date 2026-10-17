@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Collection, Lock, Message, User } from '@element-plus/icons-vue'
 import { ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -68,16 +69,23 @@ function applyFieldErrors(error: ApiError) {
 <template>
   <div class="auth-page">
     <el-card class="auth-card">
-      <h1 class="auth-title">注册</h1>
+      <div class="auth-brand">
+        <span class="logo">
+          <el-icon><Collection /></el-icon>
+        </span>
+        <span class="name">Jotang Note</span>
+      </div>
+      <h1 class="auth-title">创建账号</h1>
+      <p class="auth-subtitle">加入 Jotang Note，与同学共享优质笔记</p>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
         <el-form-item label="用户名" prop="username" :error="fieldErrors.username">
-          <el-input v-model="form.username" />
+          <el-input v-model="form.username" :prefix-icon="User" placeholder="请输入用户名" />
         </el-form-item>
         <el-form-item label="邮箱" prop="email" :error="fieldErrors.email">
-          <el-input v-model="form.email" />
+          <el-input v-model="form.email" :prefix-icon="Message" placeholder="请输入校园邮箱" />
         </el-form-item>
         <el-form-item label="密码" prop="password" :error="fieldErrors.password">
-          <el-input v-model="form.password" type="password" show-password />
+          <el-input v-model="form.password" type="password" show-password :prefix-icon="Lock" placeholder="请设置密码" />
         </el-form-item>
         <el-form-item label="学院" prop="collegeId" :error="fieldErrors.collegeId">
           <el-select v-model="form.collegeId" placeholder="请选择学院" style="width: 100%">
@@ -85,11 +93,11 @@ function applyFieldErrors(error: ApiError) {
           </el-select>
         </el-form-item>
         <el-button class="auth-submit" type="primary" :loading="loading" native-type="submit">
-          注册
+          注 册
         </el-button>
       </el-form>
       <div class="auth-links">
-        <router-link :to="{ name: 'login' }">已有账号，去登录</router-link>
+        <span>已有账号？<router-link :to="{ name: 'login' }">去登录</router-link></span>
       </div>
     </el-card>
   </div>

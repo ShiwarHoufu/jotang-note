@@ -113,11 +113,12 @@ class UserAvatarControllerTest {
                 .andExpect(jsonPath("$.code").value(42200));
     }
 
-    /** 头像上限 2MB，远超要给出 42200 而不是 50000 */
+    /** 头像上限 5MB，超限要给出 42200 而不是 50000 */
     @Test
     void oversizeFileIsRejected() throws Exception {
         mockMvc.perform(multipart("/api/users/me/avatar")
-                        .file(new MockMultipartFile("file", "大图.png", "image/png", pngOfSize(2 * 1024 * 1024 + 1)))
+                        .file(new MockMultipartFile("file", "大图.png", "image/png",
+                                pngOfSize((int) AvatarFilePolicy.MAX_SIZE_BYTES + 1)))
                         .header("Authorization", token()))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value(42200));

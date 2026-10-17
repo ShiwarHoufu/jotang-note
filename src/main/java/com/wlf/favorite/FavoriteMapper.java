@@ -11,24 +11,15 @@ import org.apache.ibatis.annotations.Param;
  *
  * <p>单表 CRUD 由 {@link BaseMapper} 提供——详情页的「是否已收藏」走
  * {@code uk_user_note} 唯一索引的等值查询（{@link FavoriteService#isFavorited}）；
- * 收藏 / 取消收藏也只是在这个表上插一行、删一行，同样用它。
- *
- * <p>跨表检索走 {@code FavoriteMapper.xml}：那条查询是 {@code favorite JOIN note}，
- * 既要读 {@code note.status} 决定渲染正常项还是占位项（§6.5），又要按收藏时间排序。
- * 与 {@code NoteMapper} 是同一套分工：<b>单表用 BaseMapper，跨表检索用 XML</b>。
- *
- * <p>注意本 Mapper <b>不含 {@code note} 表的写语句</b>：{@code favorite_count} 的增减在
- * {@link com.wlf.note.NoteMapper} 上，理由见该接口的注释（那是 §1.1 允许的
- * 「跨模块写对方单表列」，与读路径的 JOIN 是两件事）。
  */
 @Mapper
 public interface FavoriteMapper extends BaseMapper<Favorite> {
 
     /**
-     * 某个用户的收藏，一页。见 §5.5、§6.5。
+     * 某个用户的收藏，一页。
      *
      * <p>不筛 {@code note.status}：三种状态都要取回来交给 Service 渲染占位；
-     * 入参是「谁在看」而不是「看谁」：这个列表只有本人能看，所以只需要 {@code userId}。
+     * 这个列表只有本人能看，所以只需要 {@code userId}。
      *
      * @return 一页数据，按收藏时间倒序；{@code total} 由插件回填到返回的 {@code IPage} 上
      */

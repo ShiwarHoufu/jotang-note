@@ -121,9 +121,9 @@ class AvatarFilePolicyTest {
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
     }
 
-    /** 2MB 是上界（含），再多一个字节就拒 */
+    /** 5MB 是上界（含），再多一个字节就拒 */
     @Test
-    void sizeLimitIsTwoMegabytesInclusive() {
+    void sizeLimitIsFiveMegabytesInclusive() {
         assertThat(inspect("刚好.png", pngOfSize(AvatarFilePolicy.MAX_SIZE_BYTES)).extension())
                 .isEqualTo("png");
 

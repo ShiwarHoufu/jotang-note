@@ -29,8 +29,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 收藏业务：仅 ONLINE 可收藏；列表按 {@code note.status} 渲染「已下架 / 已删除」占位。
- * 见《概要设计》§5.5、§6.5。
+ * 收藏业务：仅 ONLINE 可收藏；
+ * 列表按 {@code note.status} 渲染「已下架 / 已删除」占位。
  *
  * <p>三个入口：{@link #favorite} / {@link #unfavorite} 是写入侧，
  * {@link #listFavorites} 是「我的收藏」；另有两个给别的模块用的只读方法
@@ -75,11 +75,9 @@ public class FavoriteService {
     }
 
     /**
-     * 收藏一篇笔记，返回操作后的最新收藏量。见 §5.5、§6.5。
+     * 收藏一篇笔记，返回操作后的最新收藏量。
      *
-     * <p><b>只允许收藏 {@code ONLINE} 的笔记</b>（§6.5）：已下架 / 已删除的笔记拒绝收藏，
-     * 40301。这与 {@link #isFavorited} 刻意相反——那边如实回答「关系在不在」，
-     * 这边回答「现在能不能收藏」。两条规则面向的问题不同，不要合并。
+     * <p>只允许收藏 {@code ONLINE} 的笔记
      *
      * <p><b>四步的顺序都是有意的，尤其是第一步：</b>
      * <ol>
@@ -95,7 +93,7 @@ public class FavoriteService {
      *   <li>回读最新值返回。持有该行的锁，读到的必然是自己这次操作之后的值。</li>
      * </ol>
      *
-     * @param userId 收藏者，取自 JWT——不接受请求参数传入，否则可以替别人收藏
+     * @param userId 收藏者，取自 JWT
      * @throws BusinessException 40400 笔记不存在；40301 笔记非 ONLINE；40902 已收藏过
      */
     @Transactional
@@ -126,16 +124,12 @@ public class FavoriteService {
     }
 
     /**
-     * 取消收藏，返回操作后的最新收藏量。见 §5.5、§6.5。
+     * 取消收藏，返回操作后的最新收藏量。
      *
-     * <p><b>幂等</b>：本来就没收藏过也返回 200，而不是 40400。DELETE 本就是这个语义，
-     * 前端不必「先查再删」；连点两次不该有一次报错。
+     * <p>幂等：本来就没收藏过也返回 200，而不是 40400。
      *
-     * <p><b>笔记非 ONLINE 也放行</b>（与 {@link #favorite} 不对称，这是有意的）：
-     * §5.7 的 40301 管的是「收藏」这个动作，而占位项如果连取消都不允许，
-     * 用户就永远清不掉自己收藏列表里的「已下架 / 已删除」，只能越积越多。
-     * 这与 §6.5「不解除收藏关系」也不矛盾：那条说的是<b>系统不自动断链</b>，
-     * 这里说的是<b>用户主动清理</b>可以。
+     * <p>笔记非 ONLINE 也放行。
+     * 由于软删除，占位项如果不允许取消，用户就永远清不掉自己收藏列表里的已删除/下架的项
      *
      * <p>第一步取锁而不取状态：本方法不关心 {@code ONLINE}，但要与
      * {@link #favorite} 走同一把锁的同一获取顺序（note → favorite），否则收藏与取消收藏
@@ -164,24 +158,13 @@ public class FavoriteService {
     }
 
     /**
-     * 我的收藏，按收藏时间倒序分页。见 §5.5、§6.5、§4.1。
+     * 我的收藏，按收藏时间倒序分页。
      *
-     * <p><b>只查自己的收藏</b>：{@code userId} 取自 JWT，绝不从请求参数传入——
-     * 这个接口没有「看别人收藏」的语义，把 id 交出去就等于开放了它。
-     * 也正因为过滤条件落在 {@code favorite.user_id} 上，结果集天然只有「我收藏的那些」，
-     * 不需要像笔记列表那样另造一个课程把开发库里的既有数据圈出去。
+     * <p>只查自己的收藏：{@code userId} 取自 JWT。
+     * （未来实现让用户选择是否公开自己的收藏？）
      *
      * <p><b>三种状态都渲染</b>（§6.5）：{@code ONLINE} 正常项，
      * {@code OFFLINE} / {@code DELETED} 是占位项——保留标题与课程，其余置空。
-     * 见 {@link #toFavoriteItem}。
-     *
-     * <p><b>本方法刻意不开事务。</b>纯读，没有需要原子化的写；两条查询之间即便插进一次
-     * 「笔记刚被下架」，最坏结果也只是标题用得上而计数没了，而这两者本来就允许短暂不一致
-     * （§3.3 的计数是派生值）。与 {@code NoteService.detail} 同一个态度：
-     * 为一次只读的装配开事务，只会白白多占一个连接。
-     *
-     * <p><b>固定三次数据库交互</b>，与页大小无关：主干分页 + 插件改写的 count + 一次标签
-     * {@code IN} 查询。标签不逐条查——那会立刻退化成 N+1（一页 20 条就是 20 次往返）。
      *
      * @param userId 当前登录者，取自 JWT
      * @throws BusinessException 40001 分页过深（{@code page × size > 1000}，见 {@link Paging#MAX_PAGE_DEPTH}）
@@ -241,10 +224,6 @@ public class FavoriteService {
      *
      * <p>占位项保留标题与课程、隐去其余，理由见 {@link FavoriteItemResponse}：
      * 用户要认得出自己收藏的是什么，但已下架笔记的上传者、标签与计数不该再从这条路径露出去。
-     *
-     * <p>{@code OFFLINE → ONLINE} 恢复之后不需要任何额外处理就会重新走正常项那一支——
-     * 这正是 §6.5 说的「恢复后自动正常展示，计数不变」，也说明占位不是一种被写进去的状态，
-     * 而是每次读取时对当前 {@code note.status} 的即时判断。
      */
     private FavoriteItemResponse toFavoriteItem(FavoriteItemRow row, Map<Long, List<TagResponse>> tagsByNote) {
         NoteStatus status = NoteStatus.valueOf(row.getStatus());
@@ -268,57 +247,32 @@ public class FavoriteService {
     }
 
     /**
-     * 头像对象键 → 公网直连 URL（§6.7）。
-     *
-     * <p>空值必须在这里短路：{@code StorageService#publicUrl} 是裸字符串拼接，
-     * 喂个 null 会拼出一个以 {@code /null} 结尾、看着像 URL 的东西——
-     * 前端会安心地拿它去 {@code <img src>}，然后拿到一个 404。
-     *
-     * <p>与 {@code NoteService} 里那三行是同一段逻辑。这里先复制而不是抽公共助手：
-     * 抽取要动 note 模块（已在用的那处），而本切片的目标是把收藏做完；
-     * 「个人主页」落地时会出现第三份，那时才是抽取的时机——三处会逼出一个正确的形状，
-     * 两处则容易抽出只够这两处用的东西。
+     * 头像对象键 → 公网直连 URL。
      */
     private String avatarUrl(String avatarKey) {
         return avatarKey == null ? null : storageService.publicUrl(Bucket.AVATAR, avatarKey);
     }
 
     /**
-     * 某个用户是否收藏了某篇笔记。详情页用它填 {@code isFavorited}（§5.4）。
-     *
-     * <p><b>只看 favorite 表，不看笔记状态。</b>§6.5 明确「占位项不可预览/下载，
-     * 但不解除收藏关系」，所以已下架 / 已删除的笔记只要关系还在就返回 true。
-     * 这个字段回答的是「这条关系存在吗」，而不是「现在还能收藏吗」——
-     * 后者由 {@code note.status} 单独回答，前端据此隐藏按钮（§4.1）。
-     * 若在这里顺手改成「非 ONLINE 一律 false」，就等于让数据去配合渲染，
-     * 而关系实际还在，等笔记恢复上架时这个字段又会自己变回 true。
-     *
-     * <p>实现上委托给 {@link #favoritedNoteIds}，而不是另写一条 {@code exists}：
-     * 两者回答的是同一个问题，只是批量与单条两种用法。写两遍谓词就意味着将来两处可能不一致，
-     * 而调用方一个看列表一个看详情，不一致时表现为「同一篇笔记收藏态对不上」，很难查。
+     * 某个用户是否收藏了某篇笔记。详情页用它填 {@code isFavorited}。
      *
      * @param userId 当前登录者，取自 JWT
      * @param noteId 任意笔记 id，<b>允许是不存在的 id</b>——「笔记不存在」与
      *               「笔记存在但没收藏」对调用方的含义相同，都是 false。
      *               笔记存在与否由详情接口自己判定（它要为此报 40400），
      *               本方法只回答收藏关系这一个问题，不越界去判另一件事
-     * @return null 参数视为未收藏：调用方是「JWT 里的 userId」与「路径上的 noteId」，
-     *         两者都不该为 null，真出现了也不值得让请求失败，返回 false 即可
      */
     public boolean isFavorited(Long userId, Long noteId) {
         return noteId != null && favoritedNoteIds(userId, List.of(noteId)).contains(noteId);
     }
 
     /**
-     * 一批笔记里，该用户收藏了哪些。列表页用它填 {@code isFavorited}（§5.4）。
+     * 一批笔记里，该用户收藏了哪些。
      *
-     * <p><b>批量而不是逐条</b>：一页 20 条就会变成 20 次往返（N+1）。这里一次
-     * {@code IN} 查询取回整页的收藏关系，条数与页大小无关。查询走 {@code uk_user_note}
-     * 唯一索引，命中行数至多等于入参个数。
+     * <p><b>批量而不是逐条</b>：一页 20 条就会变成 20 次往返（N+1）。
      *
      * <p>返回 {@code Set} 而不是 {@code List}：调用方要的是「在不在集合里」，
-     * 不是顺序，也不是条数。用 Set 把这个意图写进返回值，顺带避免调用方写出
-     * {@code list.contains(...)} 这种 O(n) 的误用。
+     * 不是顺序，也不是条数。
      *
      * @param userId  当前登录者，取自 JWT
      * @param noteIds 待判定的笔记 id。空集合直接短路——{@code IN ()} 是语法错误，

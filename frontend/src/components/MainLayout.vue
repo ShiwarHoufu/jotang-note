@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Collection } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 
@@ -23,7 +24,10 @@ async function logout() {
   <el-container class="page">
     <el-header class="header">
       <div class="header-left">
-        <router-link :to="{ name: 'home' }" class="brand">Jotang Note</router-link>
+        <router-link :to="{ name: 'home' }" class="brand">
+          <span class="brand-logo"><el-icon><Collection /></el-icon></span>
+          <span>Jotang Note</span>
+        </router-link>
         <!-- el-menu 的 router 模式默认把 index 当路径跳转，这里显式传 route 对象按名称跳 -->
         <el-menu mode="horizontal" :default-active="String($route.name)" :ellipsis="false" class="nav" router>
           <el-menu-item index="home" :route="{ name: 'home' }">首页</el-menu-item>
@@ -55,6 +59,16 @@ async function logout() {
 </template>
 
 <style scoped>
+/* 吸顶 + 毛玻璃：滚动时内容从下面透过来有层次感 */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 1px 12px rgba(31, 45, 77, 0.06);
+}
+
 .header-left {
   display: flex;
   align-items: center;
@@ -64,11 +78,28 @@ async function logout() {
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 18px;
-  font-weight: 600;
-  color: #303133;
+  font-weight: 700;
+  color: var(--jt-ink, #1f2d4d);
   text-decoration: none;
   white-space: nowrap;
+}
+
+/* 品牌渐变小徽标，与登录页同款 */
+.brand-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 15px;
+  background: linear-gradient(135deg, #4f7cff, #7a5cff);
+  box-shadow: 0 3px 8px -2px rgba(97, 106, 255, 0.55);
 }
 
 .nav {
@@ -81,7 +112,14 @@ async function logout() {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
   cursor: pointer;
   outline: none;
+  transition: background-color 0.2s ease;
+}
+
+.user-entry:hover {
+  background: #f1f4fa;
 }
 </style>

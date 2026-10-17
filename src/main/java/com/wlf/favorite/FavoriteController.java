@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 收藏接口：收藏 / 取消收藏 / 我的收藏（含占位）。
- * 见《概要设计》§5.5。
  */
 @RestController
 public class FavoriteController {
@@ -45,10 +44,9 @@ public class FavoriteController {
     /**
      * 取消收藏。
      *
-     * <p><b>幂等</b>：本来就没收藏过也返回 200 与当前计数，不是 40400。
-     * 只有笔记本身不存在才是 40400。
+     * <p><b>幂等</b>：本来就没收藏过也返回 200 与当前计数。
      *
-     * <p>笔记已下架 / 已删除时<b>照常允许取消</b>：不然收藏列表里的占位项永远清不掉。
+     * <p>笔记已下架 / 已删除时照常允许取消：不然收藏列表里的占位项永远清不掉。
      */
     @DeleteMapping("/api/notes/{id}/favorite")
     public ApiResponse<FavoriteCountResponse> unfavorite(@AuthenticationPrincipal AuthenticatedUser user,

@@ -18,7 +18,7 @@ import java.util.function.Predicate;
  * 头像文件的准入判定与对象键生成。见《概要设计》§6.7。
  *
  * <p><b>为什么不能复用 {@code NoteFilePolicy}</b>：两者看着都是「扩展名 + 魔数」，
- * 但白名单与上限不同（头像 3 种 / 2MB，笔记 15 种 / 100MB），对象键的拼法也不同
+ * 但白名单与上限不同（头像 3 种 / 5MB，笔记 15 种 / 100MB），对象键的拼法也不同
  * （{@code avatars/{userId}/{uuid}.{ext}} vs {@code notes/yyyy/MM/{uuid}.{ext}}）。§1.1 明说
  * 白名单与对象键属于<b>调用方</b>的策略，note 与 user 各持一份。共用的只有「字节是什么类型」
  * 这层事实，已抽到 {@link FileMagic}。
@@ -31,8 +31,8 @@ import java.util.function.Predicate;
 @Component
 public class AvatarFilePolicy {
 
-    /** 单文件上限 2MB（§5.2、§6.7）。头像经 ECS 中转上传，与大文件的 100MB 是两回事 */
-    public static final long MAX_SIZE_BYTES = 2L * 1024 * 1024;
+    /** 单文件上限 5MB（§5.2、§6.7）。头像经 ECS 中转上传，与大文件的 100MB 是两回事 */
+    public static final long MAX_SIZE_BYTES = 5L * 1024 * 1024;
 
     /** 读文件头的字节数：必须 ≥ 最长的魔数（WEBP 需要 12 字节），取 16 留些余量 */
     private static final int HEAD_BYTES = 16;

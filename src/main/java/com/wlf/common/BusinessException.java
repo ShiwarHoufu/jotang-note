@@ -4,7 +4,6 @@ import lombok.Getter;
 
 /**
  * 业务异常，携带 {@link ErrorCode}，由 GlobalExceptionHandler 统一翻译成响应体。
- * 见《概要设计》§5.7。
  *
  * <p>文案沿用 {@link RuntimeException#getMessage()}，默认取错误码的 message，
  * 需要说明具体原因时（如「文件超过 100MB」）可覆写。

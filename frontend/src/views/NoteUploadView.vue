@@ -239,18 +239,35 @@ function applyFieldErrors(error: unknown) {
 }
 
 .upload-hint {
-  padding: 24px 0;
+  padding: 20px 0;
+}
+
+.upload-hint .el-icon--upload {
+  margin-bottom: 8px;
+  font-size: 48px;
+  color: #b8c2dc;
+}
+
+/* 拖拽区：大圆角虚线框，悬停染上品牌色 */
+.page-body :deep(.el-upload-dragger) {
+  border-radius: 14px;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.page-body :deep(.el-upload-dragger:hover) {
+  border-color: var(--jt-brand, #4f7cff);
+  background: #f8faff;
 }
 
 .file-card {
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 6px;
-  background: var(--el-fill-color-light);
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px dashed var(--el-border-color);
+  border-radius: 12px;
+  background: #f8faff;
 }
 
 .file-icon {

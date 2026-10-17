@@ -188,6 +188,10 @@ onUnmounted(() => clearTimeout(keywordTimer))
   gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(31, 45, 77, 0.05);
 }
 
 .list {

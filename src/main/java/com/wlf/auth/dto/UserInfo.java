@@ -6,15 +6,13 @@ import com.wlf.storage.StorageService;
 
 /**
  * 当前登录用户的对外视图，登录响应与 {@code GET /api/auth/me} 共用。
- * 见《概要设计》§5.1。
  */
 public record UserInfo(Long id, String username, String nickname, Long collegeId,
                        String avatarUrl, String role) {
 
     /**
-     * 装配当前登录用户的对外视图。{@code avatarUrl} 由 {@code user.avatar} 那个<b>对象键</b>
-     * 现拼成公共读 Bucket 的公网地址（§6.7），所以本方法需要一个 {@link StorageService}——
-     * 桶名与 Endpoint 都只有它知道。
+     * 装配当前登录用户的对外视图。
+     * {@code avatarUrl} 由 {@code user.avatar} 那个对象键现拼成公共读 Bucket 的公网地址。
      *
      * <p><b>刻意不保留一个不带 StorageService 的重载</b>：那样会留下一条静默产出
      * {@code avatarUrl == null} 的路径，而本方法有三个调用点（注册 / 登录 / 取当前用户），

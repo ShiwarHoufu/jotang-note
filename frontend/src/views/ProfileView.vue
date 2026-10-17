@@ -14,7 +14,7 @@ const auth = useAuthStore()
 const catalog = useCatalogStore()
 
 const ACCEPT = '.jpg,.jpeg,.png,.webp'
-const MAX_SIZE = 2 * 1024 * 1024
+const MAX_SIZE = 5 * 1024 * 1024
 
 const formRef = ref<FormInstance>()
 const form = ref({ nickname: '', collegeId: undefined as number | undefined })
@@ -42,7 +42,7 @@ onMounted(async () => {
 /** 头像上传走 auto-upload，http 层负责带登录头与解析响应 */
 async function doUploadAvatar({ file }: UploadRequestOptions) {
   if (file.size > MAX_SIZE) {
-    ElMessage.error('头像超过 2MB')
+    ElMessage.error('头像超过 5MB')
     return
   }
   uploading.value = true

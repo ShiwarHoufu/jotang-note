@@ -21,7 +21,6 @@ import java.util.List;
 
 /**
  * 注册、登录、退出。登录校验 BCrypt 密码后由 JwtTokenProvider 签发令牌。
- * 见《概要设计》§5.1、§6.3、§6.4。
  */
 @Service
 public class AuthService {
@@ -33,7 +32,7 @@ public class AuthService {
     private final CollegeService collegeService;
 
     /**
-     * 仅用于把 {@code UserInfo.avatarUrl} 拼出来（§6.7）。本接口与存储本无业务往来，
+     * 仅用于把 {@code UserInfo.avatarUrl} 拼出来。本接口与存储本无业务往来，
      * 但「当前登录用户的对外视图」里含头像，而桶名 / Endpoint 只有存储层知道。
      */
     private final StorageService storageService;
@@ -53,7 +52,7 @@ public class AuthService {
     }
 
     /**
-     * 注册。昵称取用户名占位，之后由「基本资料」修改。
+     * 注册。昵称取用户名占位，之后在「基本资料」修改。
      *
      * <p>先查后插之间存在竞态窗口，因此同时依赖 {@code uk_username} / {@code uk_email}
      * 唯一索引兜底，捕获冲突后再判断是哪个字段，避免并发下漏判。
@@ -100,7 +99,7 @@ public class AuthService {
     }
 
     /**
-     * 登录。失败累计达阈值即锁定（§6.3）。
+     * 登录。失败累计达阈值即锁定。
      *
      * <p>「用户不存在」与「密码错误」返回同一个错误码与文案，避免账号枚举。
      */

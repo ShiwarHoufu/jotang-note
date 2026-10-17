@@ -69,9 +69,9 @@ watch(() => [props.noteId, props.file.previewMode], load, { immediate: true })
 }
 
 .markdown :deep(pre) {
-  background: #f5f7fa;
-  padding: 12px;
-  border-radius: 4px;
+  background: #f6f8fc;
+  padding: 14px 16px;
+  border-radius: 10px;
   overflow-x: auto;
 }
 

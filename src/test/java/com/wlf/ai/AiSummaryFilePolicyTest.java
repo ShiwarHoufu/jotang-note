@@ -128,7 +128,7 @@ class AiSummaryFilePolicyTest {
         assertThatThrownBy(() -> inspect("空.md", new byte[0])).isInstanceOf(BusinessException.class);
     }
 
-    /** 10MB 是上界（含），再多一个字节就拒——与 AvatarFilePolicyTest 的 2MB 那条同形 */
+    /** 10MB 是上界（含），再多一个字节就拒——与 AvatarFilePolicyTest 的 5MB 那条同形 */
     @Test
     void sizeLimitIsTenMegabytesInclusive() {
         assertThat(inspect("刚好.png", pngOfSize(AiSummaryFilePolicy.MAX_SIZE_BYTES))).isEqualTo("image/png");
