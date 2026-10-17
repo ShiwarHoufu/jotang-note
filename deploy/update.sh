@@ -33,7 +33,9 @@ sudo systemctl stop "$SERVICE" || true
 $COMPOSE stop
 
 echo "==> 构建后端"
-./mvnw -q clean package -DskipTests
+# 用 bash 显式调用，不依赖 mvnw 的可执行位：
+# 仓库在 Windows 上编辑，git 常常不保留 100755，checkout 到 Linux 就会 Permission denied
+bash mvnw -q clean package -DskipTests
 
 echo "==> 构建前端"
 cd frontend
