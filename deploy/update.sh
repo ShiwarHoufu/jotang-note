@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # 服务器侧发布脚本：拉代码 → 构建 → 换产物 → 重启。
 #
-# 用法（在 ECS 上）：
+# 用法（在服务器上，以 jotang 身份）：
+#   ssh jotang@<IP>
 #   cd /opt/jotang/src && bash deploy/update.sh
-# 本地一条命令触发：
-#   ssh <user>@<IP> 'cd /opt/jotang/src && bash deploy/update.sh'
 #
 # 前提：deploy/.env 与 /etc/jotang/jotang.env 都已就位（见 docs/部署运维.md）。
-# 执行者需要对 systemctl 的免密 sudo；不要把整个脚本用 sudo 跑，
-# 否则 target/ 与 node_modules/ 会变成 root 属主。
+# 脚本内的两条 sudo 会要求输入一次 jotang 的密码；先跑 sudo -v 可以免掉这次输入。
+# 不要把整个脚本用 sudo 跑，否则 target/ 与 node_modules/ 会变成 root 属主。
 
 set -euo pipefail
 
@@ -53,4 +52,5 @@ $COMPOSE up -d --wait
 
 echo "==> 启动"
 sudo systemctl start "$SERVICE"
-sudo systemctl --no-pager --lines=20 status "$SERVICE" || true
+# status 不需要 root；加 sudo 反而会因为带 --no-pager 等参数而与 NOPASSWD 规则对不上
+systemctl --no-pager --lines=20 status "$SERVICE" || true

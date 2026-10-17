@@ -153,7 +153,6 @@ jotang:
     # 发件人。必须与 spring.mail.username（已认证的账号）一致，否则 QQ SMTP 直接拒收
     from: ${JOTANG_MAIL_FROM:${spring.mail.username:}}
     # 重置链接的前端地址前缀，后端只负责在它后面拼 ?token=...。
-    # 前端的实际路由尚未定（§10 的「链接文案与倒计时」），故先给一个本机开发用的默认值；
     # 生产用环境变量覆盖。
     reset-link-base: ${JOTANG_MAIL_RESET_LINK_BASE:http://localhost:5173/reset-password}
     # 发信走哪条路：smtp = 同步直发；queue = 投进 RabbitMQ，由消费者发。
