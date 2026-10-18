@@ -5,6 +5,7 @@ import { onMounted, ref, watch } from 'vue'
 import { notesApi } from '@/api/notes'
 import { favoritesApi } from '@/api/favorites'
 import type { MyNoteItem } from '@/api/types'
+import NoteListSkeleton from '@/components/NoteListSkeleton.vue'
 import { formatTime } from '@/utils/format'
 
 const PAGE_SIZE = 20
@@ -59,8 +60,9 @@ async function remove(item: MyNoteItem) {
 <template>
   <div class="page-body">
     <h1 class="page-title">我的上传</h1>
-    <div v-loading="loading" class="list">
-      <template v-if="items.length">
+    <div v-loading="loading && items.length > 0" class="list">
+      <NoteListSkeleton v-if="loading && !items.length" />
+      <template v-else-if="items.length">
         <el-card v-for="item in items" :key="item.id" shadow="never" :body-style="{ padding: '14px 16px' }">
           <div class="row">
             <div class="info">
@@ -102,7 +104,7 @@ async function remove(item: MyNoteItem) {
           </div>
         </el-card>
       </template>
-      <el-empty v-else-if="!loading" description="还没有上传过笔记">
+      <el-empty v-else description="还没有上传过笔记">
         <el-button type="primary" @click="$router.push({ name: 'note-upload' })">去上传</el-button>
       </el-empty>
     </div>
@@ -158,14 +160,14 @@ async function remove(item: MyNoteItem) {
 .title {
   font-size: 15px;
   font-weight: 600;
-  color: var(--jt-ink, #1f2d4d);
+  color: var(--jt-ink);
   text-decoration: none;
   word-break: break-all;
   transition: color 0.2s ease;
 }
 
 .title:hover {
-  color: var(--jt-brand, #4f7cff);
+  color: var(--jt-brand);
 }
 
 .tags {
@@ -185,7 +187,8 @@ async function remove(item: MyNoteItem) {
 
 .meta {
   font-size: 12px;
-  color: #909399;
+  color: var(--jt-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .actions {

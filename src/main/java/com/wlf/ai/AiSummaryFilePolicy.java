@@ -20,25 +20,13 @@ import java.util.function.Predicate;
 @Component
 public class AiSummaryFilePolicy {
 
-    /**
-     * 单份附件内联进请求体的上限。
-     *
-     * <p><b>显著小于 §6.1 的 100MB</b>，两个理由叠在一起：图片要以 base64 内联进请求体，
-     * 体积膨胀约 4/3；而模型侧的请求体本身有上限。上限值目前是建议值，待真实调用的费用与
-     * 时延实测后再钉死。
-     */
+    /** 单份附件内联进请求体的上限。*/
     public static final long MAX_SIZE_BYTES = 10L * 1024 * 1024;
 
-    /** 摘要正文的字符上限（§6.1），按 code point 计。同为建议值，待实测 */
+    /** 摘要正文的字符上限，按 code point 计。同为建议值，待实测 */
     public static final int MAX_TEXT_CHARS = 20000;
 
-    /**
-     * 读之前的字节预筛。
-     *
-     * <p>UTF-8 每个 code point 占 1–4 字节，故「字节数 ≤ 4 × 字符上限」是后者成立的<b>必要条件</b>：
-     * 先拦它<b>永不误拒</b>，但它<b>永远不够</b>——八万字节的纯 ASCII 就是八万个字符。它唯一的用处是
-     * 不把大对象读进堆，真正的闸门是解码之后的 code point 计数。两道都删不得。
-     */
+    /** 读之前的字节预筛。*/
     public static final long MAX_TEXT_BYTES = (long) MAX_TEXT_CHARS * 4;
 
     /** 读文件头的字节数：必须 ≥ 最长的魔数（WEBP 需要 12 字节），取 16 留些余量 */
@@ -151,11 +139,7 @@ public class AiSummaryFilePolicy {
                 "图片超过 " + (MAX_SIZE_BYTES >> 20) + "MB，无法生成摘要");
     }
 
-    /**
-     * 解码后的那道闸：正文按 code point 数超了就拒。字节预筛过不了这一关的补漏（见
-     * {@link #MAX_TEXT_BYTES}），按 <b>code point</b> 而不是 {@code String#length} 计，
-     * 免得一个 emoji 被算成两个字。
-     */
+
     public static void requireTextWithinLimit(String text) {
         if (text.codePointCount(0, text.length()) > MAX_TEXT_CHARS) {
             throw textTooLong();
@@ -163,8 +147,7 @@ public class AiSummaryFilePolicy {
     }
 
     /**
-     * 清洗文件名并取扩展名。AI 不落库、不拼对象键，要的只有扩展名——
-     * 但仍须先剥掉路径，免得 {@code ../x.png} 之类的输入影响判定。
+     * 清洗文件名并取扩展名。
      */
     private static String sanitizeName(String originalName) {
         if (originalName == null || originalName.isBlank()) {
@@ -181,7 +164,7 @@ public class AiSummaryFilePolicy {
         return name;
     }
 
-    /** 取扩展名并归一化为小写。用 {@code Locale.ROOT}：默认区域可能是土耳其语，那里 {@code I} 会被小写成 {@code ı} */
+    /** 取扩展名并归一化为小写 */
     private static String extensionOf(String name) {
         int dot = name.lastIndexOf('.');
         // dot == 0 是 .bashrc 这类隐藏文件，它没有「扩展名」这个语义

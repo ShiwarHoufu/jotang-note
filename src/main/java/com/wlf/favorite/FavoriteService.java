@@ -35,16 +35,6 @@ import java.util.stream.Collectors;
  * <p>三个入口：{@link #favorite} / {@link #unfavorite} 是写入侧，
  * {@link #listFavorites} 是「我的收藏」；另有两个给别的模块用的只读方法
  * （{@link #isFavorited} / {@link #favoritedNoteIds}），供详情页与笔记列表填 {@code isFavorited}。
- *
- * <p><b>本类直接注入 {@link NoteMapper}</b>，这是 §1.1 明确允许的一类写入：
- * 跨模块写对方模块拥有的单表列，且对方的 Service 承接不了这个写
- * （{@code NoteService} 已经注入本类，反过来注入它即是构造器循环依赖）。
- * 既存先例是 {@code AuthService} 直接注入 {@code UserMapper}。详见
- * {@code NoteMapper#incrementFavoriteCount} 与 §1.1 的「跨模块写对方单表列的条件」。
- *
- * <p>注意这与 {@link #isFavorited} 的性质不同：那边是纯读，走 {@code favorite} 表自己的谓词，
- * 不碰 {@code note} 表；而 {@link #listFavorites} 的 {@code favorite ⋈ note} 是 §1.1 里
- * 「检索侧的多表 JOIN 不受此限」的又一例，与 {@code NoteMapper.xml} 连 {@code course} 同理。
  */
 @Service
 public class FavoriteService {
@@ -78,21 +68,6 @@ public class FavoriteService {
      * 收藏一篇笔记，返回操作后的最新收藏量。
      *
      * <p>只允许收藏 {@code ONLINE} 的笔记
-     *
-     * <p><b>四步的顺序都是有意的，尤其是第一步：</b>
-     * <ol>
-     *   <li>{@link NoteMapper#selectStatusForUpdate} 一次拿到「存在性 + 状态 + X 锁」。
-     *       先取锁是<b>死锁防线</b>：InnoDB 检查 {@code fk_fav_note} 时会对 note 行取隐式共享锁，
-     *       若先插 favorite 再更新 note，两个用户同时收藏同一篇笔记就会各持 S(note) 互等 X(note)。
-     *       取消收藏走同一条也先取锁，全站锁序统一为 note → favorite。</li>
-     *   <li>{@code INSERT favorite}。这步还顺带挡住「给不存在的 note_id 插收藏」——
-     *       那会撞 {@code fk_fav_note} 抛 {@code DataIntegrityViolationException}（<b>不是</b>
-     *       {@code DuplicateKeyException}），一路掉进兜底变成 50000，把「笔记不存在」伪装成
-     *       「服务器炸了」。第 1 步已经把这种 id 判成 40400 了。</li>
-     *   <li>自增计数。因为第 1 步已持 X 锁，状态在提交前不会变，这里不需要再带 status 守卫。</li>
-     *   <li>回读最新值返回。持有该行的锁，读到的必然是自己这次操作之后的值。</li>
-     * </ol>
-     *
      * @param userId 收藏者，取自 JWT
      * @throws BusinessException 40400 笔记不存在；40301 笔记非 ONLINE；40902 已收藏过
      */
@@ -186,19 +161,7 @@ public class FavoriteService {
     }
 
     /**
-     * 把一页的行装配成出参：一次批量查询取回整页的标签，再在内存里按 {@code noteId} 归位。
-     *
-     * <p>空页要在这里短路——{@code IN ()} 是语法错误，那条批量查询吃不下空集合。
-     *
-     * <p>标签查询复用 {@link NoteMapper#selectTagRefsByNoteIds} 而不是在 {@code FavoriteMapper.xml}
-     * 里另抄一条：那条 SQL（{@code note_tag ⋈ tag}）与列表页用的是同一条，抄第二份只会让两处
-     * 将来各自漂移。本类已经因为 {@code favorite_count} 直接依赖 {@code note} 模块了
-     * （见类注释），再多引一个它的只读投影不是新的妥协类别。
-     *
-     * <p><b>对「本页全部 noteId」一次取，不按 ONLINE 过滤后再取</b>：
-     * 后者会引入一个窗口——笔记正好在主查询与标签查询之间被下架，主行说 ONLINE 而标签是空的。
-     * 取回来的标签只装配到正常项上，占位项那部分丢掉，代价只是一次
-     * {@code IN} 多带几个 id，与页大小无关。
+     * 把一页的行装配成出参
      */
     private List<FavoriteItemResponse> assembleFavorites(List<FavoriteItemRow> rows) {
         if (rows.isEmpty()) {
@@ -219,11 +182,7 @@ public class FavoriteService {
     }
 
     /**
-     * 一行 → 一项。正常项与占位项的分叉只有这一处，
-     * 所以「占位项到底空掉了哪些字段」是一个能一眼读完的事实，不会散在装配代码里。
-     *
-     * <p>占位项保留标题与课程、隐去其余，理由见 {@link FavoriteItemResponse}：
-     * 用户要认得出自己收藏的是什么，但已下架笔记的上传者、标签与计数不该再从这条路径露出去。
+     * 一行 → 一项。
      */
     private FavoriteItemResponse toFavoriteItem(FavoriteItemRow row, Map<Long, List<TagResponse>> tagsByNote) {
         NoteStatus status = NoteStatus.valueOf(row.getStatus());

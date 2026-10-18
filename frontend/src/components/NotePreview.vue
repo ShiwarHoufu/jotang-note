@@ -46,7 +46,7 @@ watch(() => [props.noteId, props.file.previewMode], load, { immediate: true })
     <template v-if="!failed">
       <img v-if="file.previewMode === 'IMAGE_INLINE' && imageUrl" :src="imageUrl" alt="笔记预览" class="image" />
       <!-- eslint-disable-next-line vue/no-v-html -- 内容已过 DOMPurify（§8.3 唯一放行路径） -->
-      <div v-else-if="file.previewMode === 'TEXT_PROXY' && html" class="markdown" v-html="html" />
+      <div v-else-if="file.previewMode === 'TEXT_PROXY' && html" class="markdown-body" v-html="html" />
     </template>
     <el-alert v-else type="warning" :closable="false" show-icon title="预览加载失败，可以尝试直接下载" />
   </div>
@@ -61,36 +61,6 @@ watch(() => [props.noteId, props.file.previewMode], load, { immediate: true })
   max-width: 100%;
   display: block;
   margin: 0 auto;
-}
-
-.markdown {
-  line-height: 1.7;
-  overflow-wrap: break-word;
-}
-
-.markdown :deep(pre) {
-  background: #f6f8fc;
-  padding: 14px 16px;
-  border-radius: 10px;
-  overflow-x: auto;
-}
-
-.markdown :deep(code) {
-  font-family: Consolas, Monaco, monospace;
-  font-size: 13px;
-}
-
-.markdown :deep(img) {
-  max-width: 100%;
-}
-
-.markdown :deep(table) {
-  border-collapse: collapse;
-}
-
-.markdown :deep(th),
-.markdown :deep(td) {
-  border: 1px solid #dcdfe6;
-  padding: 6px 10px;
+  border-radius: var(--jt-radius-sm);
 }
 </style>

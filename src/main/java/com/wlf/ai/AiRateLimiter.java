@@ -11,12 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * AI 接口限频：按用户维度；本地内存实现。
  *
- * <p>对话与摘要两者各持一个实例、各算各的额度。
- *
- * <p>实现沿用 {@code LoginAttemptLimiter} / {@code PasswordResetRateLimiter} 的做法
- * （{@link ConcurrentHashMap} + 惰性过期，不引入 Redis、也不起清理线程）：MVP 单实例，
- * 不存在多实例计数不一致的问题。与那两条不同的是维度取 {@code userId}——登录态已确定是谁，
- * 计数只为控成本，不需要像账号那样防大小写绕过；窗口也统一是<b>固定窗</b>
+ * <p>对话与摘要两者各持一个实例、各算各的额度。固定窗
  */
 public class AiRateLimiter {
 
@@ -41,7 +36,7 @@ public class AiRateLimiter {
     /**
      * 取一个配额
      *
-     * <p><b>判断与计数在同一次 {@link ConcurrentHashMap#compute} 里完成</b>，不是「先查再记」。
+     * <p>判断与计数在同一次 {@link ConcurrentHashMap#compute} 里完成，不是「先查再记」。
      * 分成两步的话，两个并发请求可以同时读到「还没满」然后各记一次，把上限顶穿——
      *
      * @throws BusinessException 42900 已超额
@@ -61,7 +56,7 @@ public class AiRateLimiter {
     /**
      * 一个固定窗口内的调用次数。字段 immutable，靠 {@link ConcurrentHashMap#compute} 原子替换。
      *
-     * <p>窗口长度不在这里存——它是每个实例一份的配置，由外面传进来，免得复制进每一行记录。
+     * <p>窗口长度不在这里存——它是每个实例一份的配置，由外面传进来。
      *
      * @param count       窗口内已用次数
      * @param windowStart 窗口起点

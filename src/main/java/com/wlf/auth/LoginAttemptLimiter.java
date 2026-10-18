@@ -12,9 +12,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 登录限频：仅账号维度；本地内存实现。
- *
- * <p>不引入 Redis 与定时任务，靠 {@link ConcurrentHashMap} + 惰性过期。
- * 单实例部署，不存在多实例状态不一致问题。
  */
 @Component
 public class LoginAttemptLimiter {

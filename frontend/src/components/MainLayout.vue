@@ -66,7 +66,7 @@ async function logout() {
   z-index: 100;
   background: rgba(255, 255, 255, 0.86);
   backdrop-filter: blur(10px);
-  box-shadow: 0 1px 12px rgba(31, 45, 77, 0.06);
+  box-shadow: var(--jt-shadow);
 }
 
 .header-left {
@@ -83,7 +83,7 @@ async function logout() {
   gap: 8px;
   font-size: 18px;
   font-weight: 700;
-  color: var(--jt-ink, #1f2d4d);
+  color: var(--jt-ink);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -95,10 +95,10 @@ async function logout() {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 9px;
+  border-radius: var(--jt-radius-sm);
   color: #fff;
   font-size: 15px;
-  background: linear-gradient(135deg, #4f7cff, #7a5cff);
+  background: var(--jt-gradient);
   box-shadow: 0 3px 8px -2px rgba(97, 106, 255, 0.55);
 }
 
@@ -120,6 +120,6 @@ async function logout() {
 }
 
 .user-entry:hover {
-  background: #f1f4fa;
+  background: var(--jt-fill-hover);
 }
 </style>

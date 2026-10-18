@@ -7,7 +7,7 @@ import org.apache.ibatis.annotations.Mapper;
 /**
  * college 表的数据访问。
  *
- * <p>单表 CRUD 由 {@link BaseMapper} 提供，不写 XML。
+ * <p>单表 CRUD 由 {@link BaseMapper} 提供。
  */
 @Mapper
 public interface CollegeMapper extends BaseMapper<College> {

@@ -130,7 +130,7 @@ async function submit() {
 
 .avatar-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--jt-text-muted);
 }
 
 .form .el-button {

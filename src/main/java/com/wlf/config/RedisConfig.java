@@ -11,35 +11,6 @@ import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 
 /**
  * Redis 配置：把 {@link RedisTemplate} 的序列化器换成「键为字符串、值为 JSON」。
- *
- * <h2>为什么必须自定义，不能用自动配置的那个</h2>
- *
- * Boot 自动配置的 {@code RedisTemplate<Object, Object>} 用<b> JDK 序列化</b>：写进 Redis 的
- * 是一坨带类名的二进制。三个后果——{@code redis-cli} 里 {@code GET} 出来是乱码（出问题时
- * 等于没有观测手段）、缓存的值必须 {@code implements Serializable}、格式与语言绑死。
- * 换成 JSON 后这三条一起消失。
- *
- * <h2>为什么是 GenericJacksonJsonRedisSerializer，而不是名字更像的 GenericJackson2JsonRedisSerializer</h2>
- *
- * <p>后者才是网上教程里那个「标准答案」，但它<b>用的是 Jackson 2</b>
- * （{@code com.fasterxml.jackson.databind}）。本项目主栈是 Boot 4，已经全面转向 <b>Jackson 3</b>
- * （{@code tools.jackson}），Jackson 2 只是 {@code jjwt-jackson} 捎进来的、且是 {@code runtime}
- * 作用域——<b>编译期根本不可见</b>。要用它就得在 pom 里显式再引一套 Jackson 2，
- * 于是应用同时拖着两个大版本，两套注解、两套安全补丁，得不偿失。
- *
- * <p>{@link GenericJacksonJsonRedisSerializer}（没有那个「2」）是 spring-data-redis 4.0 新增的
- * Jackson 3 版本，正好对上主栈，无需任何额外依赖。
- *
- * <h2>为什么要开 default typing</h2>
- *
- * <p>模板的值类型是 {@code Object}，反序列化时 Jackson 拿不到目标类型。不开类型信息的话，
- * 读回来的是 {@code LinkedHashMap}，一出 {@code (SomeRecord) get(key)} 就 ClassCastException。
- * 开启后 JSON 里会多一个 {@code @class} 字段记录具体类型——这也是为什么 {@code redis-cli} 里
- * 看到的数据会带这个字段，属于预期。
- *
- * <p><b>类型校验器必须收紧</b>：default typing 配合放任的校验器是经典的反序列化利用面
- * （攻击者能控制 Redis 内容时，可借类型信息构造任意对象）。这里只放行本项目与集合、时间三类，
- * 缓存里实际会出现的类型都在其中。
  */
 @Configuration
 public class RedisConfig {

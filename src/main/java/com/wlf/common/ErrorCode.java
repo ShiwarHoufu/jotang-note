@@ -3,7 +3,7 @@ package com.wlf.common;
 import org.springframework.http.HttpStatus;
 
 /**
- * 错误码枚举，取值见《概要设计》§5.7 统一错误码表。
+ * 错误码枚举。
  * HTTP状态码：给传输层看（浏览器、Nginx、Axios拦截器、监控告警）
  * code：细分给应用层看。
  */
@@ -24,14 +24,7 @@ public enum ErrorCode {
     /** 无权限：非本人操作、非管理员调用管理接口 */
     FORBIDDEN(40300, "无权限", HttpStatus.FORBIDDEN),
 
-    /**
-     * 笔记已下架 / 已删除，禁止查看详情、预览、下载、收藏、编辑。
-     *
-     * <p>「下架」对这几个动作并非一律禁止，口径分别是：<b>详情</b>放行上传者本人与管理员；
-     * <b>预览 / 下载 / 收藏</b>要求 ONLINE；<b>编辑</b>只挡 DELETED，OFFLINE 可以改
-     * （改完仍是下架状态，不会重新可见）。**已删除则对五个动作一律禁止**，本人与管理员也不例外。
-     * 这条差别见《概要设计》§4.1、§5.4。
-     */
+    /** 笔记已下架 / 已删除，禁止查看详情、预览、下载、收藏、编辑。*/
     NOTE_UNAVAILABLE(40301, "笔记已下架或已删除", HttpStatus.FORBIDDEN),
 
     /** 资源不存在 */
@@ -52,25 +45,13 @@ public enum ErrorCode {
     /** 账号已锁定。data 携带剩余锁定秒数，供前端倒计时 */
     ACCOUNT_LOCKED(42300, "账号已锁定", HttpStatus.LOCKED),
 
-    /**
-     * AI 摘要调用过于频繁。见《概要设计》§6.8。
-     *
-     * <p>与 {@link #ACCOUNT_LOCKED} 同属「稍后再来」那一类，但防的东西完全不同：
-     * 那个防的是撞库，这个防的是<b>烧钱</b>——每次摘要调用都真金白银地计费，
-     * 连点按钮或写脚本刷就一直在花钱。
-     */
+    /** AI 摘要调用过于频繁。*/
     AI_RATE_LIMITED(42900, "生成过于频繁，请稍后再试", HttpStatus.TOO_MANY_REQUESTS),
 
     /** 服务器内部错误：未预期的异常统一兜底为该码 */
     SERVER_ERROR(50000, "服务器内部错误", HttpStatus.INTERNAL_SERVER_ERROR),
 
-    /**
-     * AI 摘要服务暂不可用：上游超时、连不上、或返回错误。见《概要设计》§6.8。
-     *
-     * <p><b>与 {@link #SERVER_ERROR} 刻意分开</b>：这个是「上游不可用，稍后重试可能有救」，
-     * 那个是「我们的代码出了没预料到的错」。混成一个码，前端就只能给用户一句笼统的
-     * 「服务器错误」，也无从判断该不该让用户重试。
-     */
+    /** AI 摘要服务暂不可用：上游超时、连不上、或返回错误。*/
     AI_UNAVAILABLE(50300, "摘要生成服务暂不可用，请稍后重试", HttpStatus.SERVICE_UNAVAILABLE);
 
     private final int code;

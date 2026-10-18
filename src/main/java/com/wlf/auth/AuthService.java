@@ -32,8 +32,7 @@ public class AuthService {
     private final CollegeService collegeService;
 
     /**
-     * 仅用于把 {@code UserInfo.avatarUrl} 拼出来。本接口与存储本无业务往来，
-     * 但「当前登录用户的对外视图」里含头像，而桶名 / Endpoint 只有存储层知道。
+     * 仅用于把 {@code UserInfo.avatarUrl} 拼出来。
      */
     private final StorageService storageService;
 
@@ -52,19 +51,14 @@ public class AuthService {
     }
 
     /**
-     * 注册。昵称取用户名占位，之后在「基本资料」修改。
-     *
-     * <p>先查后插之间存在竞态窗口，因此同时依赖 {@code uk_username} / {@code uk_email}
-     * 唯一索引兜底，捕获冲突后再判断是哪个字段，避免并发下漏判。
+     * 注册。
+     * 昵称取用户名占位。
      */
     public UserInfo register(RegisterRequest request) {
         String username = request.getUsername().trim();
         String email = request.getEmail().trim();
         Long collegeId = request.getCollegeId();
 
-        /*学院先校验：user.college_id 上的外键虽然也拦得住，
-        但抛出的DataIntegrityViolationException 会被兜底成 50000，而传了个不存在的学院
-        明明是客户端的参数错误，应当是 40001，且和 @Valid 一样带字段级明细。*/
         if (!collegeService.exists(collegeId)) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, ErrorCode.PARAM_INVALID.getMessage(),
                     List.of(new FieldViolation("collegeId", "学院不存在")));
@@ -101,7 +95,7 @@ public class AuthService {
     /**
      * 登录。失败累计达阈值即锁定。
      *
-     * <p>「用户不存在」与「密码错误」返回同一个错误码与文案，避免账号枚举。
+     * <p>用户不存在与密码错误返回同一个错误码与文案，避免账号枚举。
      */
     public LoginResponse login(LoginRequest request) {
         String username = request.getUsername().trim();

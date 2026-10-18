@@ -11,17 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 找回密码限频：按邮箱维度
- * 见《概要设计》§6.3、§6.6。
- *
- * <p>实现沿用 {@link com.wlf.ai.AiRateLimiter} 的做法
- * （{@link ConcurrentHashMap} + 惰性过期，不引入 Redis、也不起清理线程）：MVP 单实例，
- * 不存在多实例计数不一致的问题。与它仅有的两处差别是维度（邮箱 vs 用户 id）与错误码。
- *
- * <p>键要做小写归一，与 {@link LoginAttemptLimiter} 同口径
- *
- * <h2>已知边界：固定窗在窗口交界处会放过一次</h2>
- * <p>这是固定窗（每 5分钟一个桶）而不是「距上次申请满 5 分钟」的滑动窗。
+ * 找回密码限频：按邮箱维度。
  * 若将来要收紧，改成记录「上次申请时刻」即可，形状与 {@link LoginAttemptLimiter} 一致。
  */
 @Component
@@ -37,12 +27,6 @@ public class PasswordResetRateLimiter {
 
     /**
      * 取一个名额；已超额则抛 42300 且不消耗名额。
-     *
-     * <p><b>判断与计数在同一次 {@link ConcurrentHashMap#compute} 里完成</b>，不是「先查再记」。
-     * 分成两步的话，两个并发请求可以同时读到「还没满」然后各记一次，把上限顶穿——
-     *
-     * <p>调用点在「查用户之前」：这个接口的前置成本只有一次内存查表，
-     * 而被拒的请求不该往下走到查库与生成令牌——更不该有机会发出邮件。
      *
      * @param email 用户提交的邮箱
      * @throws BusinessException 42300，data 为剩余秒数
@@ -82,7 +66,7 @@ public class PasswordResetRateLimiter {
             return windowStart.plus(WINDOW).isBefore(now);
         }
 
-        /** 距窗口结束还有几分钟，向上取整且至少 1——文案说「请 0 分钟后再试」很怪 */
+        /** 距窗口结束还有几分钟，向上取整且至少 1。*/
         long remainingMinutes(Instant now) {
             return Math.max((remainingSeconds(now) + 59) / 60, 1);
         }

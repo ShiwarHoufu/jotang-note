@@ -245,18 +245,18 @@ function applyFieldErrors(error: unknown) {
 .upload-hint .el-icon--upload {
   margin-bottom: 8px;
   font-size: 48px;
-  color: #b8c2dc;
+  color: var(--jt-text-faint);
 }
 
 /* 拖拽区：大圆角虚线框，悬停染上品牌色 */
 .page-body :deep(.el-upload-dragger) {
-  border-radius: 14px;
+  border-radius: var(--jt-radius-lg);
   transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .page-body :deep(.el-upload-dragger:hover) {
-  border-color: var(--jt-brand, #4f7cff);
-  background: #f8faff;
+  border-color: var(--jt-brand);
+  background: var(--jt-fill-accent);
 }
 
 .file-card {
@@ -266,8 +266,8 @@ function applyFieldErrors(error: unknown) {
   gap: 10px;
   padding: 12px 14px;
   border: 1px dashed var(--el-border-color);
-  border-radius: 12px;
-  background: #f8faff;
+  border-radius: var(--jt-radius);
+  background: var(--jt-fill-accent);
 }
 
 .file-icon {

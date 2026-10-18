@@ -4,15 +4,11 @@ import lombok.Getter;
 
 /**
  * 统一响应体 {code, message, data}。
- * 见《概要设计》§5。
- *
- * <p>不可变：字段 final、只有静态工厂、无 setter，构造完成后不可能被改写。
  *
  * <p>成功与失败共用同一结构（而非成功返 data、失败返 error 的两套），
  * 前端拦截器只需判断一处 code。
  *
- * <p>{@code data} 为 null 时仍保留该字段，保证响应体形状恒定：
- * 前端不必额外做存在性判断，Apifox 上的示例也稳定。
+ * <p>{@code data} 为 null 时仍保留该字段，保证响应体形状恒定。
  */
 @Getter
 public class ApiResponse<T> {

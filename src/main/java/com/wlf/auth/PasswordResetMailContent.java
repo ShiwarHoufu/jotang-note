@@ -2,10 +2,6 @@ package com.wlf.auth;
 
 /**
  * 重置邮件的主题、链接与正文。
- *
- * <p><b>为什么在 auth 模块而不在 mail 模块</b>：mail 只提供”发一封邮件”这个原语；
- * 主题该怎么写、链接指向哪、正文里要提醒什么，都是业务决策，与邮件怎么发出去无关。
- * （这与StorageService不含业务策略是同一条线）
  */
 public final class PasswordResetMailContent {
 

@@ -225,7 +225,7 @@ async function adminToggle() {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
-  color: var(--jt-ink, #1f2d4d);
+  color: var(--jt-ink);
   word-break: break-all;
 }
 
@@ -242,18 +242,19 @@ async function adminToggle() {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #606266;
+  color: var(--jt-text-secondary);
   font-size: 14px;
 }
 
 .college {
-  color: #909399;
+  color: var(--jt-text-muted);
   font-size: 13px;
 }
 
 .stats {
   font-size: 12px;
-  color: #909399;
+  color: var(--jt-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .tags {
@@ -266,10 +267,10 @@ async function adminToggle() {
 .summary {
   margin: 16px 0 0;
   padding: 12px 16px;
-  background: #f6f8fc;
-  border-left: 3px solid #6a5cff;
-  border-radius: 0 10px 10px 0;
-  color: #606266;
+  background: var(--jt-fill);
+  border-left: 3px solid var(--jt-brand-deep);
+  border-radius: 0 var(--jt-radius-sm) var(--jt-radius-sm) 0;
+  color: var(--jt-text-secondary);
   line-height: 1.7;
   white-space: pre-wrap;
 }
@@ -297,8 +298,9 @@ async function adminToggle() {
 }
 
 .file-size {
-  color: #909399;
+  color: var(--jt-text-muted);
   font-size: 13px;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 </style>

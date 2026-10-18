@@ -9,9 +9,8 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * 阿里云 OSS 客户端配置：两个访问面、两个 Bucket（笔记私有 / 头像公共读）。
- * 见《概要设计》§1.2、§6.7。
  *
- * <p><b>为什么要两个客户端</b>：签名 URL 的主机名取自客户端构造时配的 Endpoint。
+ * <p>为什么要两个客户端：签名 URL 的主机名取自客户端构造时配的 Endpoint。
  * 若用内网客户端去签名，签出来的 URL 指向 {@code *-internal.aliyuncs.com}——
  * 该域名只在阿里云内网可解析，<b>浏览器根本连不上</b>。这类错误单元测试发现不了，
  * 只有真发一次 HTTP 请求才暴露，故在设计上直接拆开：
@@ -21,13 +20,8 @@ import org.springframework.context.annotation.Configuration;
  *   <li>{@code ossBrowser}：签名面，走 {@code endpoint-browser}</li>
  * </ul>
  *
- * <p>两个 Endpoint 都做成配置项而非写死内网/公网：生产上 ECS 与 OSS 同 Region，
- * {@code endpoint-server} 取内网（流量免费、不占公网出口，§1.2）；
- * 但本机开发不在阿里云内网，内网域名解析到 {@code 100.115.x.x} 且不可达，
- * 由 application-local.yaml 覆写为公网——「哪个 Endpoint」是环境问题，不是代码问题。
- *
- * <p>AccessKey 缺失或为空时构造即失败——与 {@code JwtTokenProvider} 同一取舍：
- * 配置错误在启动时暴露，不留到运行时。
+ * <p>两个 Endpoint 都做成配置项而非写死内网/公网
+ * <p>AccessKey 缺失或为空时构造即失败
  */
 @Configuration
 public class OssConfig {

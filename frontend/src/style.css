@@ -1,12 +1,52 @@
 :root {
   font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
-  color: #303133;
+  color: var(--jt-text-primary);
 
   /* 品牌色：与登录页渐变一致 */
   --jt-brand: #4f7cff;
   --jt-brand-deep: #7a5cff;
-  --jt-gradient: linear-gradient(135deg, #4f7cff, #7a5cff);
+  --jt-gradient: linear-gradient(135deg, var(--jt-brand), var(--jt-brand-deep));
+  --jt-gradient-hover: linear-gradient(135deg, #4372ff, #6d4dff);
   --jt-ink: #1f2d4d;
+
+  /* 文本层级 */
+  --jt-text-primary: #303133;
+  --jt-text-secondary: #606266;
+  --jt-text-muted: #909399;
+  --jt-text-faint: #a3adc2;
+  --jt-text-label: #3d4666;
+
+  /* 背景与描边 */
+  --jt-page-bg: #f5f7fa;
+  --jt-surface: #fff;
+  --jt-fill: #f6f8fc;
+  --jt-fill-hover: #f1f4fa;
+  --jt-fill-accent: #f8faff;
+  --jt-border: #e4e7f0;
+  --jt-border-soft: rgba(228, 231, 240, 0.7);
+
+  /* 圆角与阴影 */
+  --jt-radius-sm: 10px;
+  --jt-radius: 12px;
+  --jt-radius-lg: 14px;
+  --jt-radius-xl: 18px;
+  --jt-shadow-sm: 0 1px 6px rgba(31, 45, 77, 0.05);
+  --jt-shadow: 0 1px 12px rgba(31, 45, 77, 0.06);
+  --jt-shadow-lg:
+    0 24px 60px -20px rgba(64, 88, 176, 0.25),
+    0 4px 16px rgba(64, 88, 176, 0.08);
+
+  /*
+   * Element Plus 主色接管。默认的 #409EFF 与品牌蓝不一致，
+   * 除主色外还要覆盖它预生成的浅色 / 深色梯度，否则 hover、disabled 仍是旧蓝。
+   */
+  --el-color-primary: #4f7cff;
+  --el-color-primary-light-3: #84a3ff;
+  --el-color-primary-light-5: #a7beff;
+  --el-color-primary-light-7: #cad8ff;
+  --el-color-primary-light-8: #dce5ff;
+  --el-color-primary-light-9: #edf2ff;
+  --el-color-primary-dark-2: #3f63cc;
 }
 
 * {
@@ -15,7 +55,7 @@
 
 body {
   margin: 0;
-  background: #f5f7fa;
+  background: var(--jt-page-bg);
 }
 
 /* 细滚动条，低调不抢视觉 */
@@ -39,8 +79,8 @@ body {
 
 /* 全站卡片统一：大圆角 + 柔和描边 */
 .el-card {
-  --el-card-border-radius: 14px;
-  --el-card-border-color: rgba(228, 231, 240, 0.7);
+  --el-card-border-radius: var(--jt-radius-lg);
+  --el-card-border-color: var(--jt-border-soft);
 }
 
 /* 各列表页共用的页标题：加粗着色（各视图局部样式只管字号与间距） */
@@ -94,10 +134,8 @@ body {
   width: 100%;
   max-width: 420px;
   border: 1px solid rgba(255, 255, 255, 0.8);
-  border-radius: 18px;
-  box-shadow:
-    0 24px 60px -20px rgba(64, 88, 176, 0.25),
-    0 4px 16px rgba(64, 88, 176, 0.08);
+  border-radius: var(--jt-radius-xl);
+  box-shadow: var(--jt-shadow-lg);
 }
 
 .auth-card .el-card__body {
@@ -119,10 +157,10 @@ body {
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: var(--jt-radius);
   color: #fff;
   font-size: 20px;
-  background: linear-gradient(135deg, #4f7cff, #7a5cff);
+  background: var(--jt-gradient);
   box-shadow: 0 6px 14px -4px rgba(97, 106, 255, 0.6);
 }
 
@@ -130,7 +168,7 @@ body {
   font-size: 20px;
   font-weight: 700;
   letter-spacing: 0.2px;
-  color: #1f2d4d;
+  color: var(--jt-ink);
 }
 
 .auth-title {
@@ -138,14 +176,14 @@ body {
   font-size: 24px;
   font-weight: 700;
   text-align: center;
-  color: #1f2d4d;
+  color: var(--jt-ink);
 }
 
 .auth-subtitle {
   margin: 0 0 24px;
   font-size: 14px;
   text-align: center;
-  color: #8a94ad;
+  color: var(--jt-text-faint);
 }
 
 .auth-submit {
@@ -155,14 +193,14 @@ body {
   border: none;
   font-size: 15px;
   letter-spacing: 2px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #4f7cff, #7a5cff);
+  border-radius: var(--jt-radius-sm);
+  background: var(--jt-gradient);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .auth-submit.el-button--primary:hover,
 .auth-submit.el-button--primary:focus {
-  background: linear-gradient(135deg, #4372ff, #6d4dff);
+  background: var(--jt-gradient-hover);
   transform: translateY(-1px);
   box-shadow: 0 10px 20px -8px rgba(97, 106, 255, 0.65);
 }
@@ -177,32 +215,32 @@ body {
 }
 
 .auth-links a {
-  color: #5a6f9e;
+  color: var(--jt-text-secondary);
   text-decoration: none;
   transition: color 0.2s ease;
 }
 
 .auth-links a:hover {
-  color: #4f7cff;
+  color: var(--jt-brand);
 }
 
 /* 输入框质感：浅底填充 + 聚焦光圈（不动 el-input 的错误态红框） */
 .auth-card .el-form-item__label {
   margin-bottom: 6px;
   font-weight: 600;
-  color: #3d4666;
+  color: var(--jt-text-label);
 }
 
 .auth-card .el-input__wrapper,
 .auth-card .el-select__wrapper {
-  border-radius: 12px;
+  border-radius: var(--jt-radius);
   padding: 6px 14px;
-  background: #f6f8fc;
+  background: var(--jt-fill);
   transition: box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .auth-card .el-input__wrapper:hover:not(.is-error) {
-  background: #f1f4fa;
+  background: var(--jt-fill-hover);
 }
 
 .auth-card .el-input__wrapper.is-focused:not(.is-error),
@@ -215,7 +253,7 @@ body {
 
 .auth-card .el-input__prefix,
 .auth-card .el-input__suffix {
-  color: #a3adc2;
+  color: var(--jt-text-faint);
 }
 
 .auth-card .el-input__wrapper.is-focused .el-input__prefix {
@@ -223,7 +261,7 @@ body {
 }
 
 .auth-card .el-input__inner::placeholder {
-  color: #a8b3c9;
+  color: var(--jt-text-faint);
 }
 
 .auth-card .el-form-item {
@@ -248,5 +286,141 @@ body {
 }
 
 .nickname {
-  color: #606266;
+  color: var(--jt-text-secondary);
+}
+
+/* Markdown 正文排版：笔记预览与 AI 回复气泡共用这一套 */
+.markdown-body {
+  line-height: 1.75;
+  overflow-wrap: break-word;
+  color: var(--jt-text-primary);
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 1.4em 0 0.6em;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--jt-ink);
+}
+
+.markdown-body h1 {
+  font-size: 1.5em;
+}
+
+.markdown-body h2 {
+  font-size: 1.3em;
+}
+
+.markdown-body h3 {
+  font-size: 1.15em;
+}
+
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  font-size: 1em;
+}
+
+.markdown-body p {
+  margin: 0.75em 0;
+}
+
+.markdown-body a {
+  color: var(--jt-brand);
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.75em 0;
+  padding-left: 1.6em;
+}
+
+.markdown-body li + li {
+  margin-top: 0.25em;
+}
+
+.markdown-body blockquote {
+  margin: 0.9em 0;
+  padding: 0.5em 1em;
+  border-left: 3px solid rgba(79, 124, 255, 0.35);
+  border-radius: 0 var(--jt-radius-sm) var(--jt-radius-sm) 0;
+  background: var(--jt-fill);
+  color: var(--jt-text-secondary);
+}
+
+.markdown-body hr {
+  margin: 1.5em 0;
+  border: none;
+  border-top: 1px solid var(--jt-border);
+}
+
+.markdown-body pre {
+  margin: 0.9em 0;
+  padding: 14px 16px;
+  border-radius: var(--jt-radius-sm);
+  background: var(--jt-fill);
+  overflow-x: auto;
+}
+
+.markdown-body code {
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  background: rgba(79, 124, 255, 0.08);
+  font-family: Consolas, Monaco, monospace;
+  font-size: 0.92em;
+}
+
+.markdown-body pre code {
+  padding: 0;
+  background: none;
+  font-size: 13px;
+}
+
+.markdown-body img {
+  display: block;
+  max-width: 100%;
+  margin: 0.9em auto;
+  border-radius: var(--jt-radius-sm);
+}
+
+.markdown-body table {
+  width: 100%;
+  margin: 0.9em 0;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 6px 10px;
+  border: 1px solid var(--jt-border);
+  text-align: left;
+}
+
+.markdown-body thead th {
+  background: var(--jt-fill);
+  font-weight: 600;
+}
+
+.markdown-body tbody tr:nth-child(even) {
+  background: rgba(246, 248, 252, 0.6);
 }

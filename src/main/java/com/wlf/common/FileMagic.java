@@ -28,9 +28,6 @@ public final class FileMagic {
     private FileMagic() {
     }
 
-    // 每个方法只认自己那一种类型。这里刻意<b>不</b>给 md / txt 提供恒真谓词——
-    // 「没有魔数」与「任何字节都算通过」是两件事，后者会让校验形同虚设，
-    // 那类文件的降级校验由调用方自己做（见 NoteFilePolicy#assertPlainText）。
 
     public static boolean jpeg(byte[] head) {
         return startsWith(head, JPEG);

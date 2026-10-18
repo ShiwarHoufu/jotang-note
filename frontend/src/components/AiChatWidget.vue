@@ -109,64 +109,76 @@ function reset() {
 
 <template>
   <div class="ai-widget">
-    <div v-if="open" class="panel">
-      <div class="panel-header">
-        <span class="panel-title">AI 助手</span>
-        <div class="panel-actions">
-          <el-tooltip content="开启新对话" placement="top">
-            <el-button link :icon="Plus" :disabled="sending" @click="reset" />
-          </el-tooltip>
-          <el-button link :icon="Close" @click="open = false" />
+    <Transition name="chat-panel">
+      <div v-if="open" class="panel">
+        <div class="panel-header">
+          <span class="panel-title">AI 助手</span>
+          <div class="panel-actions">
+            <el-tooltip content="开启新对话" placement="top">
+              <el-button link :icon="Plus" :disabled="sending" @click="reset" />
+            </el-tooltip>
+            <el-button link :icon="Close" @click="open = false" />
+          </div>
         </div>
-      </div>
 
-      <div ref="listEl" class="panel-body">
-        <template v-if="messages.length">
-          <div
-            v-for="(msg, i) in messages"
-            :key="i"
-            class="row"
-            :class="msg.role === 'USER' ? 'mine' : 'theirs'"
-          >
-            <div v-if="msg.role === 'USER'" class="bubble user">{{ msg.content }}</div>
-            <!-- eslint-disable-next-line vue/no-v-html -- 内容已过 DOMPurify（与 NotePreview 同一路径） -->
-            <div v-else-if="msg.content" class="bubble assistant markdown" v-html="msg.html" />
-            <div v-else class="bubble assistant pending">
+        <div ref="listEl" class="panel-body">
+          <TransitionGroup v-if="messages.length" name="chat-msg" tag="div" class="messages">
+            <div
+              v-for="(msg, i) in messages"
+              :key="i"
+              class="row"
+              :class="msg.role === 'USER' ? 'mine' : 'theirs'"
+            >
+              <div v-if="msg.role === 'USER'" class="bubble user">{{ msg.content }}</div>
+              <!-- eslint-disable-next-line vue/no-v-html -- 内容已过 DOMPurify（与 NotePreview 同一路径） -->
+              <div v-else-if="msg.content" class="bubble assistant markdown-body" v-html="msg.html" />
+              <div v-else class="bubble assistant pending">
+                <el-icon class="is-loading"><Loading /></el-icon>
+              </div>
+            </div>
+          </TransitionGroup>
+          <!-- 恢复期间先占位，避免闪一下「还没有消息」的空状态再被历史顶上 -->
+          <div v-else-if="resuming" class="row theirs">
+            <div class="bubble assistant pending">
               <el-icon class="is-loading"><Loading /></el-icon>
             </div>
           </div>
-        </template>
-        <!-- 恢复期间先占位，避免闪一下「还没有消息」的空状态再被历史顶上 -->
-        <div v-else-if="resuming" class="row theirs">
-          <div class="bubble assistant pending">
-            <el-icon class="is-loading"><Loading /></el-icon>
-          </div>
+          <el-empty
+            v-else
+            :image-size="80"
+            description="问我任何笔记相关问题，例如「高等数学期末笔记讲了什么」"
+          />
         </div>
-        <el-empty
-          v-else
-          :image-size="80"
-          description="问我任何笔记相关问题，例如「高等数学期末笔记讲了什么」"
-        />
-      </div>
 
-      <div class="panel-footer">
-        <el-input
-          v-model="input"
-          type="textarea"
-          :rows="3"
-          resize="none"
-          placeholder="输入问题，Enter 发送，Shift+Enter 换行"
-          :disabled="sending"
-          @keydown.enter.exact.prevent="send"
-        />
-        <el-button type="primary" :loading="sending" :disabled="!input.trim()" @click="send">
-          发送
-        </el-button>
+        <div class="panel-footer">
+          <el-input
+            v-model="input"
+            type="textarea"
+            :rows="3"
+            resize="none"
+            placeholder="输入问题，Enter 发送，Shift+Enter 换行"
+            :disabled="sending"
+            @keydown.enter.exact.prevent="send"
+          />
+          <el-button type="primary" :loading="sending" :disabled="!input.trim()" @click="send">
+            发送
+          </el-button>
+        </div>
       </div>
-    </div>
+    </Transition>
 
-    <button class="fab" type="button" aria-label="AI 助手" @click="open = !open">
-      <el-icon :size="26"><ChatDotRound /></el-icon>
+    <button
+      class="fab"
+      type="button"
+      aria-label="AI 助手"
+      :aria-expanded="open"
+      @click="open = !open"
+    >
+      <!-- 打开时图标切到关闭，和面板的开合动效同步 -->
+      <Transition name="fab-icon" mode="out-in">
+        <el-icon v-if="open" key="close" :size="24"><Close /></el-icon>
+        <el-icon v-else key="chat" :size="26"><ChatDotRound /></el-icon>
+      </Transition>
     </button>
   </div>
 </template>
@@ -195,11 +207,22 @@ function reset() {
   align-items: center;
   justify-content: center;
   box-shadow: var(--el-box-shadow);
-  transition: transform 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
 }
 
 .fab:hover {
   transform: scale(1.06);
+}
+
+.fab:active {
+  transform: scale(0.94);
+}
+
+/* 打开时加一圈品牌色光晕，和面板的状态呼应 */
+.fab[aria-expanded='true'] {
+  box-shadow:
+    0 0 0 6px rgba(79, 124, 255, 0.12),
+    var(--el-box-shadow);
 }
 
 .panel {
@@ -207,11 +230,24 @@ function reset() {
   max-width: calc(100vw - 48px);
   height: min(560px, calc(100vh - 120px));
   background: #fff;
-  border-radius: 12px;
+  border-radius: var(--jt-radius);
   box-shadow: var(--el-box-shadow-dark);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 面板从悬浮球方向浮出 */
+.chat-panel-enter-active,
+.chat-panel-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transform-origin: bottom right;
+}
+
+.chat-panel-enter-from,
+.chat-panel-leave-to {
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
 }
 
 .panel-header {
@@ -241,6 +277,51 @@ function reset() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 新消息从底部淡入；失败撤回的占位气泡向上淡出 */
+.chat-msg-enter-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.chat-msg-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.chat-msg-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.chat-msg-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.chat-msg-move {
+  transition: transform 0.2s ease;
+}
+
+/* 悬浮球图标：聊天 ↔ 关闭的旋转淡入淡出 */
+.fab-icon-enter-active,
+.fab-icon-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.fab-icon-enter-from {
+  opacity: 0;
+  transform: scale(0.6) rotate(-45deg);
+}
+
+.fab-icon-leave-to {
+  opacity: 0;
+  transform: scale(0.6) rotate(45deg);
 }
 
 .row {
@@ -297,39 +378,16 @@ function reset() {
   flex: 1;
 }
 
-/* AI 回复的 markdown 渲染（对应 :class="markdown" 的 assistant 气泡） */
-.markdown :deep(p) {
-  margin: 0 0 8px;
-}
-
-.markdown :deep(p:last-child) {
-  margin-bottom: 0;
-}
-
-.markdown :deep(pre) {
-  background: #f5f7fa;
-  padding: 12px;
-  border-radius: 4px;
-  overflow-x: auto;
-  margin: 8px 0;
-}
-
-.markdown :deep(code) {
-  font-family: Consolas, Monaco, monospace;
-  font-size: 13px;
-}
-
-.markdown :deep(img) {
-  max-width: 100%;
-}
-
-.markdown :deep(table) {
-  border-collapse: collapse;
-}
-
-.markdown :deep(th),
-.markdown :deep(td) {
-  border: 1px solid #dcdfe6;
-  padding: 6px 10px;
+@media (prefers-reduced-motion: reduce) {
+  .fab,
+  .chat-panel-enter-active,
+  .chat-panel-leave-active,
+  .chat-msg-enter-active,
+  .chat-msg-leave-active,
+  .chat-msg-move,
+  .fab-icon-enter-active,
+  .fab-icon-leave-active {
+    transition: none;
+  }
 }
 </style>

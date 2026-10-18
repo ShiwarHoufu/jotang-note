@@ -11,8 +11,7 @@ import java.util.List;
 /**
  * tag 表的数据访问。
  *
- * <p>单表 CRUD 由 {@link BaseMapper} 提供。候选标签那条读语句直接以 {@code @Select}
- * 写在这里，不为它开 XML：只有几行、也没有动态分支。
+ * <p>单表 CRUD 由 {@link BaseMapper} 提供。
  */
 @Mapper
 public interface TagMapper extends BaseMapper<Tag> {

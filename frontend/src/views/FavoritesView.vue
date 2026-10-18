@@ -4,6 +4,7 @@ import { onMounted, ref, watch } from 'vue'
 
 import { favoritesApi } from '@/api/favorites'
 import type { FavoriteItem } from '@/api/types'
+import NoteListSkeleton from '@/components/NoteListSkeleton.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 import { formatTime } from '@/utils/format'
 
@@ -50,8 +51,9 @@ async function unfavorite(item: FavoriteItem) {
 <template>
   <div class="page-body">
     <h1 class="page-title">我的收藏</h1>
-    <div v-loading="loading" class="list">
-      <template v-if="items.length">
+    <div v-loading="loading && items.length > 0" class="list">
+      <NoteListSkeleton v-if="loading && !items.length" />
+      <template v-else-if="items.length">
         <el-card
           v-for="item in items"
           :key="item.noteId"
@@ -96,7 +98,9 @@ async function unfavorite(item: FavoriteItem) {
           </div>
         </el-card>
       </template>
-      <el-empty v-else-if="!loading" description="还没有收藏任何笔记" />
+      <el-empty v-else description="还没有收藏任何笔记">
+        <el-button type="primary" plain @click="$router.push({ name: 'home' })">去首页看看</el-button>
+      </el-empty>
     </div>
     <div v-if="total > PAGE_SIZE" class="pager">
       <el-pagination
@@ -137,7 +141,7 @@ async function unfavorite(item: FavoriteItem) {
 .title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--jt-ink, #1f2d4d);
+  color: var(--jt-ink);
   text-decoration: none;
   flex: 1;
   min-width: 0;
@@ -148,11 +152,11 @@ async function unfavorite(item: FavoriteItem) {
 }
 
 .title:hover {
-  color: var(--jt-brand, #4f7cff);
+  color: var(--jt-brand);
 }
 
 .title.disabled {
-  color: #909399;
+  color: var(--jt-text-muted);
   cursor: default;
 }
 
@@ -169,11 +173,11 @@ async function unfavorite(item: FavoriteItem) {
   gap: 6px;
   margin-top: 10px;
   font-size: 13px;
-  color: #606266;
+  color: var(--jt-text-secondary);
 }
 
 .uploader-college {
-  color: #909399;
+  color: var(--jt-text-muted);
 }
 
 .card-foot {
@@ -187,7 +191,8 @@ async function unfavorite(item: FavoriteItem) {
   display: flex;
   gap: 12px;
   font-size: 12px;
-  color: #909399;
+  color: var(--jt-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .time {

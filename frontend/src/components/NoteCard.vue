@@ -81,7 +81,7 @@ async function toggleFavorite() {
 .title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--jt-ink, #1f2d4d);
+  color: var(--jt-ink);
   text-decoration: none;
   flex: 1;
   min-width: 0;
@@ -92,7 +92,7 @@ async function toggleFavorite() {
 }
 
 .title:hover {
-  color: var(--jt-brand, #4f7cff);
+  color: var(--jt-brand);
 }
 
 .tags {
@@ -108,11 +108,11 @@ async function toggleFavorite() {
   gap: 6px;
   margin-top: 10px;
   font-size: 13px;
-  color: #606266;
+  color: var(--jt-text-secondary);
 }
 
 .uploader-college {
-  color: #909399;
+  color: var(--jt-text-muted);
 }
 
 .card-foot {
@@ -126,7 +126,8 @@ async function toggleFavorite() {
   display: flex;
   gap: 12px;
   font-size: 12px;
-  color: #909399;
+  color: var(--jt-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .time {

@@ -23,7 +23,6 @@ import java.io.IOException;
 
 /**
  * Spring Security 过滤器链：放行名单 + 无状态会话 + ADMIN 角色规则。
- * 见《概要设计》§5.6、§6.4。
  *
  * <p><b>40100 / 40300 的产出点在本类</b>，不在 GlobalExceptionHandler：
  * 认证与鉴权失败发生在过滤器链中，早于 DispatcherServlet，
@@ -35,7 +34,7 @@ import java.io.IOException;
 public class SecurityConfig {
 
     /**
-     * 免登录接口（§5.1、§5.3）。
+     * 免登录接口。
      *
      * <p>{@code /api/colleges} 也必须放行，理由与密码找回同源：注册页要拿它填学院下拉框，
      * 而注册发生在登录之前。不放行则下拉框取不到数据，谁也注册不了。

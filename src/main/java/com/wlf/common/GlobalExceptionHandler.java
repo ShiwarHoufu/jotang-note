@@ -15,14 +15,6 @@ import java.util.List;
 
 /**
  * 全局异常处理：把各类异常统一翻译为 {@link ApiResponse}，并写入对应的 HTTP 状态码。
- * 见《概要设计》§5.7。
- *
- * <p>HTTP 状态码一律取自 {@link ErrorCode#getHttpStatus()}，不在本类里另写一份映射，
- * 避免错误码表改动后两处不一致。
- *
- * <p><b>不覆盖认证 / 鉴权失败</b>：Spring Security 的异常在过滤器链中抛出，
- * 早于 DispatcherServlet，不会到达本处理器。40100 与 40300 由 SecurityConfig 的
- * AuthenticationEntryPoint / AccessDeniedHandler 产出（见 §6.4）。
  */
 @Slf4j
 @RestControllerAdvice

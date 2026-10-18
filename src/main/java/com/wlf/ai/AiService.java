@@ -37,7 +37,7 @@ import java.util.function.Supplier;
 /**
  * AI 模块的业务层：摘要（上传 / 编辑两条链路）与对话。
  *
- * <p>摘要是纯读、不落任何库表；对话会把消息写进 {@code ai_message}，靠它带上历史。
+ * <p>摘要是纯读、不落任何库表；对话会把消息写进 {@code ai_message}。
  */
 @Slf4j
 @Service
@@ -56,7 +56,7 @@ public class AiService {
     /** 送模型的上下文上限 */
     private static final int MAX_CONTEXT_MESSAGES = 40;
 
-    /** 图片路径的指令 */
+    /** 摘要图片路径的指令 */
     private static final String SUMMARY_IMAGE_SYSTEM_PROMPT = """
             你是校园笔记托管站的摘要助手。用户会给你一张笔记图片，你要为这份笔记写一段简要的介绍。
 
@@ -69,7 +69,7 @@ public class AiService {
             5. 不要只是简单的罗列讲了什么知识点，要有概括性的总结。
             """;
 
-    /** 文本路径的指令 */
+    /** 摘要文本路径的指令 */
     private static final String SUMMARY_TEXT_SYSTEM_PROMPT = """
             你是校园笔记托管站的摘要助手。用户会给你一份笔记的正文原文，你要为这份笔记写一段简介。
 
@@ -84,8 +84,7 @@ public class AiService {
             """;
 
     /**
-     * 与摘要不同，对话不做输入清洗：摘要那边要清洗的是被拼进 user 段的上下文，有被伪造成
-     * 「下一行指令」的空间；这里用户的话本来就是 user 段的主体，清洗只是在改写用户的原话。
+     * 对话的系统提示词
      */
     private static final String CHAT_SYSTEM_PROMPT = """
             你是「Jotang Note」校园笔记托管站的助手。用中文回答用户的问题。
@@ -228,9 +227,6 @@ public class AiService {
 
     /**
      * 一次模型调用。
-     *
-     * <p><b>只包 chatClient 这几行</b>：把准入、解码、长度判定一并包进来，那些由输入引起的失败
-     * 就会被报成「上游不可用，稍后重试可能有救」，而用户重试永远不会成功。
      */
     private String callModel(String source, Supplier<String> call) {
         try {
@@ -244,10 +240,9 @@ public class AiService {
     /**
      * 正文的解码与字符上限判定，两者都在 50300 的 try 之外。
      *
-     * <p><b>按 UTF-8 宽松解码</b>：非法字节变成替换字符，不校验也不报错。上传场景的字节是用户直接
+     * <p>按 UTF-8 宽松解码：非法字节变成替换字符，不校验也不报错。上传场景的字节是用户直接
      * 送来的、没经过 {@code NoteFilePolicy}，但这段正文从不落库、也不回显，只喂给模型，最坏结果是
-     * 白花一次调用（还是他自己的配额）——为它复制一份上传侧那套分块校验不值当。编辑场景的存量对象
-     * 在上传时早已过了那道校验。
+     * 白花一次调用（还是他自己的配额）——为它复制一份上传侧那套分块校验不值当。
      */
     private static String decodeText(byte[] bytes) {
         String text = new String(bytes, StandardCharsets.UTF_8);
@@ -282,9 +277,6 @@ public class AiService {
     /**
      * 压掉换行与控制字符再截断：换行是这类输入里最容易被用来「伪造出下一行指令」的东西，
      * 折成单行之后就只是一段普通文字。
-     *
-     * <p>长度上限与 {@code @Size} 重复了一次是有意的——编辑场景那两个参数走
-     * {@code @RequestParam}，没有 Bean Validation 兜着。
      */
     private static String sanitize(String value, int maxLength) {
         if (value == null || value.isBlank()) {
@@ -315,12 +307,7 @@ public class AiService {
 
     /**
      * 读回附件字节。
-     *
-     * <p><b>大小判断放在 {@link StorageService#open} 之前</b>，用库里那一列 {@code size}——
-     * 不先拦的话，一个上百 MB 的对象会先被整个读进堆里再被拒掉。
-     *
-     * <p>文本支再补一道有界读：库里那一列与实际对象未必一致（对象被换过、行被写坏），
-     * 有它就不必相信那一列也能不把整个对象拉回堆里；读满上限 + 1 字节即说明超限。
+     * 大小判断放在 {@link StorageService#open} 之前
      */
     private byte[] readObject(String contentType, NoteFileOwnershipRow file) {
         filePolicy.requireWithinLimit(contentType, file.getSize());
@@ -430,8 +417,7 @@ public class AiService {
     }
 
     /**
-     * 两条消息一起写。
-     * 先落用户消息的话，模型失败就会在历史里留下一条没有回复的孤行，用户重试后上下文里就多出一句重复的话。
+     * 落库一轮对话消息。
      */
     private void appendTurn(Long userId, String conversationId, String message, String reply) {
         transactionTemplate.executeWithoutResult(status -> {

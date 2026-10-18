@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { Search } from '@element-plus/icons-vue'
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { notesApi, type NoteListParams } from '@/api/notes'
 import type { NoteListItem, NoteSort } from '@/api/types'
 import NoteCard from '@/components/NoteCard.vue'
+import NoteListSkeleton from '@/components/NoteListSkeleton.vue'
 import { useCatalogStore } from '@/stores/catalog'
 
 const catalog = useCatalogStore()
@@ -21,6 +22,13 @@ const items = ref<NoteListItem[]>([])
 const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
+
+const hasFilters = computed(
+  () =>
+    filters.value.courseId !== undefined ||
+    filters.value.tagId !== undefined ||
+    !!filters.value.keyword?.trim(),
+)
 
 let keywordTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -146,22 +154,18 @@ onUnmounted(() => clearTimeout(keywordTimer))
         <el-radio-button value="HOT_VIEW">最多浏览</el-radio-button>
         <el-radio-button value="HOT_DOWNLOAD">最多下载</el-radio-button>
       </el-radio-group>
-      <el-button
-        v-if="
-          filters.courseId !== undefined || filters.tagId !== undefined || !!filters.keyword?.trim()
-        "
-        link
-        @click="clearFilters"
-      >
-        清除筛选
-      </el-button>
+      <el-button v-if="hasFilters" link @click="clearFilters">清除筛选</el-button>
     </div>
 
-    <div v-loading="loading" class="list">
-      <template v-if="items.length">
+    <!-- 首屏用骨架屏；已有内容时保留列表，只叠加载态，避免筛选时闪一下骨架 -->
+    <div v-loading="loading && items.length > 0" class="list">
+      <NoteListSkeleton v-if="loading && !items.length" :rows="3" />
+      <template v-else-if="items.length">
         <NoteCard v-for="item in items" :key="item.id" :note="item" />
       </template>
-      <el-empty v-else-if="!loading" description="没有符合条件的笔记" />
+      <el-empty v-else description="没有符合条件的笔记">
+        <el-button v-if="hasFilters" type="primary" plain @click="clearFilters">清除筛选</el-button>
+      </el-empty>
     </div>
 
     <div v-if="total > PAGE_SIZE" class="pager">
@@ -189,9 +193,9 @@ onUnmounted(() => clearTimeout(keywordTimer))
   flex-wrap: wrap;
   margin-bottom: 16px;
   padding: 14px 16px;
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 1px 6px rgba(31, 45, 77, 0.05);
+  border-radius: var(--jt-radius-lg);
+  background: var(--jt-surface);
+  box-shadow: var(--jt-shadow-sm);
 }
 
 .list {

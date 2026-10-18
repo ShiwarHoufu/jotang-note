@@ -24,12 +24,7 @@ import java.util.HexFormat;
 /**
  * 密码找回：令牌签发 / 校验 / 一次性消费与作废。
  *
- * <h2>跨模块写：本类直接注入 {@link UserMapper}</h2>
- *
- * <h2>本类不持有的东西</h2>
- *
- * <p><b>不持有 {@code JavaMailSender}</b>，只持有 {@link MailService}。发信是同步还是走队列，
- * 是本类<b>不该知道</b>的事——那正是引入 MQ 时希望「本类一行都不用改」的那条接缝。
+ * <p>跨模块写：本类直接注入 {@link UserMapper}。
  */
 @Slf4j
 @Service
@@ -40,12 +35,7 @@ public class PasswordResetService {
      */
     static final Duration TOKEN_TTL = Duration.ofMinutes(30);
 
-    /**
-     * 原始令牌的熵：{@code SecureRandom} 32 字节。
-     *
-     * <p>256 位随机数使「猜」与「离线爆破哈希」都不成立，这也是它只用 SHA-256 存哈希的底气
-     * （§6.6 明写不用 BCrypt：那是给低熵口令抗爆破的，用在这里只会拖慢每次校验）。
-     */
+    /** 原始令牌的熵：{@code SecureRandom} 32 字节。*/
     private static final int TOKEN_BYTES = 32;
 
     private final UserMapper userMapper;
@@ -60,10 +50,6 @@ public class PasswordResetService {
 
     /**
      * 只用来生成令牌，不用来生成会话或密钥。
-     *
-     * <p>与 {@code JwtTokenProvider} 是两条独立的链路，刻意不复用：那边是 HMAC 签名密钥体系，
-     * 这边是一次性随机数。共用一个 {@code SecureRandom} 没有坏处，但共用「令牌」这个概念
-     * 会让两边的生命周期、存储方式、失效规则混在一起——它们的规则一条都不相同。
      */
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -86,11 +72,6 @@ public class PasswordResetService {
 
     /**
      * 申请重置：限频 → 查用户 → 签发令牌 → 发信。
-     *
-     * <p><b>当前这一条只做到了「响应相同」，没做到「耗时相近」。</b>发信是同步的
-     * （Phase 1），命中分支要等一次 SMTP 往返（几百毫秒），未命中分支立即返回——
-     * 这个差异足以用来做时间侧信道枚举。<b>异步化（把发信挪进消息队列）正是为了消掉它</b>：
-     * 两条分支都退化成「写库 + 投一条消息」，耗时天然对齐。见 §8.4。
      */
     public void forgot(String email) {
         String trimmed = email.trim();
@@ -118,16 +99,11 @@ public class PasswordResetService {
 
     /**
      * 用令牌设置新密码。
-     *
-     * <p>成败由一条条件 UPDATE 的影响行数决定，不是先查出来判断。
-     * 两个并发请求拿着同一个令牌同时打进来时，只有一条能改到那一行，另一条得到 0
-     * 天然抗重放，不需要任何额外的锁。
      */
     public void reset(String token, String newPassword) {
         String tokenHash = sha256Hex(token.trim());
 
         // 先按哈希查出归属。
-        // 挡住“拿随机串打这个接口”白白消耗一次 BCrypt 的可能
         Long userId = tokenMapper.selectUserIdByTokenHash(tokenHash);
         if (userId == null) {
             throw invalidToken();

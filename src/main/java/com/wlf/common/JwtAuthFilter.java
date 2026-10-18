@@ -18,15 +18,6 @@ import java.util.List;
 
 /**
  * 无状态 JWT 过滤器：解析 {@code Authorization: Bearer}，填充 SecurityContext。
- * 见《概要设计》§1.1、§6.4。
- *
- * <p><b>只填充，不拒绝。</b>token 缺失、无效或过期时什么都不设，请求以匿名身份继续往下走，
- * 由链尾的 AuthorizationFilter 因 {@code anyRequest().authenticated()} 未满足而拒绝，
- * 再经 ExceptionTranslationFilter 触发 AuthenticationEntryPoint 产出 40100。
- *
- * <p>之所以不能在这里直接抛异常或写响应：本过滤器被插在
- * {@code UsernamePasswordAuthenticationFilter} 之前，位置在 ExceptionTranslationFilter
- * <b>上游</b>，抛出的异常不会被翻译，写出的响应也会绕开统一响应体。
  *
  * <p>本类<b>刻意不加 {@code @Component}</b>：加了会被 Spring Boot 当作普通 Servlet Filter
  * 自动注册进容器链，与 Security 链重复执行一次（且容器链那次在 SecurityContextHolderFilter
