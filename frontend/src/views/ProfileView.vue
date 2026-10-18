@@ -89,7 +89,7 @@ async function submit() {
         >
           <el-button :loading="uploading">更换头像</el-button>
         </el-upload>
-        <span class="avatar-tip">支持 jpg / png / webp，不超过 2MB</span>
+        <span class="avatar-tip">支持 jpg / png / webp，不超过 5MB</span>
       </div>
 
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="form">

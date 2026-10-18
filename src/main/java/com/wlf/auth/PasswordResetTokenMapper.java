@@ -52,7 +52,7 @@ public interface PasswordResetTokenMapper extends BaseMapper<PasswordResetToken>
     int invalidateAllUnused(@Param("userId") Long userId);
 
     /**
-     * 按令牌哈希查它属于谁。供 {@code reset} 在消费成功后回查任务归属。
+     * 按令牌哈希查它属于谁。
      */
     @Select("SELECT user_id FROM password_reset_token WHERE token_hash = #{tokenHash}")
     Long selectUserIdByTokenHash(@Param("tokenHash") String tokenHash);

@@ -22,16 +22,9 @@ import java.util.Base64;
 import java.util.HexFormat;
 
 /**
- * 密码找回：令牌签发 / 校验 / 一次性消费与作废。见《概要设计》§6.6。
+ * 密码找回：令牌签发 / 校验 / 一次性消费与作废。
  *
  * <h2>跨模块写：本类直接注入 {@link UserMapper}</h2>
- *
- * <p>按 §1.1，跨模块写对方拥有的单表列，只有在「对方的 Service 承接不了这个写」时才允许
- * 直接注入其 Mapper，且必须在类注释里写明理由。这里正是那个情形，且与既存先例同形：
- * {@code AuthService} 直接注入 {@code UserMapper}（注册即往 {@code user} 表插行），
- * 而 {@code UserService} 只有改昵称 / 改学院 / 换头像的入口，<b>没有「改密码」这个入口</b>。
- * 为它单开一个 {@code UserService#changePassword} 会把「改密码」这件事拆到两个模块，
- * 而校验令牌、消费令牌全在本类——那才是真正的割裂。
  *
  * <h2>本类不持有的东西</h2>
  *
