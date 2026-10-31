@@ -26,12 +26,10 @@ spring:
       encoding: UTF-8
 
   # Redis
-  # 前缀是 spring.data.redis，不是 spring.redis。后者在 Boot 3.0 起被标为 error 级废弃
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      # 本机 WSL 里的 Redis 没设密码；生产必须配 REDIS_PASSWORD 并删掉这个默认空值
       password: ${REDIS_PASSWORD:}
 
   # 邮件（SMTP）
@@ -65,14 +63,13 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:admin}
     password: ${RABBITMQ_PASSWORD:}
+    publisher-returns: true
     template:
-      # 路由不到任何队列时让 Broker 把消息退回，而不是静默丢弃。
-      # 配套的退回回调在 RabbitConfig#mailReturnsLogger（退回时记 error 日志）
+      # 路由不到任何队列时让 Broker 把消息退回。
       mandatory: true
     listener:
       simple:
         acknowledge-mode: auto
-        # 一次只预取一条：被卡住的那条是唯一一条未 ack 的
         prefetch: 1
         # **Spring 默认是 true，必须显式改掉。** true 的后果：消费抛异常时消息被无退避地
         # 立刻重投，同一条毒消息在队列里反复打转——热点循环、队列深度永不下降、
@@ -82,9 +79,6 @@ spring:
         retry:
           enabled: true
           # 这一项在 Boot 4 里叫 max-retries，不是老教程里的 max-attempts。
-          #
-          # 语义是重试次数，不含首次：这里是 1 次初始 + 3 次重试 = 最多投递 4 次。
-          # 配合下面的退避就是 2s → 4s → 8s，最坏一条消息占住消费者约 14 秒。
           max-retries: 3
           initial-interval: 2s
           multiplier: 2.0
@@ -105,7 +99,7 @@ spring:
         max-total-tool-calls: 6
     openai:
       # 缺 key 时整个上下文起不来，但可以留空：
-      # 留空时 chat 客户端照样构造成功（它不在启动时校验凭据），只有真去调用才失败 → 50300（§6.8）。
+      # 留空时 chat 客户端照样构造成功（它不在启动时校验凭据），只有真去调用才失败 → 50300。
       api-key: ${JOTANG_AI_API_KEY:}
       base-url: https://api.deepseek.com
       chat:
@@ -122,23 +116,22 @@ spring:
         transcription: none
       moderation: none
 
-# JWT。本机开发由 application-local.yaml 覆盖
+# JWT
 jwt:
   secret: ${JWT_SECRET}
   ttl: ${JWT_TTL:2h}
 
-# OSS：AccessKey 不落仓库，一律外部注入。本机开发由 application-local.yaml 覆盖。
+# OSS
 # bucket 名与 endpoint 不是秘密，给默认值；部署到非成都地域时用环境变量覆盖即可。
 aliyun:
   oss:
     access-key-id: ${JOTANG_OSS_ACCESS_KEY_ID}
     access-key-secret: ${JOTANG_OSS_ACCESS_KEY_SECRET}
     # 服务端访问用的 Endpoint（上传 / 删除）。生产上 ECS 与 OSS 同 Region，用内网：
-    # 内网流量免费、不占 ECS 公网出带宽（§1.2、§8.1）。
+    # 内网流量免费、不占 ECS 公网出带宽。
     # 但内网域名只在阿里云内网可解析——本机开发不在内网，连不通，故由 application-local.yaml 覆写为公网。
     endpoint-server: ${JOTANG_OSS_ENDPOINT_SERVER:oss-cn-chengdu-internal.aliyuncs.com}
-    # 浏览器访问用的 Endpoint（签名 URL、头像直读 URL）。生产上也必须是公网，
-    # 否则签出来的 URL 主机名指向内网域名，浏览器解析不了（见 OssConfig）。
+    # 浏览器访问用的 Endpoint（签名 URL、头像直读 URL）。必须是公网，
     endpoint-browser: ${JOTANG_OSS_ENDPOINT_BROWSER:oss-cn-chengdu.aliyuncs.com}
     bucket-note: ${JOTANG_OSS_BUCKET_NOTE:jotang-note}
     bucket-avatar: ${JOTANG_OSS_BUCKET_AVATAR:jotang-avatar}
@@ -148,22 +141,20 @@ jotang:
   mail:
     # 发件人。必须与 spring.mail.username（已认证的账号）一致，否则 QQ SMTP 直接拒收
     from: ${JOTANG_MAIL_FROM:${spring.mail.username:}}
-    # 重置链接的前端地址前缀，后端只负责在它后面拼 ?token=...。
-    # 生产用环境变量覆盖。
+    # 重置链接的前端地址前缀。
     reset-link-base: ${JOTANG_MAIL_RESET_LINK_BASE:http://localhost:5173/reset-password}
     # 发信走哪条路：smtp = 同步直发；queue = 投进 RabbitMQ，由消费者发。
     mode: ${JOTANG_MAIL_MODE:queue}
 
-  # 孤儿对象对账：定期把已删除但对象还没清掉的笔记补清一次。
+  # 孤儿对象对账
   purge:
-    # 上传入库失败后的补偿删除走哪条路：(下面的 enabled 管的是定时对账，两者互不相干。)
+    # 上传入库失败后的补偿删除：
     #   none  = 只内联删一次
-    #   queue = 额外把这条待办投进 RabbitMQ 兜底，重试耗尽后进死信队列等人工处理
+    #   queue = 额外把这条待办投进 RabbitMQ，重试耗尽后进死信队列等人工处理
     mode: ${JOTANG_PURGE_MODE:queue}
-    # 关掉则 OrphanObjectSweeper 这个 Bean 根本不注册，也就没有定时任务
+    # 定时对账：把已删除但对象还没清掉的笔记补清一次
     enabled: ${JOTANG_PURGE_ENABLED:true}
-    # 启动后多久跑第一轮。对账是兜底，晚一小时没有代价，而应用刚起时正忙着建连接池；
-    # 顺带让测试上下文里的调度器整个用例期间都不会触发。
+    # 启动后多久跑第一轮。
     initial-delay: ${JOTANG_PURGE_INITIAL_DELAY:1h}
     # fixedDelay 而非 fixedRate：耗时取决于积压里要打多少次 OSS，后者会让慢的轮次排队
     fixed-delay: ${JOTANG_PURGE_FIXED_DELAY:1h}

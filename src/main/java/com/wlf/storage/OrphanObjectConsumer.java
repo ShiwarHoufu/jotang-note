@@ -34,8 +34,6 @@ public class OrphanObjectConsumer {
      */
     @RabbitListener(queues = RabbitConfig.ORPHAN_OBJECT_QUEUE)
     public void onMessage(OrphanObject orphan) {
-        // 到这里说明消息确实是 OrphanObject：转换器的类型优先级是 INFERRED，
-        // 目标类型只从本方法的签名推断，消息头里的 __TypeId__ 一概不看（见 RabbitConfig）
         log.debug("收到待清理孤儿对象 bucket={} key={}", orphan.bucket(), orphan.storageKey());
         storageService.delete(orphan.bucket(), orphan.storageKey());
     }

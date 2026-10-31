@@ -23,7 +23,7 @@ public class RabbitConfig {
     /** 邮件交换机。direct，durable。 */
     public static final String MAIL_EXCHANGE = "jotang.mail.exchange";
 
-    /** 重置邮件的路由键。目前是唯一的键。 */
+    /** 重置邮件的路由键。 */
     public static final String MAIL_ROUTING_KEY = "mail.password-reset";
 
     /** 重置邮件的工作队列。名字里的 {@code .q} 是队列后缀，与死信队列的 {@code .dlq} 区分。 */
@@ -96,13 +96,7 @@ public class RabbitConfig {
     }
 
     /**
-     * 死信队列。TTL 1 小时后自灭——<b>取证明不等于留证据</b>。
-     *
-     * <p>它与工作队列的 {@code x-message-ttl} 是两个独立的上限：消息在队列里最多待 10 分钟，
-     * 进了死信队列再最多待 1 小时。加起来就是「一封发不出去的邮件，连同它正文里的明文令牌，
-     * 在 Broker 里最多存在 70 分钟」。这个数字要写进 §8.3。
-     *
-     * <p>不给死信队列再挂死信：那会变成一条没有出口的链。到点自灭是它的终点。
+     * 死信队列。TTL 1 小时。
      */
     @Bean
     public Queue passwordResetDeadLetterQueue() {
@@ -146,8 +140,7 @@ public class RabbitConfig {
     }
 
     /**
-     * 孤儿对象死信队列。<b>无 TTL</b>——邮件那条死信队列的 1 小时自灭是「取证明不等于留证据」，
-     * 而这里要留的就是证据本身：一条记录对应一个还躺在桶里的对象。
+     * 孤儿对象死信队列。无 TTL
      */
     @Bean
     public Queue orphanObjectDeadLetterQueue() {

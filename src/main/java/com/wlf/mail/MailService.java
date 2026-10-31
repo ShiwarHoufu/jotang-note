@@ -1,7 +1,7 @@
 package com.wlf.mail;
 
 /**
- * 发信这件事的唯一抽象。见《概要设计》§6.6。
+ * 发信这件事的唯一抽象。
  *
  * <p><b>形状照 {@link com.wlf.storage.StorageService}</b>
  * 本层只提供「发一封邮件」这一个原语，主题与正文由调用方组装。

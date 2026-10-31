@@ -12,7 +12,6 @@ import java.util.UUID;
 
 /**
  * 把发信变成「投一条消息」：调用方立刻返回，真正发信由 {@link MailDispatchConsumer} 去做。
- * 见《概要设计》§6.6。
  *
  * <h2>为什么带 {@code @Primary}，而不是让两个实现互斥</h2>
  *
@@ -29,8 +28,6 @@ import java.util.UUID;
  * 换成「给 {@code SmtpMailService} 也加一个 {@code havingValue="smtp"} 条件」同样能互斥，
  * 但那样消费者在 queue 模式下就没有可注入的实现，得再拆一层——不如现在这样直白。
  *
- * <h2>异常原样外抛，不在这里降级</h2>
- *
  * <p>Broker 连不上时 {@code convertAndSend} 抛 {@code AmqpException}，
  * 本类<b>不吞</b>：要不要让「发不出信」影响这次请求，是调用方
  * （{@code PasswordResetService}）的决定。这与 {@code StorageService} 的规矩一致——
@@ -46,8 +43,7 @@ public class QueuedMailService implements MailService {
 
     public QueuedMailService(RabbitTemplate rabbitTemplate) {
         this.rabbitTemplate = rabbitTemplate;
-        // 启动横幅：它是「当前走队列」的唯一明显迹象。没看到这行就是还在 smtp 模式
-        // （见 application.yaml 里 jotang.mail.mode 那段）
+        // 启动横幅。没看到这行就是还在 smtp 模式
         log.info("邮件投递方式：RabbitMQ 队列 queue={} routingKey={}",
                 RabbitConfig.PASSWORD_RESET_QUEUE, RabbitConfig.MAIL_ROUTING_KEY);
     }
@@ -57,17 +53,13 @@ public class QueuedMailService implements MailService {
         MailDispatch dispatch = new MailDispatch(UUID.randomUUID().toString(), to, subject, textBody);
         rabbitTemplate.convertAndSend(RabbitConfig.MAIL_EXCHANGE, RabbitConfig.MAIL_ROUTING_KEY, dispatch,
                 message -> {
-                    // 非持久化：明文令牌不落 Broker 的磁盘。注意它只挡「Broker 重启」这一种，
-                    // 挡不住「消息还在队列里时被人从管理台看」——那半边靠的是 5672/15672
-                    // 不对公网开放（§8.3），以及消息只在队列里待最多 10 分钟
+                    // 非持久化：明文令牌不落 Broker 的磁盘。
                     message.getMessageProperties().setDeliveryMode(MessageDeliveryMode.NON_PERSISTENT);
                     return message;
                 });
 
-        // convertAndSend 返回只代表「写进了 socket」，不代表 Broker 收下了。
-        // 要真知道得开 publisher-confirm-type 并等 ConfirmCallback 回调——
-        // 但那只能在「邮箱存在」这条分支上等，等于把刚消掉的耗时差搬回来，
-        // 所以刻意不做（§6.6、§8.4）
+        // 没有开 publisher-confirm-type ：
+        // 等 ConfirmCallback 回调就是在“邮箱存在”这条分支上等，等于把刚消掉的耗时差搬回来，所以不做
         log.debug("重置邮件已投递 messageId={} to={}", dispatch.messageId(), to);
     }
 }

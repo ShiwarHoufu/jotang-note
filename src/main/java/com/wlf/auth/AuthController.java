@@ -57,8 +57,7 @@ public class AuthController {
     /**
      * 退出。服务端无会话可销毁，前端删除本地 token 即为退出。
      *
-     * <p>保留该接口是为了让前端有个统一的调用点，也便于 V2 引入 Redis 后
-     * 用 jti 黑名单把语义补实。
+     * <p>保留该接口是为了让前端有个统一的调用点，也便于引入 Redis 后用 jti 黑名单把语义补实。
      */
     @PostMapping("/logout")
     public ApiResponse<Void> logout() {

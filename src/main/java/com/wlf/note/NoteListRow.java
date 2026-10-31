@@ -14,13 +14,6 @@ import java.time.LocalDateTime;
  * {@code created_at}（卡片显示的是「最后更新于」）。用详情那个投影接列表结果，
  * 会有一半字段恒为 null，而类名又写着 Detail——复用在这里只会让人猜「到底哪几个真有用」。
  *
- * <p>这不算「同一规则写了两份」：投影类是某一条 SQL 的形状，不是某条业务规则的副本。
- * 真正共享的东西（{@code course} / {@code tags} / 上传者的形状）已经复用
- * {@code CourseResponse} / {@code TagResponse} / {@code UploaderResponse} 了。
- *
- * <p>字段名与列的对应靠 MyBatis-Plus 默认开启的 {@code mapUnderscoreToCamelCase}，
- * 重名列（{@code id} / {@code name}）必须在 SQL 里显式起别名。
- *
  * <p>标签不在这里：它与笔记是 to-many，并进分页查询会乘行（一页 20 条会变成十几条）。
  * 单独一条 {@code IN} 查询批量取回，由 Service 按 {@code noteId} 装配。
  */

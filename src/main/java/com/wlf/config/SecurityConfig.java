@@ -23,11 +23,6 @@ import java.io.IOException;
 
 /**
  * Spring Security 过滤器链：放行名单 + 无状态会话 + ADMIN 角色规则。
- *
- * <p><b>40100 / 40300 的产出点在本类</b>，不在 GlobalExceptionHandler：
- * 认证与鉴权失败发生在过滤器链中，早于 DispatcherServlet，
- * {@code @RestControllerAdvice} 收不到。这里用 AuthenticationEntryPoint
- * 与 AccessDeniedHandler 手工写出统一响应体。
  */
 @Configuration
 @EnableWebSecurity
@@ -35,18 +30,13 @@ public class SecurityConfig {
 
     /**
      * 免登录接口。
-     *
-     * <p>{@code /api/colleges} 也必须放行，理由与密码找回同源：注册页要拿它填学院下拉框，
-     * 而注册发生在登录之前。不放行则下拉框取不到数据，谁也注册不了。
-     *
-     * <p>与之相对，{@code /api/courses} 与 {@code /api/tags} 刻意**不放行**——浏览内容需登录。
      */
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/register",
             "/api/auth/login",
             "/api/auth/password/forgot",
             "/api/auth/password/reset",
-            "/api/colleges"
+            "/api/colleges" // 注册页要拿它填学院下拉框
     };
 
     private final ObjectMapper objectMapper;
@@ -72,7 +62,7 @@ public class SecurityConfig {
                         // 两条失败路径都是现成的：未登录 → AuthenticationEntryPoint 出 40100，
                         // 已登录但非管理员 → AccessDeniedHandler 出 40300（§5.7）
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        // 其余接口一律要求登录（§5：全部内容需登录）
+                        // 其余接口一律要求登录
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(unauthorizedEntryPoint())
@@ -87,7 +77,7 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    /** 未登录 / token 无效或过期 → 40100（§5.7，三种情形合一） */
+    /** 未登录 / token 无效或过期 → 40100 */
     private AuthenticationEntryPoint unauthorizedEntryPoint() {
         return (request, response, authException) -> writeError(response, ErrorCode.UNAUTHORIZED);
     }

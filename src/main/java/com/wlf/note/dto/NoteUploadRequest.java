@@ -10,15 +10,12 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 /**
- * 上传入参：multipart 表单，文件 + 元数据。见《概要设计》§5.4、§6.1。
+ * 上传入参：multipart 表单，文件 + 元数据。
  *
  * <p>用 {@code @ModelAttribute} 绑定而不是 {@code @RequestBody}：multipart 请求里
  * 文件部分不是 JSON，只能按表单字段逐个绑定。
  *
- * <p><b>标签按名称提交</b>，不是 tagId 列表：用户可以自由打标，前端虽有候选标签，
- * 但输入框允许直接敲新词。名字到 id 的解析（含按名创建、同名复用）由
- * {@code TagService#resolveIds} 负责，本类不做校验——标签的个数与长度上限同属那条规则，
- * 放在一起才不会两处不一致。
+ * <p><b>标签按名称提交</b>，不是 tagId 列表：用户可以自由打标。
  *
  * <p>这里的 {@code @Size} 上限全部照抄建表语句的列宽（{@code note.title} 128、
  * {@code note.summary} 512、{@code note.teacher} 64）。先在校验层挡住，

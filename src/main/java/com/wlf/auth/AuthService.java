@@ -111,7 +111,6 @@ public class AuthService {
             throw new BusinessException(ErrorCode.BAD_CREDENTIALS);
         }
 
-        // status 目前无人写入（schema 注释为「预留」），但一旦有人手工置 0，这里必须挡住
         if (user.getStatus() != null && user.getStatus() == 0) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "账号已被禁用");
         }
