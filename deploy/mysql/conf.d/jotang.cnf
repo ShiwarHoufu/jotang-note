@@ -1,0 +1,15 @@
+# 生产 MySQL 配置。由 docker-compose.prod.yml 只读挂载到 /etc/mysql/conf.d/，
+# 镜像的 /etc/mysql/my.cnf 会 include 该目录，故改完重启容器即生效。
+
+[mysqld]
+# 默认按宿主机内存自算，不压的话单容器能吃掉 400MB+
+innodb_buffer_pool_size = 128M
+# 关掉可再省几十 MB，代价是 8.0+ 的性能视图查不到（本项目用不上）
+performance_schema = OFF
+max_connections = 50
+
+character-set-server = utf8mb4
+collation-server = utf8mb4_general_ci
+
+slow_query_log = 1
+long_query_time = 1

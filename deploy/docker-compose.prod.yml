@@ -10,14 +10,6 @@ services:
     image: mysql:8.4
     container_name: jotang-mysql
     restart: unless-stopped
-    # 2G 的机器上必须显式压住 buffer pool：默认按宿主机内存自算，不压的话这一个容器就能吃掉 400MB+。
-    # performance-schema 关掉能再省几十 MB，代价是 8.0+ 的性能视图查不到（本项目用不上）。
-    command:
-      - --innodb-buffer-pool-size=128M
-      - --performance-schema=OFF
-      - --max-connections=50
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_general_ci
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?缺少 deploy/.env 或未设置 MYSQL_ROOT_PASSWORD}
       # 下面三项**只在数据卷为空时生效**（即首次启动）。之后改这里不会改库里的账号密码，
@@ -29,6 +21,8 @@ services:
       # 只绑回环：应用在同一台机器上，走 127.0.0.1:3306 即可，安全组不要开 3306
       - "127.0.0.1:3306:3306"
     volumes:
+      # 配置在 ./mysql/conf.d/jotang.cnf，只读挂载；镜像 my.cnf 会 include 这个目录
+      - ./mysql/conf.d:/etc/mysql/conf.d:ro
       # 与 Redis 不同，这里是**唯一的一份数据**，卷必须留
       - mysql-data:/var/lib/mysql
     healthcheck:
