@@ -42,7 +42,7 @@ jotang-note/
 ├── src/test/java/com/wlf/       # 测试；oss / mail / mq 用例默认排除
 ├── frontend/                    # Vue 3 前端
 ├── deploy/                      # Nginx、systemd、生产 Compose、update.sh
-├── docs/                        # 需求、技术选型、概要设计、部署运维、功能说明
+├── docs/                        # 需求、技术选型、系统设计、数据库设计、部署运维、功能说明
 └── docker-compose.yml           # 本地开发用的 RabbitMQ + Redis
 ```
 

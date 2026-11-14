@@ -1,4 +1,4 @@
--- Jotang Note MVP 建表脚本，对应《概要设计》§3.2
+-- Jotang Note MVP 建表脚本
 -- 全部 IF NOT EXISTS，可重复执行
 
 -- 学院（预置数据，用户注册时必选，D8）
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS `user` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 课程（预置数据，含一条固定的「其他」）
--- D8：不再记开课学院——学院挂在上传者身上，笔记的学院由 user.college_id 推导（概要设计 §3.3）
+-- 不再记开课学院——学院挂在上传者身上，笔记的学院由 user.college_id 推导
 CREATE TABLE IF NOT EXISTS `course` (
   `id`       BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `name`     VARCHAR(128)    NOT NULL,
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS `favorite` (
   CONSTRAINT `fk_fav_note` FOREIGN KEY (`note_id`) REFERENCES `note`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 密码找回令牌（D6：落库、一次性、可重启）
+-- 密码找回令牌（落库、一次性、可重启）
 CREATE TABLE IF NOT EXISTS `password_reset_token` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id`    BIGINT UNSIGNED NOT NULL,
@@ -128,11 +128,7 @@ CREATE TABLE IF NOT EXISTS `password_reset_token` (
   CONSTRAINT `fk_prt_user` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- AI 对话消息（服务端保存多轮记忆）
--- 一轮问答两行。历史按 id 正序就是模型要的顺序，落库不做任何裁剪。
--- 送模型的那份过一道滑动窗口（AiService.MAX_CONTEXT_MESSAGES，40 条）：未超限时前缀
--- 逐轮只增不变，DeepSeek 的前缀缓存按「从 token 0 起逐字相同的公共前缀」照常命中；
--- 超限后窗口每轮滑一位、前缀从滑动点起失效，是拿有界的单次成本换掉撑爆上下文的故障风险
+-- AI 对话消息
 CREATE TABLE IF NOT EXISTS `ai_message` (
   `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id`         BIGINT UNSIGNED NOT NULL,

@@ -52,7 +52,6 @@ public class AuthService {
 
     /**
      * 注册。
-     * 昵称取用户名占位。
      */
     public UserInfo register(RegisterRequest request) {
         String username = request.getUsername().trim();
@@ -74,7 +73,7 @@ public class AuthService {
         user.setUsername(username);
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setNickname(username);
+        user.setNickname(username); // 昵称取用户名占位。
         user.setCollegeId(collegeId);
         user.setRole("USER");
         user.setStatus(1);
@@ -102,7 +101,6 @@ public class AuthService {
         loginAttemptLimiter.ensureNotLocked(username);
 
         User user = userMapper.selectOne(
-                //创建一个查询条件构造器
                 Wrappers.<User>lambdaQuery().eq(User::getUsername, username)
         );
 
