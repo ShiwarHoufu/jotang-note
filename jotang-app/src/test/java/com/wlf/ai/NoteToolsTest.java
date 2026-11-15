@@ -2,9 +2,9 @@ package com.wlf.ai;
 
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
-import com.wlf.note.NoteFileOwnershipRow;
-import com.wlf.note.NoteSearchHit;
-import com.wlf.note.NoteService;
+import com.wlf.ai.port.NoteContentReader;
+import com.wlf.ai.port.NoteFileRef;
+import com.wlf.ai.port.NoteSearchHit;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,24 +42,24 @@ class NoteToolsTest {
     private static final long NOTE_ID = 42L;
     private static final String STORAGE_KEY = "notes/2026/10/x";
 
-    private NoteService noteService;
+    private NoteContentReader noteContentReader;
     private StorageService storageService;
     private ChatClient chatClient;
     private NoteTools tools;
 
     @BeforeEach
     void setUp() {
-        noteService = mock(NoteService.class);
+        noteContentReader = mock(NoteContentReader.class);
         storageService = mock(StorageService.class);
         chatClient = mock(ChatClient.class);
-        tools = new NoteTools(USER_ID, noteService, storageService, chatClient);
+        tools = new NoteTools(USER_ID, noteContentReader, storageService, chatClient);
     }
 
     // ==================== 检索 ====================
 
     @Test
     void searchReturnsWhatTheServiceFound() {
-        when(noteService.findOnlineByExactTitle("拉格朗日中值定理", 5))
+        when(noteContentReader.findOnlineByExactTitle("拉格朗日中值定理", 5))
                 .thenReturn(List.of(new NoteSearchHit(NOTE_ID, "拉格朗日中值定理", "张老师", "期末复习提纲")));
 
         List<NoteSearchHit> hits = tools.searchNotesByTitle("拉格朗日中值定理");
@@ -74,7 +74,7 @@ class NoteToolsTest {
     void searchStripsSurroundingBookTitleMarks() {
         tools.searchNotesByTitle("《高数笔记》");
 
-        verify(noteService).findOnlineByExactTitle("高数笔记", 5);
+        verify(noteContentReader).findOnlineByExactTitle("高数笔记", 5);
     }
 
     /** 空白标题直接短路，不打 DB */
@@ -83,7 +83,7 @@ class NoteToolsTest {
         assertThat(tools.searchNotesByTitle("   ")).isEmpty();
         assertThat(tools.searchNotesByTitle(null)).isEmpty();
 
-        verify(noteService, never()).findOnlineByExactTitle(anyString(), anyInt());
+        verify(noteContentReader, never()).findOnlineByExactTitle(anyString(), anyInt());
     }
 
     // ==================== 读正文 ====================
@@ -112,7 +112,7 @@ class NoteToolsTest {
 
     @Test
     void unreadableNoteBecomesTextInsteadOfAnException() {
-        when(noteService.readableOnlineFile(NOTE_ID))
+        when(noteContentReader.readableOnlineFile(NOTE_ID))
                 .thenThrow(new BusinessException(ErrorCode.NOTE_UNAVAILABLE));
 
         String result = tools.readNoteContent(NOTE_ID);
@@ -123,7 +123,7 @@ class NoteToolsTest {
     /** 先按库里那一列 size 拦，**不打开对象**——否则上百 MB 会先被整个读进堆再被拒掉 */
     @Test
     void oversizedAttachmentIsRejectedWithoutOpeningIt() {
-        when(noteService.readableOnlineFile(NOTE_ID)).thenReturn(fileOf("image/png", 11L * 1024 * 1024));
+        when(noteContentReader.readableOnlineFile(NOTE_ID)).thenReturn(fileOf("image/png", 11L * 1024 * 1024));
 
         String result = tools.readNoteContent(NOTE_ID);
 
@@ -154,7 +154,7 @@ class NoteToolsTest {
         String third = tools.readNoteContent(NOTE_ID);
 
         assertThat(third).contains("本轮已经读过");
-        verify(noteService, times(2)).readableOnlineFile(NOTE_ID);
+        verify(noteContentReader, times(2)).readableOnlineFile(NOTE_ID);
     }
 
     /** 正文能伪造一个闭合标记；不擦掉的话，信封后半段会被当成一段新的指令 */
@@ -182,18 +182,12 @@ class NoteToolsTest {
 
     // ==================== 辅助 ====================
 
-    private static NoteFileOwnershipRow fileOf(String contentType, Long size) {
-        NoteFileOwnershipRow row = new NoteFileOwnershipRow();
-        row.setUploaderId(USER_ID);
-        row.setStatus("ONLINE");
-        row.setStorageKey(STORAGE_KEY);
-        row.setContentType(contentType);
-        row.setSize(size);
-        return row;
+    private static NoteFileRef fileOf(String contentType, Long size) {
+        return new NoteFileRef(STORAGE_KEY, size, contentType);
     }
 
     private void stubAttachment(String contentType, byte[] bytes) {
-        when(noteService.readableOnlineFile(NOTE_ID)).thenReturn(fileOf(contentType, (long) bytes.length));
+        when(noteContentReader.readableOnlineFile(NOTE_ID)).thenReturn(fileOf(contentType, (long) bytes.length));
         when(storageService.open(Bucket.NOTE, STORAGE_KEY)).thenReturn(new ByteArrayInputStream(bytes));
     }
 

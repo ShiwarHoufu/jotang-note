@@ -8,8 +8,8 @@ import com.wlf.ai.dto.AiSummaryResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.entity.AiMessage;
-import com.wlf.note.NoteFileOwnershipRow;
-import com.wlf.note.NoteService;
+import com.wlf.ai.port.NoteFileRef;
+import com.wlf.ai.port.NoteContentReader;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;
@@ -107,7 +107,7 @@ public class AiService {
     /** 摘要与对话各持一个实例、各算各的额度：两者代价差一个数量级，共用一个桶会互相挤占 */
     private final AiRateLimiter summaryRateLimiter;
     private final AiRateLimiter chatRateLimiter;
-    private final NoteService noteService;
+    private final NoteContentReader noteContentReader;
     private final StorageService storageService;
     private final AiMessageMapper aiMessageMapper;
     private final TransactionTemplate transactionTemplate;
@@ -116,7 +116,7 @@ public class AiService {
                      AiSummaryFilePolicy filePolicy,
                      @Qualifier("aiSummaryRateLimiter") AiRateLimiter summaryRateLimiter,
                      @Qualifier("aiChatRateLimiter") AiRateLimiter chatRateLimiter,
-                     NoteService noteService,
+                     NoteContentReader noteContentReader,
                      StorageService storageService,
                      AiMessageMapper aiMessageMapper,
                      PlatformTransactionManager transactionManager) {
@@ -124,10 +124,10 @@ public class AiService {
         this.filePolicy = filePolicy;
         this.summaryRateLimiter = summaryRateLimiter;
         this.chatRateLimiter = chatRateLimiter;
-        this.noteService = noteService;
+        this.noteContentReader = noteContentReader;
         this.storageService = storageService;
         this.aiMessageMapper = aiMessageMapper;
-        // 与 NoteService 同：自己 new，显式持有事务边界，读代码时不必去猜注解在哪一层生效
+        // 与 NoteContentReader 同：自己 new，显式持有事务边界，读代码时不必去猜注解在哪一层生效
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -158,11 +158,11 @@ public class AiService {
      */
     public AiSummaryResponse summarizeExistingNote(Long userId, Long noteId, String title, String teacher) {
         // 归属、状态与附件位置一并校验
-        NoteFileOwnershipRow file = noteService.requireOwnFile(noteId, userId);
+        NoteFileRef file = noteContentReader.requireOwnFile(noteId, userId);
 
         // 编辑场景没有字节可验，只能按库里那列 content_type 判。前端本该不给这类笔记显示按钮，
         // 走到这里说明是绕过前端直接调的
-        String contentType = file.getContentType();
+        String contentType = file.contentType();
         filePolicy.requireSummarizable(contentType);
         Payload payload = Payload.of(contentType, readObject(contentType, file));
 
@@ -309,9 +309,9 @@ public class AiService {
      * 读回附件字节。
      * 大小判断放在 {@link StorageService#open} 之前
      */
-    private byte[] readObject(String contentType, NoteFileOwnershipRow file) {
-        filePolicy.requireWithinLimit(contentType, file.getSize());
-        try (InputStream content = storageService.open(Bucket.NOTE, file.getStorageKey())) {
+    private byte[] readObject(String contentType, NoteFileRef file) {
+        filePolicy.requireWithinLimit(contentType, file.size());
+        try (InputStream content = storageService.open(Bucket.NOTE, file.storageKey())) {
             byte[] bytes = AiSummaryFilePolicy.isText(contentType)
                     ? content.readNBytes((int) AiSummaryFilePolicy.MAX_TEXT_BYTES + 1)
                     : content.readAllBytes();
@@ -319,7 +319,7 @@ public class AiService {
             filePolicy.requireWithinLimit(contentType, (long) bytes.length);
             return bytes;
         } catch (IOException e) {
-            log.error("读取笔记附件失败，key={}", file.getStorageKey(), e);
+            log.error("读取笔记附件失败，key={}", file.storageKey(), e);
             throw new BusinessException(ErrorCode.SERVER_ERROR, "读取笔记文件失败");
         }
     }
@@ -397,7 +397,7 @@ public class AiService {
             String raw = chatClient.prompt()
                     .system(CHAT_SYSTEM_PROMPT)
                     .messages(messages)
-                    .tools(new NoteTools(userId, noteService, storageService, chatClient))
+                    .tools(new NoteTools(userId, noteContentReader, storageService, chatClient))
                     .call()
                     .content();
             // 模型返回 null 不算出错，给空串而不是让 NPE 变成 50000

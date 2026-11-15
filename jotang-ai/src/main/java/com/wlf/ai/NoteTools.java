@@ -1,9 +1,9 @@
 package com.wlf.ai;
 
 import com.wlf.common.BusinessException;
-import com.wlf.note.NoteFileOwnershipRow;
-import com.wlf.note.NoteSearchHit;
-import com.wlf.note.NoteService;
+import com.wlf.ai.port.NoteFileRef;
+import com.wlf.ai.port.NoteSearchHit;
+import com.wlf.ai.port.NoteContentReader;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;
@@ -46,16 +46,16 @@ public class NoteTools {
             """;
 
     private final Long userId;
-    private final NoteService noteService;
+    private final NoteContentReader noteContentReader;
     private final StorageService storageService;
     private final ChatClient chatClient;
 
     /** 本轮已读的附件数。工具由框架在同一次 call() 里串行执行，不需要同步 */
     private int extractionsUsed;
 
-    public NoteTools(Long userId, NoteService noteService, StorageService storageService, ChatClient chatClient) {
+    public NoteTools(Long userId, NoteContentReader noteContentReader, StorageService storageService, ChatClient chatClient) {
         this.userId = userId;
-        this.noteService = noteService;
+        this.noteContentReader = noteContentReader;
         this.storageService = storageService;
         this.chatClient = chatClient;
     }
@@ -69,7 +69,7 @@ public class NoteTools {
         String normalized = normalizeTitle(title);
         List<NoteSearchHit> hits = normalized.isEmpty()
                 ? List.of()
-                : noteService.findOnlineByExactTitle(normalized, MAX_HITS);
+                : noteContentReader.findOnlineByExactTitle(normalized, MAX_HITS);
         // 精确匹配要求模型逐字给出标题，它做不到时这条日志是唯一的线索
         log.info("检索笔记：userId={}，标题=[{}]，命中 {} 条", userId, normalized, hits.size());
         return hits;
@@ -88,9 +88,9 @@ public class NoteTools {
             return "本轮已经读过 " + MAX_EXTRACTIONS + " 份笔记了，请基于已有内容回答用户。";
         }
 
-        NoteFileOwnershipRow file;
+        NoteFileRef file;
         try {
-            file = noteService.readableOnlineFile(noteId);
+            file = noteContentReader.readableOnlineFile(noteId);
         } catch (BusinessException e) {
             // 抛出去会变成什么由框架的处理器决定，还能被 spring.ai.tools.throw-exception-on-error
             // 翻成炸掉整轮；返回文本是唯一不依赖配置的写法
@@ -98,19 +98,19 @@ public class NoteTools {
         }
         extractionsUsed++;
 
-        if (file.getSize() != null && file.getSize() > MAX_ATTACHMENT_BYTES) {
+        if (file.size() != null && file.size() > MAX_ATTACHMENT_BYTES) {
             return "这篇笔记的附件超过 " + (MAX_ATTACHMENT_BYTES >> 20) + "MB，读不了。";
         }
 
         byte[] bytes;
-        try (InputStream content = storageService.open(Bucket.NOTE, file.getStorageKey())) {
+        try (InputStream content = storageService.open(Bucket.NOTE, file.storageKey())) {
             bytes = content.readAllBytes();
         } catch (IOException e) {
             log.error("读取笔记附件失败，userId={}，noteId={}", userId, noteId, e);
             return "这篇笔记的附件暂时读不出来。";
         }
 
-        String contentType = file.getContentType();
+        String contentType = file.contentType();
         if (contentType != null && contentType.startsWith("image/")) {
             String transcript = transcribeImage(contentType, bytes, noteId);
             return transcript == null ? "这篇笔记的图片没能转写出内容。" : envelope(noteId, transcript);

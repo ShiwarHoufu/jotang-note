@@ -7,8 +7,8 @@ import com.wlf.ai.dto.AiSummaryResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.entity.AiMessage;
-import com.wlf.note.NoteFileOwnershipRow;
-import com.wlf.note.NoteService;
+import com.wlf.ai.port.NoteContentReader;
+import com.wlf.ai.port.NoteFileRef;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,7 +68,7 @@ class AiServiceTest {
 
     private ChatClient chatClient;
     private StorageService storageService;
-    private NoteService noteService;
+    private NoteContentReader noteContentReader;
     private AiMessageMapper aiMessageMapper;
     private PlatformTransactionManager transactionManager;
     /** 只有摘要这个留成字段：对话那条的额度用例要的是另一个上限，不能用这个实例 */
@@ -82,7 +82,7 @@ class AiServiceTest {
     void setUp() {
         chatClient = mock(ChatClient.class);
         storageService = mock(StorageService.class);
-        noteService = mock(NoteService.class);
+        noteContentReader = mock(NoteContentReader.class);
         aiMessageMapper = mock(AiMessageMapper.class);
         // 事务边界由服务自己持有，这里给一个能"开"出事务的桩即可——
         // 本层验的是编排，事务的原子性由 TransactionTemplate 负责，不在这里重验
@@ -95,7 +95,7 @@ class AiServiceTest {
         summaryRateLimiter = new AiRateLimiter(10, Duration.ofHours(1), "生成");
         AiRateLimiter chatRateLimiter = new AiRateLimiter(30, Duration.ofHours(1), "对话");
         service = new AiService(chatClient, new AiSummaryFilePolicy(), summaryRateLimiter, chatRateLimiter,
-                noteService, storageService, aiMessageMapper, transactionManager);
+                noteContentReader, storageService, aiMessageMapper, transactionManager);
     }
 
     // ==================== 摘要：上传场景 ====================
@@ -187,7 +187,7 @@ class AiServiceTest {
     void overlongTextDoesNotConsumeQuota() {
         AiService oneShotSummary = new AiService(chatClient, new AiSummaryFilePolicy(),
                 new AiRateLimiter(1, Duration.ofHours(1), "生成"), new AiRateLimiter(30, Duration.ofHours(1), "对话"),
-                noteService, storageService, aiMessageMapper, transactionManager);
+                noteContentReader, storageService, aiMessageMapper, transactionManager);
         stubModel("摘要");
 
         assertThatThrownBy(() -> oneShotSummary.summarizeUpload(USER_ID, uploadRequest(longText(), "长笔记.md")))
@@ -258,7 +258,7 @@ class AiServiceTest {
 
     @Test
     void editScenarioReadsObjectFromNoteBucketAndSendsStoredMime() {
-        when(noteService.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("image/jpeg", 1024L));
+        when(noteContentReader.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("image/jpeg", 1024L));
         when(storageService.open(Bucket.NOTE, "notes/2026/10/x.jpg"))
                 .thenReturn(new ByteArrayInputStream(PNG));
         stubModel("摘要");
@@ -275,7 +275,7 @@ class AiServiceTest {
     /** 归属/状态的判门归 note 模块，本层只负责不吞掉它——40300 必须原样传上去 */
     @Test
     void editScenarioPropagatesOwnershipFailure() {
-        when(noteService.requireOwnFile(NOTE_ID, USER_ID))
+        when(noteContentReader.requireOwnFile(NOTE_ID, USER_ID))
                 .thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
 
         assertThatThrownBy(() -> service.summarizeExistingNote(USER_ID, NOTE_ID, null, null))
@@ -288,7 +288,7 @@ class AiServiceTest {
     /** 附件类型不支持：不去读 OSS，更不去调模型 */
     @Test
     void editScenarioRejectsUnsupportedAttachmentWithoutTouchingOss() {
-        when(noteService.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("application/pdf", 1024L));
+        when(noteContentReader.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("application/pdf", 1024L));
 
         assertThatThrownBy(() -> service.summarizeExistingNote(USER_ID, NOTE_ID, null, null))
                 .isInstanceOfSatisfying(BusinessException.class,
@@ -301,7 +301,7 @@ class AiServiceTest {
     /** 落库的 content_type 认不出来（含 null）：42200，不读 OSS、不调模型，也不是 NPE */
     @Test
     void editScenarioRejectsUnknownStoredContentTypeWithoutTouchingOss() {
-        when(noteService.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf(null, 1024L));
+        when(noteContentReader.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf(null, 1024L));
 
         assertThatThrownBy(() -> service.summarizeExistingNote(USER_ID, NOTE_ID, null, null))
                 .isInstanceOfSatisfying(BusinessException.class,
@@ -314,7 +314,7 @@ class AiServiceTest {
     /** 编辑场景的同一个分野：从 note 桶读回来的文本也走纯文本调用，不带 media */
     @Test
     void editScenarioReadsTextObjectAndSendsStoredMimeWithoutMedia() {
-        when(noteService.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("text/markdown", 1024L));
+        when(noteContentReader.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("text/markdown", 1024L));
         when(storageService.open(Bucket.NOTE, "notes/2026/10/x.jpg"))
                 .thenReturn(new ByteArrayInputStream(MD));
         stubModel("摘要");
@@ -333,7 +333,7 @@ class AiServiceTest {
     /** 文本的「先拦后读」：库里那列 size 超了就不打开对象 */
     @Test
     void editScenarioRejectsOverlongTextWithoutOpeningIt() {
-        when(noteService.requireOwnFile(NOTE_ID, USER_ID))
+        when(noteContentReader.requireOwnFile(NOTE_ID, USER_ID))
                 .thenReturn(fileOf("text/markdown", AiSummaryFilePolicy.MAX_TEXT_BYTES + 1));
 
         assertThatThrownBy(() -> service.summarizeExistingNote(USER_ID, NOTE_ID, null, null))
@@ -349,7 +349,7 @@ class AiServiceTest {
      */
     @Test
     void editScenarioHandlesMissingSizeDefensively() {
-        when(noteService.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("text/plain", null));
+        when(noteContentReader.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("text/plain", null));
         when(storageService.open(Bucket.NOTE, "notes/2026/10/x.jpg"))
                 .thenReturn(new ByteArrayInputStream(MD));
         stubModel("摘要");
@@ -363,7 +363,7 @@ class AiServiceTest {
      */
     @Test
     void editScenarioRejectsOversizedObjectWithoutOpeningIt() {
-        when(noteService.requireOwnFile(NOTE_ID, USER_ID))
+        when(noteContentReader.requireOwnFile(NOTE_ID, USER_ID))
                 .thenReturn(fileOf("image/png", AiSummaryFilePolicy.MAX_SIZE_BYTES + 1));
 
         assertThatThrownBy(() -> service.summarizeExistingNote(USER_ID, NOTE_ID, null, null))
@@ -429,7 +429,7 @@ class AiServiceTest {
     void chatSpendsItsOwnQuotaNotTheSummaryOne() {
         AiService oneShotChat = new AiService(chatClient, new AiSummaryFilePolicy(),
                 summaryRateLimiter, new AiRateLimiter(1, Duration.ofHours(1), "对话"),
-                noteService, storageService, aiMessageMapper, transactionManager);
+                noteContentReader, storageService, aiMessageMapper, transactionManager);
         stubModel("回答");
 
         oneShotChat.chat(USER_ID, MESSAGE, null);
@@ -449,7 +449,7 @@ class AiServiceTest {
     void rateLimitedChatNeverReachesTheModel() {
         AiService oneShotChat = new AiService(chatClient, new AiSummaryFilePolicy(),
                 summaryRateLimiter, new AiRateLimiter(1, Duration.ofHours(1), "对话"),
-                noteService, storageService, aiMessageMapper, transactionManager);
+                noteContentReader, storageService, aiMessageMapper, transactionManager);
         stubModel("回答");
         oneShotChat.chat(USER_ID, MESSAGE, null);
         verify(chatClient, times(1)).prompt();
@@ -688,14 +688,8 @@ class AiServiceTest {
         return "a".repeat(AiSummaryFilePolicy.MAX_TEXT_CHARS + 1).getBytes();
     }
 
-    private static NoteFileOwnershipRow fileOf(String contentType, Long size) {
-        NoteFileOwnershipRow row = new NoteFileOwnershipRow();
-        row.setUploaderId(USER_ID);
-        row.setStatus("ONLINE");
-        row.setStorageKey("notes/2026/10/x.jpg");
-        row.setContentType(contentType);
-        row.setSize(size);
-        return row;
+    private static NoteFileRef fileOf(String contentType, Long size) {
+        return new NoteFileRef("notes/2026/10/x.jpg", size, contentType);
     }
 
     /** 把 {@code ChatClient} 那条链 stub 掉，并记下请求规格供断言 */
