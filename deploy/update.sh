@@ -43,7 +43,7 @@ npm run build
 cd ..
 
 echo "==> 替换产物"
-cp "target/$JAR" "$APP"
+cp "jotang-app/target/$JAR" "$APP"
 rsync -a --delete frontend/dist/ "$WEB/"
 
 echo "==> 拉起容器并等健康检查通过"
