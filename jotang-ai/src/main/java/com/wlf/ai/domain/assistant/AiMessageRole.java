@@ -1,4 +1,4 @@
-package com.wlf.ai;
+package com.wlf.ai.domain.assistant;
 
 /**
  * 一条 AI 消息的角色。

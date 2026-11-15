@@ -1,5 +1,6 @@
-package com.wlf.ai;
+package com.wlf.ai.infrastructure.config;
 
+import com.wlf.ai.application.assistant.AiRateLimiter;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

@@ -1,4 +1,4 @@
-package com.wlf.entity;
+package com.wlf.ai.domain.assistant;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -28,7 +28,7 @@ public class AiMessage {
     /** 服务端生成的 UUID，也就是对外暴露的 conversationId */
     private String conversationId;
 
-    /** {@code USER} / {@code ASSISTANT}，取值见 {@link com.wlf.ai.AiMessageRole} */
+    /** {@code USER} / {@code ASSISTANT}，取值见 {@link com.wlf.ai.domain.assistant.AiMessageRole} */
     private String role;
 
     private String content;

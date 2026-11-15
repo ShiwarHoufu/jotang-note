@@ -1,4 +1,4 @@
-package com.wlf.ai.dto;
+package com.wlf.ai.application.assistant.dto;
 
 import java.util.List;
 

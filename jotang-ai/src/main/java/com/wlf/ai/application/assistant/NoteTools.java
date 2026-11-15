@@ -1,9 +1,10 @@
-package com.wlf.ai;
+package com.wlf.ai.application.assistant;
 
 import com.wlf.common.BusinessException;
-import com.wlf.ai.port.NoteFileRef;
-import com.wlf.ai.port.NoteSearchHit;
-import com.wlf.ai.port.NoteContentReader;
+import com.wlf.ai.application.port.out.NoteFileRef;
+import com.wlf.ai.application.port.out.NoteSearchHit;
+import com.wlf.ai.application.port.out.NoteContentReader;
+import com.wlf.ai.domain.assistant.AiSummaryFilePolicy;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;

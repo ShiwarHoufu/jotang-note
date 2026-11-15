@@ -1,4 +1,4 @@
-package com.wlf.ai.dto;
+package com.wlf.ai.application.assistant.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;

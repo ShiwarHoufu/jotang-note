@@ -1,8 +1,8 @@
 package com.wlf.app;
 
-import com.wlf.ai.port.NoteContentReader;
-import com.wlf.ai.port.NoteFileRef;
-import com.wlf.ai.port.NoteSearchHit;
+import com.wlf.ai.application.port.out.NoteContentReader;
+import com.wlf.ai.application.port.out.NoteFileRef;
+import com.wlf.ai.application.port.out.NoteSearchHit;
 import com.wlf.note.application.note.dto.NoteFileOwnershipRow;
 import com.wlf.note.application.note.NoteService;
 import org.springframework.stereotype.Component;

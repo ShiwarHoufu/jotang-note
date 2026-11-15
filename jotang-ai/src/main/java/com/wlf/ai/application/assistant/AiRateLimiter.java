@@ -1,4 +1,4 @@
-package com.wlf.ai;
+package com.wlf.ai.application.assistant;
 
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;

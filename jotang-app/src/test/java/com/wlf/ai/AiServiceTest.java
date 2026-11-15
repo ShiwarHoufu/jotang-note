@@ -1,14 +1,22 @@
 package com.wlf.ai;
 
-import com.wlf.ai.dto.AiChatHistoryResponse;
-import com.wlf.ai.dto.AiChatResponse;
-import com.wlf.ai.dto.AiSummaryRequest;
-import com.wlf.ai.dto.AiSummaryResponse;
+import com.wlf.ai.application.assistant.AiRateLimiter;
+import com.wlf.ai.application.assistant.AiService;
+import com.wlf.ai.application.assistant.NoteTools;
+import com.wlf.ai.application.assistant.UntrustedContent;
+import com.wlf.ai.domain.assistant.AiSummaryFilePolicy;
+import com.wlf.ai.domain.assistant.AiMessage;
+import com.wlf.ai.domain.assistant.AiMessageRepository;
+import com.wlf.ai.domain.assistant.AiMessageRole;
+
+import com.wlf.ai.application.assistant.dto.AiChatHistoryResponse;
+import com.wlf.ai.application.assistant.dto.AiChatResponse;
+import com.wlf.ai.application.assistant.dto.AiSummaryRequest;
+import com.wlf.ai.application.assistant.dto.AiSummaryResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
-import com.wlf.entity.AiMessage;
-import com.wlf.ai.port.NoteContentReader;
-import com.wlf.ai.port.NoteFileRef;
+import com.wlf.ai.application.port.out.NoteContentReader;
+import com.wlf.ai.application.port.out.NoteFileRef;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
@@ -69,7 +77,7 @@ class AiServiceTest {
     private ChatClient chatClient;
     private StorageService storageService;
     private NoteContentReader noteContentReader;
-    private AiMessageMapper aiMessageMapper;
+    private AiMessageRepository aiMessageRepository;
     private PlatformTransactionManager transactionManager;
     /** 只有摘要这个留成字段：对话那条的额度用例要的是另一个上限，不能用这个实例 */
     private AiRateLimiter summaryRateLimiter;
@@ -83,7 +91,7 @@ class AiServiceTest {
         chatClient = mock(ChatClient.class);
         storageService = mock(StorageService.class);
         noteContentReader = mock(NoteContentReader.class);
-        aiMessageMapper = mock(AiMessageMapper.class);
+        aiMessageRepository = mock(AiMessageRepository.class);
         // 事务边界由服务自己持有，这里给一个能"开"出事务的桩即可——
         // 本层验的是编排，事务的原子性由 TransactionTemplate 负责，不在这里重验
         transactionManager = mock(PlatformTransactionManager.class);
@@ -95,7 +103,7 @@ class AiServiceTest {
         summaryRateLimiter = new AiRateLimiter(10, Duration.ofHours(1), "生成");
         AiRateLimiter chatRateLimiter = new AiRateLimiter(30, Duration.ofHours(1), "对话");
         service = new AiService(chatClient, new AiSummaryFilePolicy(), summaryRateLimiter, chatRateLimiter,
-                noteContentReader, storageService, aiMessageMapper, transactionManager);
+                noteContentReader, storageService, aiMessageRepository, transactionManager);
     }
 
     // ==================== 摘要：上传场景 ====================
@@ -187,7 +195,7 @@ class AiServiceTest {
     void overlongTextDoesNotConsumeQuota() {
         AiService oneShotSummary = new AiService(chatClient, new AiSummaryFilePolicy(),
                 new AiRateLimiter(1, Duration.ofHours(1), "生成"), new AiRateLimiter(30, Duration.ofHours(1), "对话"),
-                noteContentReader, storageService, aiMessageMapper, transactionManager);
+                noteContentReader, storageService, aiMessageRepository, transactionManager);
         stubModel("摘要");
 
         assertThatThrownBy(() -> oneShotSummary.summarizeUpload(USER_ID, uploadRequest(longText(), "长笔记.md")))
@@ -429,7 +437,7 @@ class AiServiceTest {
     void chatSpendsItsOwnQuotaNotTheSummaryOne() {
         AiService oneShotChat = new AiService(chatClient, new AiSummaryFilePolicy(),
                 summaryRateLimiter, new AiRateLimiter(1, Duration.ofHours(1), "对话"),
-                noteContentReader, storageService, aiMessageMapper, transactionManager);
+                noteContentReader, storageService, aiMessageRepository, transactionManager);
         stubModel("回答");
 
         oneShotChat.chat(USER_ID, MESSAGE, null);
@@ -449,7 +457,7 @@ class AiServiceTest {
     void rateLimitedChatNeverReachesTheModel() {
         AiService oneShotChat = new AiService(chatClient, new AiSummaryFilePolicy(),
                 summaryRateLimiter, new AiRateLimiter(1, Duration.ofHours(1), "对话"),
-                noteContentReader, storageService, aiMessageMapper, transactionManager);
+                noteContentReader, storageService, aiMessageRepository, transactionManager);
         stubModel("回答");
         oneShotChat.chat(USER_ID, MESSAGE, null);
         verify(chatClient, times(1)).prompt();
@@ -459,7 +467,7 @@ class AiServiceTest {
 
         verify(chatClient, times(1)).prompt();
         // 被拒的那轮也不该落库
-        verify(aiMessageMapper, times(2)).insert(any(AiMessage.class));
+        verify(aiMessageRepository, times(2)).insert(any(AiMessage.class));
     }
 
     /**
@@ -468,7 +476,7 @@ class AiServiceTest {
      */
     @Test
     void chatReplaysHistoryInOrderThenAppendsTheNewMessage() {
-        when(aiMessageMapper.selectList(any())).thenReturn(List.of(
+        when(aiMessageRepository.findHistory(USER_ID, CONVERSATION_ID)).thenReturn(List.of(
                 row(AiMessageRole.USER, "第一个问题"),
                 row(AiMessageRole.ASSISTANT, "第一个回答")));
         stubModel("第二个回答");
@@ -491,7 +499,7 @@ class AiServiceTest {
      */
     @Test
     void replayCarriesNoTimestamp() {
-        when(aiMessageMapper.selectList(any()))
+        when(aiMessageRepository.findHistory(USER_ID, CONVERSATION_ID))
                 .thenReturn(List.of(row(AiMessageRole.USER, "旧问题")));
         stubModel("回答");
 
@@ -507,7 +515,7 @@ class AiServiceTest {
         AiChatResponse response = service.chat(USER_ID, MESSAGE, null);
 
         ArgumentCaptor<AiMessage> saved = ArgumentCaptor.forClass(AiMessage.class);
-        verify(aiMessageMapper, times(2)).insert(saved.capture());
+        verify(aiMessageRepository, times(2)).insert(saved.capture());
         assertThat(saved.getAllValues()).extracting(AiMessage::getRole)
                 .containsExactly(AiMessageRole.USER.name(), AiMessageRole.ASSISTANT.name());
         assertThat(saved.getAllValues()).extracting(AiMessage::getContent)
@@ -520,14 +528,14 @@ class AiServiceTest {
     /** 陌生会话（含别人的会话）：零行 → 40400，且既不调模型也不写库 */
     @Test
     void strangerConversationIsNotFoundAndCostsNothing() {
-        when(aiMessageMapper.selectList(any())).thenReturn(List.of());
+        when(aiMessageRepository.findHistory(USER_ID, CONVERSATION_ID)).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.chat(USER_ID, MESSAGE, CONVERSATION_ID))
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
 
         verify(chatClient, never()).prompt();
-        verify(aiMessageMapper, never()).insert(any(AiMessage.class));
+        verify(aiMessageRepository, never()).insert(any(AiMessage.class));
     }
 
     /** 模型失败时一条消息都不落：历史里不会留下没有回复的孤行，用户重试即干净重放 */
@@ -539,7 +547,7 @@ class AiServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.AI_UNAVAILABLE));
 
-        verify(aiMessageMapper, never()).insert(any(AiMessage.class));
+        verify(aiMessageRepository, never()).insert(any(AiMessage.class));
     }
 
     /** 上游失败归 50300，文案是对话版而不是枚举里那句摘要专用的 */
@@ -573,8 +581,8 @@ class AiServiceTest {
 
     @Test
     void historyReturnsLatestConversationInOrder() {
-        when(aiMessageMapper.selectLatestConversationId(USER_ID)).thenReturn(CONVERSATION_ID);
-        when(aiMessageMapper.selectList(any())).thenReturn(List.of(
+        when(aiMessageRepository.findLatestConversationId(USER_ID)).thenReturn(CONVERSATION_ID);
+        when(aiMessageRepository.findHistory(USER_ID, CONVERSATION_ID)).thenReturn(List.of(
                 row(AiMessageRole.USER, "第一个问题"),
                 row(AiMessageRole.ASSISTANT, "第一个回答")));
 
@@ -598,14 +606,14 @@ class AiServiceTest {
         assertThat(history.conversationId()).isNull();
         assertThat(history.messages()).isEmpty();
         // 取不到 id 就不该再发第二条查询——空会话是能提前判定的
-        verify(aiMessageMapper, never()).selectList(any());
+        verify(aiMessageRepository, never()).findHistory(any(), any());
     }
 
     /** 并发删会话的兜底：宁可让前端停在空状态，也不回一个「发出去就 40400」的 id */
     @Test
     void historyReturnsEmptyPayloadWhenConversationVanished() {
-        when(aiMessageMapper.selectLatestConversationId(USER_ID)).thenReturn(CONVERSATION_ID);
-        when(aiMessageMapper.selectList(any())).thenReturn(List.of());
+        when(aiMessageRepository.findLatestConversationId(USER_ID)).thenReturn(CONVERSATION_ID);
+        when(aiMessageRepository.findHistory(USER_ID, CONVERSATION_ID)).thenReturn(List.of());
 
         AiChatHistoryResponse history = service.history(USER_ID);
 
@@ -618,7 +626,7 @@ class AiServiceTest {
     /** 50 条（25 轮）只发最近 40 条：单次成本的上界靠它，没有它长会话会撑爆模型上下文窗口 */
     @Test
     void askSendsOnlyTheWindowWhenHistoryIsOverLimit() {
-        when(aiMessageMapper.selectList(any())).thenReturn(historyOf(50));
+        when(aiMessageRepository.findHistory(USER_ID, CONVERSATION_ID)).thenReturn(historyOf(50));
         stubModel("回答");
 
         service.chat(USER_ID, MESSAGE, CONVERSATION_ID);
@@ -633,7 +641,7 @@ class AiServiceTest {
     /** 未超限时一条不裁——绝大多数会话的常态，也是前缀缓存逐轮照常命中的前提 */
     @Test
     void askKeepsWholeHistoryWhenUnderLimit() {
-        when(aiMessageMapper.selectList(any())).thenReturn(historyOf(40));
+        when(aiMessageRepository.findHistory(USER_ID, CONVERSATION_ID)).thenReturn(historyOf(40));
         stubModel("回答");
 
         service.chat(USER_ID, MESSAGE, CONVERSATION_ID);
@@ -646,7 +654,7 @@ class AiServiceTest {
     /** 窗口起点必须落在 USER 行上，否则上下文会从助手的半句说起 */
     @Test
     void askWindowStartsOnAUserMessage() {
-        when(aiMessageMapper.selectList(any())).thenReturn(historyOf(50));
+        when(aiMessageRepository.findHistory(USER_ID, CONVERSATION_ID)).thenReturn(historyOf(50));
         stubModel("回答");
 
         service.chat(USER_ID, MESSAGE, CONVERSATION_ID);
@@ -657,7 +665,7 @@ class AiServiceTest {
     /** 切片之后本轮新消息仍在最后——顺序错了模型就答非所问 */
     @Test
     void askAppendsNewMessageAfterTheWindow() {
-        when(aiMessageMapper.selectList(any())).thenReturn(historyOf(50));
+        when(aiMessageRepository.findHistory(USER_ID, CONVERSATION_ID)).thenReturn(historyOf(50));
         stubModel("回答");
 
         service.chat(USER_ID, "本轮问题", CONVERSATION_ID);

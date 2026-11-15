@@ -1,10 +1,11 @@
-package com.wlf.ai;
+package com.wlf.ai.interfaces.web;
 
-import com.wlf.ai.dto.AiChatHistoryResponse;
-import com.wlf.ai.dto.AiChatRequest;
-import com.wlf.ai.dto.AiChatResponse;
-import com.wlf.ai.dto.AiSummaryRequest;
-import com.wlf.ai.dto.AiSummaryResponse;
+import com.wlf.ai.application.assistant.AiService;
+import com.wlf.ai.application.assistant.dto.AiChatHistoryResponse;
+import com.wlf.ai.application.assistant.dto.AiChatRequest;
+import com.wlf.ai.application.assistant.dto.AiChatResponse;
+import com.wlf.ai.application.assistant.dto.AiSummaryRequest;
+import com.wlf.ai.application.assistant.dto.AiSummaryResponse;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;
 import jakarta.validation.Valid;

@@ -1,8 +1,12 @@
 package com.wlf.ai;
 
+import com.wlf.ai.domain.assistant.AiMessage;
+import com.wlf.ai.domain.assistant.AiMessageRole;
+import com.wlf.ai.infrastructure.persistence.AiMessageMapper;
+
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.wlf.user.infrastructure.persistence.CollegeMapper;
-import com.wlf.entity.AiMessage;
+import com.wlf.ai.domain.assistant.AiMessage;
 import com.wlf.user.domain.college.College;
 import com.wlf.user.domain.user.User;
 import com.wlf.user.infrastructure.persistence.UserMapper;

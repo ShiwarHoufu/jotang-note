@@ -1,5 +1,7 @@
 package com.wlf.ai;
 
+import com.wlf.ai.application.assistant.AiRateLimiter;
+
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import org.junit.jupiter.api.Test;

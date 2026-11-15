@@ -1,4 +1,4 @@
-package com.wlf.ai.port;
+package com.wlf.ai.application.port.out;
 
 /**
  * 按标题精确检索的一条命中。

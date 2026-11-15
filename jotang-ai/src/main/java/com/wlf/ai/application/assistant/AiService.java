@@ -1,15 +1,17 @@
-package com.wlf.ai;
+package com.wlf.ai.application.assistant;
 
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.ai.dto.AiChatHistoryResponse;
-import com.wlf.ai.dto.AiChatResponse;
-import com.wlf.ai.dto.AiSummaryRequest;
-import com.wlf.ai.dto.AiSummaryResponse;
+import com.wlf.ai.application.assistant.dto.AiChatHistoryResponse;
+import com.wlf.ai.application.assistant.dto.AiChatResponse;
+import com.wlf.ai.application.assistant.dto.AiSummaryRequest;
+import com.wlf.ai.application.assistant.dto.AiSummaryResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
-import com.wlf.entity.AiMessage;
-import com.wlf.ai.port.NoteFileRef;
-import com.wlf.ai.port.NoteContentReader;
+import com.wlf.ai.domain.assistant.AiMessage;
+import com.wlf.ai.domain.assistant.AiMessageRepository;
+import com.wlf.ai.domain.assistant.AiMessageRole;
+import com.wlf.ai.domain.assistant.AiSummaryFilePolicy;
+import com.wlf.ai.application.port.out.NoteFileRef;
+import com.wlf.ai.application.port.out.NoteContentReader;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;
@@ -109,7 +111,7 @@ public class AiService {
     private final AiRateLimiter chatRateLimiter;
     private final NoteContentReader noteContentReader;
     private final StorageService storageService;
-    private final AiMessageMapper aiMessageMapper;
+    private final AiMessageRepository aiMessageRepository;
     private final TransactionTemplate transactionTemplate;
 
     public AiService(ChatClient aiChatClient,
@@ -118,7 +120,7 @@ public class AiService {
                      @Qualifier("aiChatRateLimiter") AiRateLimiter chatRateLimiter,
                      NoteContentReader noteContentReader,
                      StorageService storageService,
-                     AiMessageMapper aiMessageMapper,
+                     AiMessageRepository aiMessageRepository,
                      PlatformTransactionManager transactionManager) {
         this.chatClient = aiChatClient;
         this.filePolicy = filePolicy;
@@ -126,7 +128,7 @@ public class AiService {
         this.chatRateLimiter = chatRateLimiter;
         this.noteContentReader = noteContentReader;
         this.storageService = storageService;
-        this.aiMessageMapper = aiMessageMapper;
+        this.aiMessageRepository = aiMessageRepository;
         // 与 NoteContentReader 同：自己 new，显式持有事务边界，读代码时不必去猜注解在哪一层生效
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -358,7 +360,7 @@ public class AiService {
      * <p>不限频。
      */
     public AiChatHistoryResponse history(Long userId) {
-        String conversationId = aiMessageMapper.selectLatestConversationId(userId);
+        String conversationId = aiMessageRepository.findLatestConversationId(userId);
         if (conversationId == null) {
             return AiChatHistoryResponse.empty();
         }
@@ -374,10 +376,7 @@ public class AiService {
 
     /** 归属校验与取历史是同一次查询：条件里带 {@code user_id}，别人的会话自然查不出来 */
     private List<AiMessage> loadHistory(Long userId, String conversationId) {
-        return aiMessageMapper.selectList(Wrappers.<AiMessage>lambdaQuery()
-                .eq(AiMessage::getUserId, userId)
-                .eq(AiMessage::getConversationId, conversationId)
-                .orderByAsc(AiMessage::getId));
+        return aiMessageRepository.findHistory(userId, conversationId);
     }
 
     /**
@@ -421,8 +420,8 @@ public class AiService {
      */
     private void appendTurn(Long userId, String conversationId, String message, String reply) {
         transactionTemplate.executeWithoutResult(status -> {
-            aiMessageMapper.insert(rowOf(userId, conversationId, AiMessageRole.USER, message));
-            aiMessageMapper.insert(rowOf(userId, conversationId, AiMessageRole.ASSISTANT, reply));
+            aiMessageRepository.insert(rowOf(userId, conversationId, AiMessageRole.USER, message));
+            aiMessageRepository.insert(rowOf(userId, conversationId, AiMessageRole.ASSISTANT, reply));
         });
     }
 

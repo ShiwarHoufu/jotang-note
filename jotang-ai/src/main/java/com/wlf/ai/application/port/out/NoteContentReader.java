@@ -1,4 +1,4 @@
-package com.wlf.ai.port;
+package com.wlf.ai.application.port.out;
 
 import java.util.List;
 

@@ -1,7 +1,7 @@
-package com.wlf.ai;
+package com.wlf.ai.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.wlf.entity.AiMessage;
+import com.wlf.ai.domain.assistant.AiMessage;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;

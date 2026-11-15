@@ -1,8 +1,10 @@
 package com.wlf.ai;
 
-import com.wlf.ai.dto.AiChatHistoryResponse;
-import com.wlf.ai.dto.AiChatResponse;
-import com.wlf.ai.dto.AiSummaryResponse;
+import com.wlf.ai.application.assistant.AiService;
+
+import com.wlf.ai.application.assistant.dto.AiChatHistoryResponse;
+import com.wlf.ai.application.assistant.dto.AiChatResponse;
+import com.wlf.ai.application.assistant.dto.AiSummaryResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.JwtTokenProvider;

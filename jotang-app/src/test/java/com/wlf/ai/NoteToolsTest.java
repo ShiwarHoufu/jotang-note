@@ -1,10 +1,13 @@
 package com.wlf.ai;
 
+import com.wlf.ai.application.assistant.NoteTools;
+import com.wlf.ai.domain.assistant.AiSummaryFilePolicy;
+
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
-import com.wlf.ai.port.NoteContentReader;
-import com.wlf.ai.port.NoteFileRef;
-import com.wlf.ai.port.NoteSearchHit;
+import com.wlf.ai.application.port.out.NoteContentReader;
+import com.wlf.ai.application.port.out.NoteFileRef;
+import com.wlf.ai.application.port.out.NoteSearchHit;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
