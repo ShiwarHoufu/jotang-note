@@ -57,6 +57,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                        // 服务间内部接口：不走用户 JWT，由 InternalTokenInterceptor 校验服务令牌
+                        .requestMatchers("/internal/**").permitAll()
                         // 管理端（§5.6）。JwtAuthFilter 已把 JWT 里的 role 包成 ROLE_ 前缀的权限，
                         // hasRole("ADMIN") 正好对上，不需要在这里再解一次 token。
                         // 两条失败路径都是现成的：未登录 → AuthenticationEntryPoint 出 40100，

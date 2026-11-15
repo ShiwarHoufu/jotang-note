@@ -128,16 +128,3 @@ CREATE TABLE IF NOT EXISTS `password_reset_token` (
   CONSTRAINT `fk_prt_user` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- AI 对话消息
-CREATE TABLE IF NOT EXISTS `ai_message` (
-  `id`              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `user_id`         BIGINT UNSIGNED NOT NULL,
-  `conversation_id` CHAR(36)        NOT NULL COMMENT '服务端生成的 UUID，同一会话的消息共用它',
-  `role`            VARCHAR(16)     NOT NULL COMMENT 'USER / ASSISTANT',
-  `content`         TEXT            NOT NULL,
-  `created_at`      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_conversation` (`conversation_id`, `id`),   -- 取历史：按会话正序
-  KEY `idx_user_created` (`user_id`, `created_at`),   -- 将来的会话列表
-  CONSTRAINT `fk_am_user` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

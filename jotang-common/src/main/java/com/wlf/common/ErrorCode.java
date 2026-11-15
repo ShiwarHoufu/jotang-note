@@ -47,4 +47,14 @@ public enum ErrorCode {
     private final String message;
     /** 该业务码对应的 HTTP 状态码，由 GlobalExceptionHandler 写入响应 */
     private final HttpStatus httpStatus;
+
+    /** 按业务码反查；未知码退回 {@link #SERVER_ERROR}。 */
+    public static ErrorCode fromCode(int code) {
+        for (ErrorCode errorCode : values()) {
+            if (errorCode.code == code) {
+                return errorCode;
+            }
+        }
+        return SERVER_ERROR;
+    }
 }

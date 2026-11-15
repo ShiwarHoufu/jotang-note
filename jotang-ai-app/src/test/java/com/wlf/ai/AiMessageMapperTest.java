@@ -1,15 +1,9 @@
 package com.wlf.ai;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.wlf.ai.domain.assistant.AiMessage;
 import com.wlf.ai.domain.assistant.AiMessageRole;
 import com.wlf.ai.infrastructure.persistence.AiMessageMapper;
-
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.user.infrastructure.persistence.CollegeMapper;
-import com.wlf.ai.domain.assistant.AiMessage;
-import com.wlf.user.domain.college.College;
-import com.wlf.user.domain.user.User;
-import com.wlf.user.infrastructure.persistence.UserMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 验证 {@link AiMessage} 与 ai_message 表的列映射，以及「取自己的会话」那条查询的隔离性。
  *
- * <p><b>值得为它单独起真库</b>：{@code AiServiceTest} 把 mapper 整个 mock 掉了，
+ * <p><b>值得为它单独起真库</b>：{@code AiServiceTest} 把仓储整个 mock 掉了，
  * 列名映射错了不会有任何用例变红——{@code conversation_id} 映射不上会让取历史安静地返回空，
  * 模型从某一轮起就丢掉了全部上下文，不报任何错。所以第一条用例冲的就是列映射。
  *
@@ -36,16 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Transactional
 class AiMessageMapperTest {
 
-    private static final String MARKER = "ZZTEST-AI";
-
     @Autowired
     private AiMessageMapper aiMessageMapper;
-
-    @Autowired
-    private UserMapper userMapper;
-
-    @Autowired
-    private CollegeMapper collegeMapper;
 
     private Long ownerId;
     private Long strangerId;
@@ -53,8 +39,9 @@ class AiMessageMapperTest {
 
     @BeforeEach
     void setUp() {
-        ownerId = insertUser();
-        strangerId = insertUser();
+        // ai_message 在独立 schema 里，没有跨库外键；用随机 id 避免与残留数据撞车
+        ownerId = UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE;
+        strangerId = UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE;
         conversationId = UUID.randomUUID().toString();
     }
 
@@ -119,22 +106,5 @@ class AiMessageMapperTest {
         row.setRole(role.name());
         row.setContent(content);
         return row;
-    }
-
-    private Long insertUser() {
-        String suffix = UUID.randomUUID().toString().substring(0, 8);
-
-        College college = new College();
-        college.setName(MARKER + "-" + suffix);
-        collegeMapper.insert(college);
-
-        User user = new User();
-        user.setUsername(MARKER + "-" + suffix);
-        user.setEmail(MARKER + "-" + suffix + "@example.com");
-        user.setPasswordHash("$2a$10$test-only-not-a-real-bcrypt-hash");
-        user.setNickname(MARKER);
-        user.setCollegeId(college.getId());
-        userMapper.insert(user);
-        return user.getId();
     }
 }

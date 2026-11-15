@@ -84,38 +84,6 @@ spring:
           multiplier: 2.0
           max-interval: 10s
 
-  # AI。
-  # DeepSeek 提供 OpenAI 兼容接口，故复用 openai starter。
-  # 六个模态的自动配置默认全都加载（每个的 matchIfMissing 都是 true）。用不到的五个必须显式关掉：
-  ai:
-    tools:
-      limits:
-        # 超限的默认行为是 THROW，而 Advisor 会把那句英文超限文案（"Tool call limit (N)
-        # exceeded..."）当成助手回答返回——它会被当成正常回复落进 ai_message。
-        # 改成回一条错误结果，让模型自己收尾。
-        on-limit-exceeded: return-error-response
-        # 单轮上限。一次「检索 + 读正文」最多也就 4 次调用，给到 4 已经宽裕
-        max-calls-per-tool-default: 4
-        max-total-tool-calls: 6
-    openai:
-      # 缺 key 时整个上下文起不来，但可以留空：
-      # 留空时 chat 客户端照样构造成功（它不在启动时校验凭据），只有真去调用才失败 → 50300。
-      api-key: ${JOTANG_AI_API_KEY:}
-      base-url: https://api.deepseek.com
-      chat:
-        model: deepseek-flash
-        # 单条请求超时，默认值本就是 60s，这里显式写出来便于调整。
-        # 注意：**没有独立的「连接超时」开关**，要单设得自己定制 SDK client。
-        timeout: 60s
-    model:
-      chat: openai
-      embedding: none
-      image: none
-      audio:
-        speech: none
-        transcription: none
-      moderation: none
-
 # JWT
 jwt:
   secret: ${JWT_SECRET}
@@ -138,6 +106,10 @@ aliyun:
 
 
 jotang:
+  internal:
+    # 服务间内部接口的令牌；网关不暴露 /internal/**
+    token: ${JOTANG_INTERNAL_TOKEN:dev-internal-token}
+
   mail:
     # 发件人。必须与 spring.mail.username（已认证的账号）一致，否则 QQ SMTP 直接拒收
     from: ${JOTANG_MAIL_FROM:${spring.mail.username:}}
