@@ -1,11 +1,11 @@
-package com.wlf.auth;
+package com.wlf.user.application.identity;
 
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
+import com.wlf.user.application.port.out.MailService;
+import com.wlf.user.domain.identity.PasswordResetTokenRepository;
 import com.wlf.user.domain.user.User;
-import com.wlf.mail.MailService;
-import com.wlf.user.infrastructure.persistence.UserMapper;
+import com.wlf.user.domain.user.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,7 +24,7 @@ import java.util.HexFormat;
 /**
  * 密码找回：令牌签发 / 校验 / 一次性消费与作废。
  *
- * <p>跨模块写：本类直接注入 {@link UserMapper}。
+ * <p>跨模块写：本类通过 {@link UserRepository} 写 user 表。
  */
 @Slf4j
 @Service
@@ -38,8 +38,8 @@ public class PasswordResetService {
     /** 原始令牌的熵：{@code SecureRandom} 32 字节。*/
     private static final int TOKEN_BYTES = 32;
 
-    private final UserMapper userMapper;
-    private final PasswordResetTokenMapper tokenMapper;
+    private final UserRepository userRepository;
+    private final PasswordResetTokenRepository tokenRepository;
     private final PasswordResetRateLimiter rateLimiter;
     private final PasswordEncoder passwordEncoder;
     private final MailService mailService;
@@ -53,15 +53,15 @@ public class PasswordResetService {
      */
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public PasswordResetService(UserMapper userMapper,
-                                PasswordResetTokenMapper tokenMapper,
+    public PasswordResetService(UserRepository userRepository,
+                                PasswordResetTokenRepository tokenRepository,
                                 PasswordResetRateLimiter rateLimiter,
                                 PasswordEncoder passwordEncoder,
                                 MailService mailService,
                                 @Value("${jotang.mail.reset-link-base}") String resetLinkBase,
                                 PlatformTransactionManager transactionManager) {
-        this.userMapper = userMapper;
-        this.tokenMapper = tokenMapper;
+        this.userRepository = userRepository;
+        this.tokenRepository = tokenRepository;
         this.rateLimiter = rateLimiter;
         this.passwordEncoder = passwordEncoder;
         this.mailService = mailService;
@@ -78,7 +78,7 @@ public class PasswordResetService {
         // 限频放最前：被拒的请求不该往下走，更不该有机会发出邮件
         rateLimiter.requireSlot(trimmed);
 
-        User user = userMapper.selectOne(Wrappers.<User>lambdaQuery().eq(User::getEmail, trimmed));
+        User user = userRepository.findByEmail(trimmed).orElse(null);
         if (user == null) {
             // 静默返回。看起来和成功一模一样，防用户枚举。
             return;
@@ -89,8 +89,8 @@ public class PasswordResetService {
 
         // 事务：作废旧令牌 + 写入新令牌。
         transactionTemplate.executeWithoutResult(status -> {
-            tokenMapper.invalidateAllUnused(user.getId());
-            tokenMapper.insertToken(user.getId(), tokenHash, TOKEN_TTL.toMinutes());
+            tokenRepository.invalidateAllUnused(user.getId());
+            tokenRepository.insertToken(user.getId(), tokenHash, TOKEN_TTL.toMinutes());
         });
 
         // 发信在事务提交之后：网络调用不跨事务边界。
@@ -104,7 +104,7 @@ public class PasswordResetService {
         String tokenHash = sha256Hex(token.trim());
 
         // 先按哈希查出归属。
-        Long userId = tokenMapper.selectUserIdByTokenHash(tokenHash);
+        Long userId = tokenRepository.findUserIdByTokenHash(tokenHash).orElse(null);
         if (userId == null) {
             throw invalidToken();
         }
@@ -113,15 +113,13 @@ public class PasswordResetService {
         String encoded = passwordEncoder.encode(newPassword);
 
         transactionTemplate.executeWithoutResult(status -> {
-            if (tokenMapper.consume(tokenHash) == 0) {
+            if (!tokenRepository.consume(tokenHash)) {
                 // 令牌不存在 / 已用过 / 已过期，三种情形同一个结果，也报同一个错
                 throw invalidToken();
             }
-            userMapper.update(null, Wrappers.<User>lambdaUpdate()
-                    .eq(User::getId, userId)
-                    .set(User::getPasswordHash, encoded));
+            userRepository.updatePassword(userId, encoded);
             // 改密成功即作废该用户其余未消费的令牌。
-            tokenMapper.invalidateAllUnused(userId);
+            tokenRepository.invalidateAllUnused(userId);
         });
     }
 

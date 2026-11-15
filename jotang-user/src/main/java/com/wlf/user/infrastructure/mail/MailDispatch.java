@@ -1,4 +1,4 @@
-package com.wlf.mail;
+package com.wlf.user.infrastructure.mail;
 
 /**
  * 一条待发送的邮件，也就是消息的载荷。

@@ -3,7 +3,7 @@ package com.wlf.auth;
 import com.wlf.user.infrastructure.persistence.CollegeMapper;
 import com.wlf.user.domain.college.College;
 import com.wlf.user.domain.user.User;
-import com.wlf.mail.MailService;
+import com.wlf.user.application.port.out.MailService;
 import com.wlf.user.infrastructure.persistence.UserMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

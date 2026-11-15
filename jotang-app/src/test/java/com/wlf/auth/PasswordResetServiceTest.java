@@ -1,13 +1,15 @@
 package com.wlf.auth;
+import com.wlf.user.application.identity.PasswordResetService;
+import com.wlf.user.infrastructure.persistence.PasswordResetTokenMapper;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.wlf.user.infrastructure.persistence.CollegeMapper;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.user.domain.college.College;
-import com.wlf.entity.PasswordResetToken;
+import com.wlf.user.domain.identity.PasswordResetToken;
 import com.wlf.user.domain.user.User;
-import com.wlf.mail.MailService;
+import com.wlf.user.application.port.out.MailService;
 import com.wlf.user.infrastructure.persistence.UserMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

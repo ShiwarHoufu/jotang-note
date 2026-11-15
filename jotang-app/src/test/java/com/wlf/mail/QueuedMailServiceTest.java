@@ -1,4 +1,7 @@
 package com.wlf.mail;
+import com.wlf.user.infrastructure.mail.MailDispatch;
+import com.wlf.user.infrastructure.mail.QueuedMailService;
+import com.wlf.user.infrastructure.config.RabbitConfig;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

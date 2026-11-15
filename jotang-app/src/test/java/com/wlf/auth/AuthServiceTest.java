@@ -1,7 +1,8 @@
 package com.wlf.auth;
+import com.wlf.user.application.identity.AuthService;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.auth.dto.RegisterRequest;
+import com.wlf.user.application.identity.dto.RegisterRequest;
 import com.wlf.user.application.dto.UserInfo;
 import com.wlf.user.infrastructure.persistence.CollegeMapper;
 import com.wlf.common.BusinessException;

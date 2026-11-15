@@ -1,9 +1,8 @@
-package com.wlf.auth;
+package com.wlf.user.application.identity;
 
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.auth.dto.LoginRequest;
-import com.wlf.auth.dto.LoginResponse;
-import com.wlf.auth.dto.RegisterRequest;
+import com.wlf.user.application.identity.dto.LoginRequest;
+import com.wlf.user.application.identity.dto.LoginResponse;
+import com.wlf.user.application.identity.dto.RegisterRequest;
 import com.wlf.user.application.dto.UserInfo;
 import com.wlf.user.application.college.CollegeService;
 import com.wlf.common.BusinessException;
@@ -11,8 +10,8 @@ import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
 import com.wlf.common.JwtTokenProvider;
 import com.wlf.user.domain.user.User;
+import com.wlf.user.domain.user.UserRepository;
 import com.wlf.storage.StorageService;
-import com.wlf.user.infrastructure.persistence.UserMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,7 +24,7 @@ import java.util.List;
 @Service
 public class AuthService {
 
-    private final UserMapper userMapper;
+    private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final LoginAttemptLimiter loginAttemptLimiter;
@@ -36,13 +35,13 @@ public class AuthService {
      */
     private final StorageService storageService;
 
-    public AuthService(UserMapper userMapper,
+    public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
                        JwtTokenProvider jwtTokenProvider,
                        LoginAttemptLimiter loginAttemptLimiter,
                        CollegeService collegeService,
                        StorageService storageService) {
-        this.userMapper = userMapper;
+        this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.loginAttemptLimiter = loginAttemptLimiter;
@@ -79,7 +78,7 @@ public class AuthService {
         user.setStatus(1);
 
         try {
-            userMapper.insert(user);
+            userRepository.insert(user);
         }
         catch (DuplicateKeyException ex) {
             // 竞态：两个请求同时通过了上面的预检查。重新判定到底撞了哪个唯一索引。
@@ -100,9 +99,7 @@ public class AuthService {
         String username = request.getUsername().trim();
         loginAttemptLimiter.ensureNotLocked(username);
 
-        User user = userMapper.selectOne(
-                Wrappers.<User>lambdaQuery().eq(User::getUsername, username)
-        );
+        User user = userRepository.findByUsername(username).orElse(null);
 
         if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             loginAttemptLimiter.recordFailure(username);
@@ -121,18 +118,16 @@ public class AuthService {
 
     /** 当前登录用户 */
     public UserInfo currentUser(Long userId) {
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
-        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "用户不存在"));
         return UserInfo.from(user, storageService);
     }
 
     private boolean existsByUsername(String username) {
-        return userMapper.exists(Wrappers.<User>lambdaQuery().eq(User::getUsername, username));
+        return userRepository.existsByUsername(username);
     }
 
     private boolean existsByEmail(String email) {
-        return userMapper.exists(Wrappers.<User>lambdaQuery().eq(User::getEmail, email));
+        return userRepository.existsByEmail(email);
     }
 }

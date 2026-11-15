@@ -1,4 +1,4 @@
-package com.wlf.entity;
+package com.wlf.user.domain.identity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;

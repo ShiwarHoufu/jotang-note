@@ -1,4 +1,4 @@
-package com.wlf.auth;
+package com.wlf.user.application.identity;
 
 /**
  * 重置邮件的主题、链接与正文。

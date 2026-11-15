@@ -1,10 +1,12 @@
-package com.wlf.auth;
+package com.wlf.user.interfaces.web;
 
-import com.wlf.auth.dto.ForgotPasswordRequest;
-import com.wlf.auth.dto.LoginRequest;
-import com.wlf.auth.dto.LoginResponse;
-import com.wlf.auth.dto.RegisterRequest;
-import com.wlf.auth.dto.ResetPasswordRequest;
+import com.wlf.user.application.identity.AuthService;
+import com.wlf.user.application.identity.PasswordResetService;
+import com.wlf.user.application.identity.dto.ForgotPasswordRequest;
+import com.wlf.user.application.identity.dto.LoginRequest;
+import com.wlf.user.application.identity.dto.LoginResponse;
+import com.wlf.user.application.identity.dto.RegisterRequest;
+import com.wlf.user.application.identity.dto.ResetPasswordRequest;
 import com.wlf.user.application.dto.UserInfo;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;

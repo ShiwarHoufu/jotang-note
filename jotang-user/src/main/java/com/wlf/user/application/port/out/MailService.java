@@ -1,4 +1,4 @@
-package com.wlf.mail;
+package com.wlf.user.application.port.out;
 
 /**
  * 发信这件事的唯一抽象。

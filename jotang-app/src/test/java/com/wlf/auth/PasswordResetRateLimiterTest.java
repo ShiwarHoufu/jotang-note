@@ -1,4 +1,5 @@
 package com.wlf.auth;
+import com.wlf.user.application.identity.PasswordResetRateLimiter;
 
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;

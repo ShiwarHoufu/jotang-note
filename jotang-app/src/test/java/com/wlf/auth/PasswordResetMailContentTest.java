@@ -1,4 +1,5 @@
 package com.wlf.auth;
+import com.wlf.user.application.identity.PasswordResetMailContent;
 
 import org.junit.jupiter.api.Test;
 

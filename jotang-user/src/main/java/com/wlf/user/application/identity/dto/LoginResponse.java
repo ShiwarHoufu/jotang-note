@@ -1,4 +1,4 @@
-package com.wlf.auth.dto;
+package com.wlf.user.application.identity.dto;
 
 import com.wlf.user.application.dto.UserInfo;
 

@@ -1,4 +1,4 @@
-package com.wlf.auth;
+package com.wlf.user.application.identity;
 
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;

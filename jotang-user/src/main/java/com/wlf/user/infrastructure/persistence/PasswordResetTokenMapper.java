@@ -1,7 +1,7 @@
-package com.wlf.auth;
+package com.wlf.user.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.wlf.entity.PasswordResetToken;
+import com.wlf.user.domain.identity.PasswordResetToken;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;

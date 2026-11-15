@@ -1,4 +1,7 @@
 package com.wlf.mail;
+import com.wlf.user.infrastructure.config.RabbitConfig;
+import com.wlf.user.infrastructure.mail.MailDispatch;
+import com.wlf.user.infrastructure.mail.SmtpMailService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
