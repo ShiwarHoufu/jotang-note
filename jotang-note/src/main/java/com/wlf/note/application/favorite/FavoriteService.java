@@ -14,9 +14,11 @@ import com.wlf.note.application.favorite.dto.FavoriteItemResponse;
 import com.wlf.note.application.favorite.dto.FavoriteListQuery;
 import com.wlf.note.application.port.out.FavoriteDataAccess;
 import com.wlf.note.application.port.out.NoteDataAccess;
+import com.wlf.note.application.port.out.UserProfileReader;
 import com.wlf.note.domain.note.NoteStatus;
 import com.wlf.note.application.note.dto.NoteTagRef;
 import com.wlf.note.application.note.dto.UploaderResponse;
+import com.wlf.note.application.note.dto.UserProfile;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import org.springframework.dao.DuplicateKeyException;
@@ -51,6 +53,8 @@ public class FavoriteService {
      */
     private final NoteDataAccess noteDataAccess;
 
+    private final UserProfileReader userProfileReader;
+
     /**
      * 收藏列表要展示上传者，头像得拼成公网直连 URL（§6.7）。
      * 与 {@code NoteService} 注入的是同一个接口，头像是公共读 Bucket，不需要签名。
@@ -59,9 +63,11 @@ public class FavoriteService {
 
     public FavoriteService(FavoriteDataAccess favoriteDataAccess,
                            NoteDataAccess noteDataAccess,
+                           UserProfileReader userProfileReader,
                            StorageService storageService) {
         this.favoriteDataAccess = favoriteDataAccess;
         this.noteDataAccess = noteDataAccess;
+        this.userProfileReader = userProfileReader;
         this.storageService = storageService;
     }
 
@@ -174,16 +180,19 @@ public class FavoriteService {
                 .collect(Collectors.groupingBy(NoteTagRef::getNoteId,
                         Collectors.mapping(ref -> new TagResponse(ref.getTagId(), ref.getTagName()),
                                 Collectors.toList())));
+        List<Long> uploaderIds = rows.stream().map(FavoriteItemRow::getUploaderId).distinct().toList();
+        Map<Long, UserProfile> profiles = userProfileReader.batchGet(uploaderIds);
 
         return rows.stream()
-                .map(row -> toFavoriteItem(row, tagsByNote))
+                .map(row -> toFavoriteItem(row, tagsByNote, profiles))
                 .toList();
     }
 
     /**
      * 一行 → 一项。
      */
-    private FavoriteItemResponse toFavoriteItem(FavoriteItemRow row, Map<Long, List<TagResponse>> tagsByNote) {
+    private FavoriteItemResponse toFavoriteItem(FavoriteItemRow row, Map<Long, List<TagResponse>> tagsByNote,
+                                                Map<Long, UserProfile> profiles) {
         NoteStatus status = NoteStatus.valueOf(row.getStatus());
         CourseResponse course = new CourseResponse(row.getCourseId(), row.getCourseName());
 
@@ -195,8 +204,7 @@ public class FavoriteService {
 
         return new FavoriteItemResponse(row.getNoteId(), status, row.getFavoritedAt(),
                 row.getTitle(), course,
-                new UploaderResponse(row.getUploaderId(), row.getNickname(),
-                        avatarUrl(row.getAvatar()), row.getCollegeName()),
+                uploaderOf(row.getUploaderId(), profiles.get(row.getUploaderId())),
                 // 没有标签时给空列表：getOrDefault 的默认值必须是不可变的 List.of()，
                 // 而不是 null——前端可以无条件遍历
                 tagsByNote.getOrDefault(row.getNoteId(), List.of()),
@@ -207,6 +215,14 @@ public class FavoriteService {
     /**
      * 头像对象键 → 公网直连 URL。
      */
+    private UploaderResponse uploaderOf(Long uploaderId, UserProfile uploader) {
+        if (uploader == null) {
+            return new UploaderResponse(uploaderId, null, null, null);
+        }
+        return new UploaderResponse(uploaderId, uploader.nickname(),
+                avatarUrl(uploader.avatarKey()), uploader.collegeName());
+    }
+
     private String avatarUrl(String avatarKey) {
         return avatarKey == null ? null : storageService.publicUrl(Bucket.AVATAR, avatarKey);
     }

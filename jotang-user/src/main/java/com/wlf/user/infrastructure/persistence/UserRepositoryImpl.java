@@ -5,6 +5,8 @@ import com.wlf.user.domain.user.User;
 import com.wlf.user.domain.user.UserRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -44,6 +46,11 @@ public class UserRepositoryImpl implements UserRepository {
     @Override
     public boolean existsByEmail(String email) {
         return userMapper.exists(Wrappers.<User>lambdaQuery().eq(User::getEmail, email));
+    }
+
+    @Override
+    public List<User> findByIds(Collection<Long> ids) {
+        return userMapper.selectList(Wrappers.<User>lambdaQuery().in(User::getId, ids));
     }
 
     @Override

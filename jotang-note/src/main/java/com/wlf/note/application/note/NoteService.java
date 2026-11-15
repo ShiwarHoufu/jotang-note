@@ -41,6 +41,8 @@ import com.wlf.note.application.note.dto.NotePreviewUrlResponse;
 import com.wlf.note.application.note.dto.NoteUpdateRequest;
 import com.wlf.note.application.note.dto.NoteUploadRequest;
 import com.wlf.note.application.note.dto.UploaderResponse;
+import com.wlf.note.application.note.dto.UserProfile;
+import com.wlf.note.application.port.out.UserProfileReader;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.OrphanObjectPublisher;
 import com.wlf.storage.StorageService;
@@ -97,6 +99,7 @@ public class NoteService {
 
     private final NoteDataAccess noteDataAccess;
     private final NoteMetaCache noteMetaCache;
+    private final UserProfileReader userProfileReader;
     private final CourseService courseService;
     private final TagService tagService;
     /** 详情页要填「是否已收藏」，这是 note 模块第一次反向依赖 favorite 模块。*/
@@ -110,6 +113,7 @@ public class NoteService {
 
     public NoteService(NoteDataAccess noteDataAccess,
                        NoteMetaCache noteMetaCache,
+                       UserProfileReader userProfileReader,
                        CourseService courseService,
                        TagService tagService,
                        FavoriteService favoriteService,
@@ -120,6 +124,7 @@ public class NoteService {
                        PlatformTransactionManager transactionManager) {
         this.noteDataAccess = noteDataAccess;
         this.noteMetaCache = noteMetaCache;
+        this.userProfileReader = userProfileReader;
         this.courseService = courseService;
         this.tagService = tagService;
         this.favoriteService = favoriteService;
@@ -185,7 +190,9 @@ public class NoteService {
         // ONLINE 状态的笔记浏览量自增。
         noteDataAccess.incrementViewCount(noteId, NoteStatus.ONLINE.name());
 
-        return toDetailResponse(row, meta.tags(), status, viewerId);
+        UserProfile uploader = userProfileReader.batchGet(List.of(row.getUploaderId()))
+                .get(row.getUploaderId());
+        return toDetailResponse(row, meta.tags(), status, viewerId, uploader);
     }
 
     /**
@@ -194,7 +201,8 @@ public class NoteService {
     private NoteDetailResponse toDetailResponse(NoteDetailRow row,
                                                 List<TagResponse> tags,
                                                 NoteStatus status,
-                                                Long viewerId) {
+                                                Long viewerId,
+                                                UserProfile uploader) {
         return new NoteDetailResponse(
                 row.getId(),
                 row.getTitle(),
@@ -202,9 +210,7 @@ public class NoteService {
                 row.getTeacher(),
                 status,
                 new CourseResponse(row.getCourseId(), row.getCourseName()),
-                new UploaderResponse(
-                        row.getUploaderId(), row.getNickname(),
-                        avatarUrl(row.getAvatar()), row.getCollegeName()),
+                uploaderOf(row.getUploaderId(), uploader),
                 tags,
                 row.getViewCount(),
                 row.getDownloadCount(),
@@ -304,6 +310,14 @@ public class NoteService {
     /**
      * 头像对象键 → 公网直连 URL。
      */
+    private UploaderResponse uploaderOf(Long uploaderId, UserProfile uploader) {
+        if (uploader == null) {
+            return new UploaderResponse(uploaderId, null, null, null);
+        }
+        return new UploaderResponse(uploaderId, uploader.nickname(),
+                avatarUrl(uploader.avatarKey()), uploader.collegeName());
+    }
+
     private String avatarUrl(String avatarKey) {
         return avatarKey == null ? null : storageService.publicUrl(Bucket.AVATAR, avatarKey);
     }
@@ -384,8 +398,10 @@ public class NoteService {
             return List.of();
         }
         List<Long> noteIds = rows.stream().map(NoteListRow::getId).toList();
+        List<Long> uploaderIds = rows.stream().map(NoteListRow::getUploaderId).distinct().toList();
 
         Map<Long, List<TagResponse>> tagsByNote = tagsGroupedByNote(noteIds);
+        Map<Long, UserProfile> profiles = userProfileReader.batchGet(uploaderIds);
 
         Set<Long> favoritedNoteIds = favoriteService.favoritedNoteIds(viewerId, noteIds);
 
@@ -394,8 +410,7 @@ public class NoteService {
                         row.getId(),
                         row.getTitle(),
                         new CourseResponse(row.getCourseId(), row.getCourseName()),
-                        new UploaderResponse(row.getUploaderId(), row.getNickname(),
-                                avatarUrl(row.getAvatar()), row.getCollegeName()),
+                        uploaderOf(row.getUploaderId(), profiles.get(row.getUploaderId())),
                         // 没有标签时给空列表：getOrDefault 的默认值必须是不可变的 List.of()，
                         // 而不是 null——前端可以无条件遍历
                         tagsByNote.getOrDefault(row.getId(), List.of()),

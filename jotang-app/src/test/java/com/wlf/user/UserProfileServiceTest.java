@@ -248,12 +248,14 @@ class UserProfileServiceTest {
         Long userId = insertUser(oldCollege.getId(), "昵称");
         Long noteId = createNote(userId);
 
-        assertThat(noteMapper.selectDetail(noteId).getCollegeName()).isEqualTo(oldCollege.getName());
+        assertThat(userService.batchDisplayInfo(java.util.List.of(userId)).get(userId).collegeName())
+                .isEqualTo(oldCollege.getName());
 
         userService.updateProfile(userId, request("昵称", newCollege.getId()));
 
         // 这一行 note 自始至终没被碰过，学院却变了——归属是推导出来的
-        assertThat(noteMapper.selectDetail(noteId).getCollegeName()).isEqualTo(newCollege.getName());
+        assertThat(userService.batchDisplayInfo(java.util.List.of(userId)).get(userId).collegeName())
+                .isEqualTo(newCollege.getName());
     }
 
     // ==================== 辅助 ====================

@@ -46,7 +46,6 @@ class RedisConfigTest {
         assertThat(restored.row().getTitle()).isEqualTo("笔记标题");
         assertThat(restored.row().getStatus()).isEqualTo("ONLINE");
         assertThat(restored.row().getContentType()).isEqualTo("image/png");
-        assertThat(restored.row().getCollegeName()).isEqualTo("计算机学院");
         // 时间类型：序列化丢精度的话这里最先红
         assertThat(restored.row().getCreatedAt()).isEqualTo(LocalDateTime.of(2026, 10, 9, 12, 30, 45));
         // 嵌套的 record 集合（TagResponse 有值语义，可以整体比）
@@ -96,9 +95,6 @@ class RedisConfigTest {
         row.setCourseId(2L);
         row.setCourseName("数据结构");
         row.setUploaderId(3L);
-        row.setNickname("上传者");
-        row.setAvatar("avatars/3/abc.png");
-        row.setCollegeName("计算机学院");
 
         return new NoteMeta(row, List.of(new TagResponse(5L, "期末"), new TagResponse(6L, "复习")));
     }

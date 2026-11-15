@@ -36,9 +36,7 @@ public class NoteFile {
     private String contentType;
 
     /**
-     * 1=对象已物理清理。与 {@link Course#getIsOther()} 同理用 Integer 而非 boolean：
-     * TINYINT 列与 {@code user.status} 保持一致，也避开 Lombok 对 boolean 生成
-     * {@code isPurged()} 后 Jackson 把属性名判成 {@code purged} 的问题。
+     * 1=对象已物理清理。
      */
     private Integer isPurged;
 

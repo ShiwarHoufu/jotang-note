@@ -1,5 +1,7 @@
 package com.wlf.user.domain.user;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -16,6 +18,8 @@ public interface UserRepository {
     boolean existsByUsername(String username);
 
     boolean existsByEmail(String email);
+
+    List<User> findByIds(Collection<Long> ids);
 
     void insert(User user);
 

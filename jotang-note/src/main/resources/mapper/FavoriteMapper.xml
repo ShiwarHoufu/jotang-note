@@ -32,15 +32,10 @@
                n.updated_at,
                c.id   AS course_id,
                c.name AS course_name,
-               u.id   AS uploader_id,
-               u.nickname,
-               u.avatar,
-               g.name AS college_name
+               n.uploader_id AS uploader_id
         FROM favorite f
                  JOIN note n ON n.id = f.note_id
                  JOIN course c ON c.id = n.course_id
-                 JOIN `user` u ON u.id = n.uploader_id
-                 JOIN college g ON g.id = u.college_id
         WHERE f.user_id = #{userId}
         ORDER BY f.created_at DESC, f.id DESC
     </select>

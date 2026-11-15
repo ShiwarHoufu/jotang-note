@@ -1,7 +1,9 @@
 package com.wlf.user.application.profile;
 
+import com.wlf.user.application.dto.UserDisplayInfo;
 import com.wlf.user.application.dto.UserInfo;
 import com.wlf.user.application.college.CollegeService;
+import com.wlf.user.application.college.dto.CollegeResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
@@ -20,7 +22,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 资料维护、头像上传、个人主页统计。
@@ -62,6 +67,21 @@ public class UserService {
         this.avatarFilePolicy = avatarFilePolicy;
         this.storageService = storageService;
         this.orphanObjectPublisher = orphanObjectPublisher;
+    }
+
+    /**
+     * 批量取用户展示信息。笔记列表与收藏列表用它填上传者昵称、头像与学院。
+     */
+    public Map<Long, UserDisplayInfo> batchDisplayInfo(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> collegeNames = collegeService.list().stream()
+                .collect(Collectors.toMap(CollegeResponse::id, CollegeResponse::name));
+        return userRepository.findByIds(userIds).stream()
+                .collect(Collectors.toMap(User::getId,
+                        user -> new UserDisplayInfo(user.getId(), user.getNickname(), user.getAvatar(),
+                                collegeNames.get(user.getCollegeId()))));
     }
 
     /**
