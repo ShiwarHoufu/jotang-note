@@ -7,7 +7,7 @@
   全部是 INNER JOIN：这几条连接关系在建表语句里都有外键兜着——
   fk_fav_note / fk_note_course / fk_note_uploader 非空，user.college_id 非空。
 -->
-<mapper namespace="com.wlf.favorite.FavoriteMapper">
+<mapper namespace="com.wlf.note.infrastructure.persistence.FavoriteMapper">
 
     <!--
       我的收藏的一页。
@@ -21,7 +21,7 @@
       排序：f.created_at DESC 是主键，f.id DESC 做次级键。
       created_at 是秒精度的 DATETIME，同一秒内连收几篇就会并列，没有次级键时翻页会看到重复或漏掉的项。
     -->
-    <select id="selectFavoritePage" resultType="com.wlf.favorite.FavoriteItemRow">
+    <select id="selectFavoritePage" resultType="com.wlf.note.application.favorite.dto.FavoriteItemRow">
         SELECT f.note_id,
                f.created_at AS favorited_at,
                n.status,

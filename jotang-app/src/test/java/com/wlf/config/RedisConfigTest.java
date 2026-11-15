@@ -1,8 +1,8 @@
 package com.wlf.config;
 
-import com.wlf.catalog.dto.TagResponse;
-import com.wlf.note.NoteDetailRow;
-import com.wlf.note.NoteMeta;
+import com.wlf.note.application.catalog.dto.TagResponse;
+import com.wlf.note.application.note.dto.NoteDetailRow;
+import com.wlf.note.application.note.dto.NoteMeta;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.serializer.RedisSerializer;
 

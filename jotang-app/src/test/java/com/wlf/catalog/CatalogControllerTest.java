@@ -1,8 +1,10 @@
 package com.wlf.catalog;
+import com.wlf.note.infrastructure.persistence.CourseMapper;
+import com.wlf.note.infrastructure.persistence.TagMapper;
 
 import com.wlf.common.JwtTokenProvider;
-import com.wlf.entity.Course;
-import com.wlf.entity.Tag;
+import com.wlf.note.domain.catalog.Course;
+import com.wlf.note.domain.catalog.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

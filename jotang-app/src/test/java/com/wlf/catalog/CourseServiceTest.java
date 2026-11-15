@@ -1,8 +1,10 @@
 package com.wlf.catalog;
+import com.wlf.note.application.catalog.CourseService;
+import com.wlf.note.infrastructure.persistence.CourseMapper;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.catalog.dto.CourseResponse;
-import com.wlf.entity.Course;
+import com.wlf.note.application.catalog.dto.CourseResponse;
+import com.wlf.note.domain.catalog.Course;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

@@ -1,16 +1,16 @@
 package com.wlf.admin;
 
 import com.wlf.user.infrastructure.persistence.CollegeMapper;
-import com.wlf.catalog.CourseMapper;
+import com.wlf.note.infrastructure.persistence.CourseMapper;
 import com.wlf.common.JwtTokenProvider;
 import com.wlf.user.domain.college.College;
-import com.wlf.entity.Course;
-import com.wlf.entity.Note;
-import com.wlf.entity.NoteFile;
+import com.wlf.note.domain.catalog.Course;
+import com.wlf.note.domain.note.Note;
+import com.wlf.note.domain.note.NoteFile;
 import com.wlf.user.domain.user.User;
-import com.wlf.note.NoteMapper;
-import com.wlf.note.NoteFileMapper;
-import com.wlf.note.NoteStatus;
+import com.wlf.note.infrastructure.persistence.NoteMapper;
+import com.wlf.note.infrastructure.persistence.NoteFileMapper;
+import com.wlf.note.domain.note.NoteStatus;
 import com.wlf.storage.StorageService;
 import com.wlf.user.infrastructure.persistence.UserMapper;
 import org.junit.jupiter.api.BeforeEach;

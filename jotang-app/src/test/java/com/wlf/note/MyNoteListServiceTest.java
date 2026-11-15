@@ -1,17 +1,21 @@
 package com.wlf.note;
+import com.wlf.note.application.note.*;
+import com.wlf.note.application.note.dto.*;
+import com.wlf.note.domain.note.*;
+import com.wlf.note.infrastructure.persistence.*;
 
 import com.wlf.user.infrastructure.persistence.CollegeMapper;
-import com.wlf.catalog.CourseMapper;
+import com.wlf.note.infrastructure.persistence.CourseMapper;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
 import com.wlf.common.PageResponse;
 import com.wlf.user.domain.college.College;
-import com.wlf.entity.Course;
-import com.wlf.entity.Note;
+import com.wlf.note.domain.catalog.Course;
+import com.wlf.note.domain.note.Note;
 import com.wlf.user.domain.user.User;
-import com.wlf.note.dto.MyNoteItemResponse;
-import com.wlf.note.dto.MyNoteListQuery;
+import com.wlf.note.application.note.dto.MyNoteItemResponse;
+import com.wlf.note.application.note.dto.MyNoteListQuery;
 import com.wlf.user.infrastructure.persistence.UserMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

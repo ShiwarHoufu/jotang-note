@@ -1,9 +1,13 @@
 package com.wlf.note.dto;
+import com.wlf.note.application.note.*;
+import com.wlf.note.application.note.dto.*;
+import com.wlf.note.domain.note.*;
+import com.wlf.note.infrastructure.persistence.*;
 
-import com.wlf.catalog.dto.CourseResponse;
-import com.wlf.catalog.dto.TagResponse;
-import com.wlf.note.NoteStatus;
-import com.wlf.note.PreviewMode;
+import com.wlf.note.application.catalog.dto.CourseResponse;
+import com.wlf.note.application.catalog.dto.TagResponse;
+import com.wlf.note.domain.note.NoteStatus;
+import com.wlf.note.domain.note.PreviewMode;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;

@@ -1,11 +1,13 @@
 package com.wlf.catalog;
+import com.wlf.note.application.catalog.TagService;
+import com.wlf.note.infrastructure.persistence.TagMapper;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.catalog.dto.TagResponse;
+import com.wlf.note.application.catalog.dto.TagResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
-import com.wlf.entity.Tag;
+import com.wlf.note.domain.catalog.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
