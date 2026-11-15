@@ -1,6 +1,6 @@
-package com.wlf.auth.dto;
+package com.wlf.user.application.dto;
 
-import com.wlf.entity.User;
+import com.wlf.user.domain.user.User;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 

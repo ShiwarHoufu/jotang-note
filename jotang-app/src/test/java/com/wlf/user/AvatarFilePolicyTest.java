@@ -1,4 +1,6 @@
 package com.wlf.user;
+import com.wlf.user.domain.user.AvatarDecision;
+import com.wlf.user.domain.user.AvatarFilePolicy;
 
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;

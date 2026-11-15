@@ -1,6 +1,6 @@
-package com.wlf.user.college.dto;
+package com.wlf.user.application.college.dto;
 
-import com.wlf.entity.College;
+import com.wlf.user.domain.college.College;
 
 /**
  * 学院出参。

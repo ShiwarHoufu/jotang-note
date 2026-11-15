@@ -1,10 +1,11 @@
-package com.wlf.user;
+package com.wlf.user.interfaces.web;
 
-import com.wlf.auth.dto.UserInfo;
+import com.wlf.user.application.dto.UserInfo;
+import com.wlf.user.application.profile.UserService;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;
-import com.wlf.user.dto.AvatarUploadRequest;
-import com.wlf.user.dto.UpdateProfileRequest;
+import com.wlf.user.application.profile.dto.AvatarUploadRequest;
+import com.wlf.user.application.profile.dto.UpdateProfileRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.ModelAttribute;

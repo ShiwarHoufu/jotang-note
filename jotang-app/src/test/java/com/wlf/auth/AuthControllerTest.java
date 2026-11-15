@@ -1,7 +1,7 @@
 package com.wlf.auth;
 
-import com.wlf.user.college.CollegeMapper;
-import com.wlf.entity.College;
+import com.wlf.user.infrastructure.persistence.CollegeMapper;
+import com.wlf.user.domain.college.College;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

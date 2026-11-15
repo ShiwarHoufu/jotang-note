@@ -1,17 +1,19 @@
-package com.wlf.user;
+package com.wlf.user.application.profile;
 
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.auth.dto.UserInfo;
-import com.wlf.user.college.CollegeService;
+import com.wlf.user.application.dto.UserInfo;
+import com.wlf.user.application.college.CollegeService;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
-import com.wlf.entity.User;
+import com.wlf.user.domain.user.AvatarDecision;
+import com.wlf.user.domain.user.AvatarFilePolicy;
+import com.wlf.user.domain.user.User;
+import com.wlf.user.domain.user.UserRepository;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.OrphanObjectPublisher;
 import com.wlf.storage.StorageService;
 import com.wlf.storage.StoredObject;
-import com.wlf.user.dto.UpdateProfileRequest;
+import com.wlf.user.application.profile.dto.UpdateProfileRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -38,7 +40,7 @@ public class UserService {
      */
     private static final String AVATAR_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
-    private final UserMapper userMapper;
+    private final UserRepository userRepository;
 
     private final CollegeService collegeService;
 
@@ -50,12 +52,12 @@ public class UserService {
     /** 补偿删除的第二道通道，与 note 上传那条共用同一个队列。*/
     private final OrphanObjectPublisher orphanObjectPublisher;
 
-    public UserService(UserMapper userMapper,
+    public UserService(UserRepository userRepository,
                        CollegeService collegeService,
                        AvatarFilePolicy avatarFilePolicy,
                        StorageService storageService,
                        OrphanObjectPublisher orphanObjectPublisher) {
-        this.userMapper = userMapper;
+        this.userRepository = userRepository;
         this.collegeService = collegeService;
         this.avatarFilePolicy = avatarFilePolicy;
         this.storageService = storageService;
@@ -67,10 +69,8 @@ public class UserService {
      */
     public UserInfo updateProfile(Long userId, UpdateProfileRequest request) {
         // 先判用户、后判学院
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
-        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "用户不存在"));
         if (!collegeService.exists(request.getCollegeId())) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, ErrorCode.PARAM_INVALID.getMessage(),
                     List.of(new FieldViolation("collegeId", "学院不存在")));
@@ -78,10 +78,7 @@ public class UserService {
 
         String nickname = request.getNickname().trim();
 
-        userMapper.update(null, Wrappers.<User>lambdaUpdate()
-                .set(User::getNickname, nickname)
-                .set(User::getCollegeId, request.getCollegeId())
-                .eq(User::getId, userId));
+        userRepository.updateProfile(userId, nickname, request.getCollegeId());
 
         user.setNickname(nickname);
         user.setCollegeId(request.getCollegeId());
@@ -96,19 +93,15 @@ public class UserService {
      */
     public UserInfo uploadAvatar(Long userId, MultipartFile file) {
 
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
-        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "用户不存在"));
 
         AvatarDecision decision = inspectAvatar(file, userId);
         String key = avatarFilePolicy.objectKey(userId, decision.extension());
         StoredObject stored = storeAvatar(file, key, decision, userId);
 
         try {
-            userMapper.update(null, Wrappers.<User>lambdaUpdate()
-                    .set(User::getAvatar, stored.key())
-                    .eq(User::getId, userId));
+            userRepository.updateAvatar(userId, stored.key());
         } catch (RuntimeException e) {
             // 更新失败则刚传的对象无人引用，删掉；删不掉也只是留下孤儿，不影响本次请求的成败
             purgeQuietly(stored.key());

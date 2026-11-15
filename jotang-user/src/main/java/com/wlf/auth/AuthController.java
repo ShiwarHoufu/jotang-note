@@ -5,7 +5,7 @@ import com.wlf.auth.dto.LoginRequest;
 import com.wlf.auth.dto.LoginResponse;
 import com.wlf.auth.dto.RegisterRequest;
 import com.wlf.auth.dto.ResetPasswordRequest;
-import com.wlf.auth.dto.UserInfo;
+import com.wlf.user.application.dto.UserInfo;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;
 import jakarta.validation.Valid;

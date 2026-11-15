@@ -1,16 +1,16 @@
 package com.wlf.favorite;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.user.college.CollegeMapper;
+import com.wlf.user.infrastructure.persistence.CollegeMapper;
 import com.wlf.catalog.CourseMapper;
 import com.wlf.common.JwtTokenProvider;
-import com.wlf.entity.College;
+import com.wlf.user.domain.college.College;
 import com.wlf.entity.Course;
 import com.wlf.entity.Note;
-import com.wlf.entity.User;
+import com.wlf.user.domain.user.User;
 import com.wlf.note.NoteMapper;
 import com.wlf.note.NoteStatus;
-import com.wlf.user.UserMapper;
+import com.wlf.user.infrastructure.persistence.UserMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

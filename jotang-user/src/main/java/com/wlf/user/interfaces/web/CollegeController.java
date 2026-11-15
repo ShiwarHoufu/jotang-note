@@ -1,7 +1,8 @@
-package com.wlf.user.college;
+package com.wlf.user.interfaces.web;
 
 import com.wlf.common.ApiResponse;
-import com.wlf.user.college.dto.CollegeResponse;
+import com.wlf.user.application.college.CollegeService;
+import com.wlf.user.application.college.dto.CollegeResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 

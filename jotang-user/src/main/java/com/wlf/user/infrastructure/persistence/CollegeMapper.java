@@ -1,7 +1,7 @@
-package com.wlf.user.college;
+package com.wlf.user.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.wlf.entity.College;
+import com.wlf.user.domain.college.College;
 import org.apache.ibatis.annotations.Mapper;
 
 /**

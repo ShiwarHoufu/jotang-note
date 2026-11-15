@@ -1,9 +1,10 @@
 package com.wlf.user;
+import com.wlf.user.infrastructure.persistence.UserMapper;
 
-import com.wlf.user.college.CollegeMapper;
+import com.wlf.user.infrastructure.persistence.CollegeMapper;
 import com.wlf.common.JwtTokenProvider;
-import com.wlf.entity.College;
-import com.wlf.entity.User;
+import com.wlf.user.domain.college.College;
+import com.wlf.user.domain.user.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -69,7 +70,7 @@ class UserControllerTest {
     /**
      * 改完回显更新后的资料，形状与 {@code GET /api/auth/me} 完全一致。
      *
-     * <p>{@code avatarUrl} 目前恒为 null（头像接口未做，见 {@link com.wlf.auth.dto.UserInfo}），
+     * <p>{@code avatarUrl} 目前恒为 null（头像接口未做，见 {@link com.wlf.user.application.dto.UserInfo}），
      * 这条顺带把它钉住——哪天头像切片落地，会在这里红，提醒改的人一并更新契约。
      */
     @Test

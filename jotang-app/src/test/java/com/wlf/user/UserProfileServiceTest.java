@@ -1,19 +1,21 @@
 package com.wlf.user;
+import com.wlf.user.application.profile.UserService;
+import com.wlf.user.infrastructure.persistence.UserMapper;
 
-import com.wlf.auth.dto.UserInfo;
-import com.wlf.user.college.CollegeMapper;
+import com.wlf.user.application.dto.UserInfo;
+import com.wlf.user.infrastructure.persistence.CollegeMapper;
 import com.wlf.catalog.CourseMapper;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;
-import com.wlf.entity.College;
+import com.wlf.user.domain.college.College;
 import com.wlf.entity.Course;
 import com.wlf.entity.Note;
 import com.wlf.entity.NoteFile;
-import com.wlf.entity.User;
+import com.wlf.user.domain.user.User;
 import com.wlf.note.NoteFileMapper;
 import com.wlf.note.NoteMapper;
-import com.wlf.user.dto.UpdateProfileRequest;
+import com.wlf.user.application.profile.dto.UpdateProfileRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

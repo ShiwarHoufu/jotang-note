@@ -1,4 +1,4 @@
-package com.wlf.user.dto;
+package com.wlf.user.application.profile.dto;
 
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;

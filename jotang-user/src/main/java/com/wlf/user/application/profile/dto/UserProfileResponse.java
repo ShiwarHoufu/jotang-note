@@ -1,4 +1,4 @@
-package com.wlf.user.dto;
+package com.wlf.user.application.profile.dto;
 
 /**
  * 个人主页出参：昵称 / avatarUrl / 上传数 / 累计浏览下载。

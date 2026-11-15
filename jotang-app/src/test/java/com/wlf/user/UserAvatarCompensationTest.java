@@ -1,6 +1,8 @@
 package com.wlf.user;
+import com.wlf.user.application.profile.UserService;
+import com.wlf.user.infrastructure.persistence.UserMapper;
 
-import com.wlf.entity.User;
+import com.wlf.user.domain.user.User;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.OrphanObjectPublisher;
 import com.wlf.storage.StorageService;

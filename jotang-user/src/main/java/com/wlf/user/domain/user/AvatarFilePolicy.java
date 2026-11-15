@@ -1,4 +1,4 @@
-package com.wlf.user;
+package com.wlf.user.domain.user;
 
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;

@@ -1,5 +1,7 @@
 package com.wlf.auth.dto;
 
+import com.wlf.user.application.dto.UserInfo;
+
 /**
  * 登录出参：JWT + 用户信息。见《概要设计》§5.1。
  *

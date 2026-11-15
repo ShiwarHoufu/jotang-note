@@ -1,4 +1,4 @@
-package com.wlf.user;
+package com.wlf.user.domain.user;
 
 /**
  * 头像准入判定的结果，由 {@link AvatarFilePolicy#inspect} 产出。
