@@ -1,6 +1,5 @@
 package com.wlf.storage;
 
-import com.wlf.config.RabbitConfig;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.amqp.AmqpException;
@@ -32,15 +31,15 @@ class QueuedOrphanObjectPublisherTest {
     private final RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
     private final QueuedOrphanObjectPublisher publisher = new QueuedOrphanObjectPublisher(rabbitTemplate);
 
-    /** 交换机与路由键用 {@link RabbitConfig} 的常量比对，把「拓扑名笔误」钉在编译期之外 */
+    /** 交换机与路由键用 {@link StorageRabbitConfig} 的常量比对，把「拓扑名笔误」钉在编译期之外 */
     @Test
     void publishesToTheDeclaredExchangeAndRoutingKey() {
         publisher.publish(Bucket.NOTE, KEY);
 
         ArgumentCaptor<Object> payload = ArgumentCaptor.forClass(Object.class);
         verify(rabbitTemplate).convertAndSend(
-                eq(RabbitConfig.STORAGE_EXCHANGE),
-                eq(RabbitConfig.ORPHAN_OBJECT_ROUTING_KEY),
+                eq(StorageRabbitConfig.STORAGE_EXCHANGE),
+                eq(StorageRabbitConfig.ORPHAN_OBJECT_ROUTING_KEY),
                 payload.capture(),
                 any(MessagePostProcessor.class));
 

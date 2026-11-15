@@ -14,7 +14,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * RabbitMQ 拓扑与消息格式。
+ * 邮件队列的 RabbitMQ 拓扑与消息格式。
  */
 @Slf4j
 @Configuration
@@ -42,34 +42,6 @@ public class RabbitConfig {
      * 收件人不存在、正文格式变了）需要人看一眼才知道。管理台上看到它非空时的处置见 §7.3。
      */
     public static final String PASSWORD_RESET_DLQ = "jotang.mail.password-reset.dlq";
-
-    // ==================== 存储清理链路：补偿删除的孤儿对象 ====================
-    // 这条链路的参数取舍与邮件那条**刻意相反**，逐条对照见 orphanObjectQueue() 与
-    // 《功能说明：笔记上传》§2.5 的对照表——别拿「统一两套 MQ 配置」当清理。
-
-    /**
-     * 存储清理交换机。**不挂在 {@link #MAIL_EXCHANGE} 上**：一条 exchange 加个路由键确实更省，
-     * 但那样 {@code jotang.mail.*} 这个名字就开始承载存储消息了。拓扑名是代码契约，宁多一个 Bean。
-     */
-    public static final String STORAGE_EXCHANGE = "jotang.storage.exchange";
-
-    /** 孤儿对象待清理的路由键。 */
-    public static final String ORPHAN_OBJECT_ROUTING_KEY = "storage.orphan-object.purge";
-
-    /** 孤儿对象的工作队列。 */
-    public static final String ORPHAN_OBJECT_QUEUE = "jotang.storage.orphan-object.q";
-
-    /** 存储清理的死信交换机。 */
-    public static final String STORAGE_DLX = "jotang.storage.dlx";
-
-    /** 存储清理的死信路由键。 */
-    public static final String ORPHAN_OBJECT_DEAD_ROUTING_KEY = "storage.orphan-object.dead";
-
-    /**
-     * 孤儿对象的死信队列。<b>刻意不挂消费者</b>——与邮件那条同理，它是取证面而非重试池，
-     * 但这里的处置不同：一条消息 = 一个还在桶里的孤儿对象，等人工按记录去删。
-     */
-    public static final String ORPHAN_OBJECT_DLQ = "jotang.storage.orphan-object.dlq";
 
     @Bean
     public DirectExchange mailExchange() {
@@ -116,48 +88,6 @@ public class RabbitConfig {
         return BindingBuilder.bind(passwordResetDeadLetterQueue)
                 .to(mailDeadLetterExchange)
                 .with(MAIL_DEAD_ROUTING_KEY);
-    }
-
-    @Bean
-    public DirectExchange storageExchange() {
-        return new DirectExchange(STORAGE_EXCHANGE, true, false);
-    }
-
-    @Bean
-    public DirectExchange storageDeadLetterExchange() {
-        return new DirectExchange(STORAGE_DLX, true, false);
-    }
-
-    /**
-     * 孤儿对象工作队列。
-     */
-    @Bean
-    public Queue orphanObjectQueue() {
-        return QueueBuilder.durable(ORPHAN_OBJECT_QUEUE)
-                .deadLetterExchange(STORAGE_DLX)
-                .deadLetterRoutingKey(ORPHAN_OBJECT_DEAD_ROUTING_KEY)
-                .build();
-    }
-
-    /**
-     * 孤儿对象死信队列。无 TTL
-     */
-    @Bean
-    public Queue orphanObjectDeadLetterQueue() {
-        return QueueBuilder.durable(ORPHAN_OBJECT_DLQ).build();
-    }
-
-    @Bean
-    public Binding orphanObjectBinding(Queue orphanObjectQueue, DirectExchange storageExchange) {
-        return BindingBuilder.bind(orphanObjectQueue).to(storageExchange).with(ORPHAN_OBJECT_ROUTING_KEY);
-    }
-
-    @Bean
-    public Binding orphanObjectDeadLetterBinding(Queue orphanObjectDeadLetterQueue,
-                                                 DirectExchange storageDeadLetterExchange) {
-        return BindingBuilder.bind(orphanObjectDeadLetterQueue)
-                .to(storageDeadLetterExchange)
-                .with(ORPHAN_OBJECT_DEAD_ROUTING_KEY);
     }
 
     /**

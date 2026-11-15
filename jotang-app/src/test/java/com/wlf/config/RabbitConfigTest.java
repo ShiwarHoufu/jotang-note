@@ -1,5 +1,6 @@
 package com.wlf.config;
 
+import com.wlf.storage.StorageRabbitConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
@@ -31,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RabbitConfigTest {
 
     private final RabbitConfig config = new RabbitConfig();
+    private final StorageRabbitConfig storageConfig = new StorageRabbitConfig();
 
     @Test
     void resetQueueDeadLettersToTheDeadLetterExchange() {
@@ -79,13 +81,13 @@ class RabbitConfigTest {
 
     @Test
     void orphanObjectQueueDeadLettersToTheDeadLetterExchange() {
-        Queue queue = config.orphanObjectQueue();
+        Queue queue = storageConfig.orphanObjectQueue();
 
-        assertThat(queue.getName()).isEqualTo(RabbitConfig.ORPHAN_OBJECT_QUEUE);
+        assertThat(queue.getName()).isEqualTo(StorageRabbitConfig.ORPHAN_OBJECT_QUEUE);
         assertThat(queue.isDurable()).isTrue();
         assertThat(queue.getArguments())
-                .containsEntry("x-dead-letter-exchange", RabbitConfig.STORAGE_DLX)
-                .containsEntry("x-dead-letter-routing-key", RabbitConfig.ORPHAN_OBJECT_DEAD_ROUTING_KEY);
+                .containsEntry("x-dead-letter-exchange", StorageRabbitConfig.STORAGE_DLX)
+                .containsEntry("x-dead-letter-routing-key", StorageRabbitConfig.ORPHAN_OBJECT_DEAD_ROUTING_KEY);
     }
 
     /**
@@ -97,7 +99,7 @@ class RabbitConfigTest {
      */
     @Test
     void orphanObjectQueueKeepsNoCapacityLimits() {
-        assertThat(config.orphanObjectQueue().getArguments())
+        assertThat(storageConfig.orphanObjectQueue().getArguments())
                 .doesNotContainKey("x-message-ttl")
                 .doesNotContainKey("x-max-length");
     }
@@ -105,9 +107,9 @@ class RabbitConfigTest {
     /** 死信队列同样不能自灭：它留的就是「这个对象还在桶里」这条证据本身 */
     @Test
     void orphanObjectDeadLetterQueueDoesNotExpire() {
-        Queue dlq = config.orphanObjectDeadLetterQueue();
+        Queue dlq = storageConfig.orphanObjectDeadLetterQueue();
 
-        assertThat(dlq.getName()).isEqualTo(RabbitConfig.ORPHAN_OBJECT_DLQ);
+        assertThat(dlq.getName()).isEqualTo(StorageRabbitConfig.ORPHAN_OBJECT_DLQ);
         assertThat(dlq.isDurable()).isTrue();
         assertThat(dlq.getArguments()).doesNotContainKey("x-message-ttl");
     }
@@ -121,13 +123,13 @@ class RabbitConfigTest {
 
         // 两条链路各用各的交换机与队列：名字撞上就变成「一条消息被两个消费者抢」这种
         // 什么都不报错、只是行为诡异的状态
-        assertThat(RabbitConfig.STORAGE_EXCHANGE).isNotEqualTo(RabbitConfig.MAIL_EXCHANGE);
-        assertThat(RabbitConfig.STORAGE_DLX).isNotEqualTo(RabbitConfig.MAIL_DLX);
-        assertThat(RabbitConfig.STORAGE_EXCHANGE).isNotEqualTo(RabbitConfig.STORAGE_DLX);
-        assertThat(RabbitConfig.ORPHAN_OBJECT_QUEUE).isNotEqualTo(RabbitConfig.ORPHAN_OBJECT_DLQ);
-        assertThat(RabbitConfig.ORPHAN_OBJECT_QUEUE).isNotEqualTo(RabbitConfig.PASSWORD_RESET_QUEUE);
-        assertThat(RabbitConfig.ORPHAN_OBJECT_DLQ).isNotEqualTo(RabbitConfig.PASSWORD_RESET_DLQ);
-        assertThat(RabbitConfig.ORPHAN_OBJECT_ROUTING_KEY)
-                .isNotEqualTo(RabbitConfig.ORPHAN_OBJECT_DEAD_ROUTING_KEY);
+        assertThat(StorageRabbitConfig.STORAGE_EXCHANGE).isNotEqualTo(RabbitConfig.MAIL_EXCHANGE);
+        assertThat(StorageRabbitConfig.STORAGE_DLX).isNotEqualTo(RabbitConfig.MAIL_DLX);
+        assertThat(StorageRabbitConfig.STORAGE_EXCHANGE).isNotEqualTo(StorageRabbitConfig.STORAGE_DLX);
+        assertThat(StorageRabbitConfig.ORPHAN_OBJECT_QUEUE).isNotEqualTo(StorageRabbitConfig.ORPHAN_OBJECT_DLQ);
+        assertThat(StorageRabbitConfig.ORPHAN_OBJECT_QUEUE).isNotEqualTo(RabbitConfig.PASSWORD_RESET_QUEUE);
+        assertThat(StorageRabbitConfig.ORPHAN_OBJECT_DLQ).isNotEqualTo(RabbitConfig.PASSWORD_RESET_DLQ);
+        assertThat(StorageRabbitConfig.ORPHAN_OBJECT_ROUTING_KEY)
+                .isNotEqualTo(StorageRabbitConfig.ORPHAN_OBJECT_DEAD_ROUTING_KEY);
     }
 }

@@ -1,6 +1,5 @@
 package com.wlf.storage;
 
-import com.wlf.config.RabbitConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -23,13 +22,13 @@ public class QueuedOrphanObjectPublisher implements OrphanObjectPublisher {
         this.rabbitTemplate = rabbitTemplate;
         // 启动横幅。（见 application.yaml 里 jotang.purge.mode 那段）
         log.info("补偿删除上报方式：RabbitMQ 队列 queue={} routingKey={}",
-                RabbitConfig.ORPHAN_OBJECT_QUEUE, RabbitConfig.ORPHAN_OBJECT_ROUTING_KEY);
+                StorageRabbitConfig.ORPHAN_OBJECT_QUEUE, StorageRabbitConfig.ORPHAN_OBJECT_ROUTING_KEY);
     }
 
     @Override
     public void publish(Bucket bucket, String storageKey) {
         OrphanObject orphan = new OrphanObject(bucket, storageKey);
-        rabbitTemplate.convertAndSend(RabbitConfig.STORAGE_EXCHANGE, RabbitConfig.ORPHAN_OBJECT_ROUTING_KEY, orphan,
+        rabbitTemplate.convertAndSend(StorageRabbitConfig.STORAGE_EXCHANGE, StorageRabbitConfig.ORPHAN_OBJECT_ROUTING_KEY, orphan,
                 message -> {
                     // 持久化
                     message.getMessageProperties().setDeliveryMode(MessageDeliveryMode.PERSISTENT);

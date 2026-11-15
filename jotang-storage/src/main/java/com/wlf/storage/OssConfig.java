@@ -1,4 +1,4 @@
-package com.wlf.config;
+package com.wlf.storage;
 
 import com.aliyun.oss.ClientBuilderConfiguration;
 import com.aliyun.oss.OSS;

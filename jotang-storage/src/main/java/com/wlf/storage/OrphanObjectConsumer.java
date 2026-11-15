@@ -1,6 +1,5 @@
 package com.wlf.storage;
 
-import com.wlf.config.RabbitConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -26,13 +25,13 @@ public class OrphanObjectConsumer {
 
     public OrphanObjectConsumer(StorageService storageService) {
         this.storageService = storageService;
-        log.info("孤儿对象消费者已启动，监听 queue={}", RabbitConfig.ORPHAN_OBJECT_QUEUE);
+        log.info("孤儿对象消费者已启动，监听 queue={}", StorageRabbitConfig.ORPHAN_OBJECT_QUEUE);
     }
 
     /**
      * 一条消息 = 一个待删对象。
      */
-    @RabbitListener(queues = RabbitConfig.ORPHAN_OBJECT_QUEUE)
+    @RabbitListener(queues = StorageRabbitConfig.ORPHAN_OBJECT_QUEUE)
     public void onMessage(OrphanObject orphan) {
         log.debug("收到待清理孤儿对象 bucket={} key={}", orphan.bucket(), orphan.storageKey());
         storageService.delete(orphan.bucket(), orphan.storageKey());

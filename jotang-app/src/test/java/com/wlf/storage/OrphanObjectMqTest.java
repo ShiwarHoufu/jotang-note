@@ -1,6 +1,5 @@
 package com.wlf.storage;
 
-import com.wlf.config.RabbitConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -62,13 +61,13 @@ class OrphanObjectMqTest {
      */
     @BeforeEach
     void drainQueues() {
-        amqpAdmin.purgeQueue(RabbitConfig.ORPHAN_OBJECT_QUEUE, false);
-        amqpAdmin.purgeQueue(RabbitConfig.ORPHAN_OBJECT_DLQ, false);
+        amqpAdmin.purgeQueue(StorageRabbitConfig.ORPHAN_OBJECT_QUEUE, false);
+        amqpAdmin.purgeQueue(StorageRabbitConfig.ORPHAN_OBJECT_DLQ, false);
     }
 
     @Test
     void aReportedOrphanIsConsumedAndDeleted() {
-        rabbitTemplate.convertAndSend(RabbitConfig.STORAGE_EXCHANGE, RabbitConfig.ORPHAN_OBJECT_ROUTING_KEY,
+        rabbitTemplate.convertAndSend(StorageRabbitConfig.STORAGE_EXCHANGE, StorageRabbitConfig.ORPHAN_OBJECT_ROUTING_KEY,
                 new OrphanObject(Bucket.NOTE, OK_KEY));
 
         // timeout(...) 而不是 sleep：消费者是另一个线程，什么时候跑完没有保证
@@ -86,10 +85,10 @@ class OrphanObjectMqTest {
     void exhaustedRetriesLandInTheDeadLetterQueue() {
         doThrow(new AmqpException("OSS 挂了")).when(storageService).delete(any(), anyString());
 
-        rabbitTemplate.convertAndSend(RabbitConfig.STORAGE_EXCHANGE, RabbitConfig.ORPHAN_OBJECT_ROUTING_KEY,
+        rabbitTemplate.convertAndSend(StorageRabbitConfig.STORAGE_EXCHANGE, StorageRabbitConfig.ORPHAN_OBJECT_ROUTING_KEY,
                 new OrphanObject(Bucket.NOTE, FAIL_KEY));
 
-        Message dead = rabbitTemplate.receive(RabbitConfig.ORPHAN_OBJECT_DLQ, DLQ_WAIT_MILLIS);
+        Message dead = rabbitTemplate.receive(StorageRabbitConfig.ORPHAN_OBJECT_DLQ, DLQ_WAIT_MILLIS);
 
         assertThat(dead).as("重试耗尽的孤儿对象应当落进死信队列，而不是被丢掉").isNotNull();
         assertThat(xDeathReasons(dead)).contains("rejected");

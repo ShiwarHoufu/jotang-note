@@ -1,6 +1,5 @@
 package com.wlf.storage;
 
-import com.wlf.config.RabbitConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.core.AmqpAdmin;
@@ -25,12 +24,12 @@ class OrphanObjectDlqMonitorTest {
 
     @Test
     void looksAtTheOrphanObjectDeadLetterQueue() {
-        when(amqpAdmin.getQueueInfo(RabbitConfig.ORPHAN_OBJECT_DLQ))
-                .thenReturn(new QueueInformation(RabbitConfig.ORPHAN_OBJECT_DLQ, 3, 0));
+        when(amqpAdmin.getQueueInfo(StorageRabbitConfig.ORPHAN_OBJECT_DLQ))
+                .thenReturn(new QueueInformation(StorageRabbitConfig.ORPHAN_OBJECT_DLQ, 3, 0));
 
         monitor.reportDepth();
 
-        verify(amqpAdmin).getQueueInfo(RabbitConfig.ORPHAN_OBJECT_DLQ);
+        verify(amqpAdmin).getQueueInfo(StorageRabbitConfig.ORPHAN_OBJECT_DLQ);
     }
 
     /** 队列不存在（比如声明失败过）时 getQueueInfo 会抛，这里必须咽掉 */

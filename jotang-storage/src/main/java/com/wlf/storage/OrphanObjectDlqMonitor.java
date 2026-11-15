@@ -1,6 +1,5 @@
 package com.wlf.storage;
 
-import com.wlf.config.RabbitConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.core.QueueInformation;
@@ -40,10 +39,10 @@ public class OrphanObjectDlqMonitor {
             fixedDelayString = "${jotang.purge.dlq-check.fixed-delay}")
     public void reportDepth() {
         try {
-            QueueInformation info = amqpAdmin.getQueueInfo(RabbitConfig.ORPHAN_OBJECT_DLQ);
+            QueueInformation info = amqpAdmin.getQueueInfo(StorageRabbitConfig.ORPHAN_OBJECT_DLQ);
             if (info != null && info.getMessageCount() > 0) {
                 log.warn("孤儿对象死信队列非空，有待人工清理的对象 queue={} depth={}",
-                        RabbitConfig.ORPHAN_OBJECT_DLQ, info.getMessageCount());
+                        StorageRabbitConfig.ORPHAN_OBJECT_DLQ, info.getMessageCount());
             }
         } catch (RuntimeException e) {
             log.error("孤儿对象死信队列深度巡检失败，本轮放弃，下一轮重来", e);
