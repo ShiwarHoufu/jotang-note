@@ -1,6 +1,5 @@
 package com.wlf.mail;
 
-import com.wlf.config.RabbitConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;

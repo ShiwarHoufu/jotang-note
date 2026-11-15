@@ -1,4 +1,4 @@
-package com.wlf.config;
+package com.wlf.mail;
 
 import com.wlf.storage.StorageRabbitConfig;
 import org.junit.jupiter.api.Test;

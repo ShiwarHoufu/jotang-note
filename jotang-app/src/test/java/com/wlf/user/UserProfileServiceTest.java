@@ -1,7 +1,7 @@
 package com.wlf.user;
 
 import com.wlf.auth.dto.UserInfo;
-import com.wlf.catalog.CollegeMapper;
+import com.wlf.user.college.CollegeMapper;
 import com.wlf.catalog.CourseMapper;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;

@@ -10,7 +10,7 @@ import com.wlf.entity.Course;
 import com.wlf.entity.Note;
 import com.wlf.entity.NoteFile;
 import com.wlf.entity.User;
-import com.wlf.catalog.CollegeMapper;
+import com.wlf.user.college.CollegeMapper;
 import com.wlf.note.dto.NoteCreatedResponse;
 import com.wlf.note.dto.NoteUploadRequest;
 import com.wlf.storage.Bucket;

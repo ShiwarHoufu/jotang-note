@@ -1,6 +1,5 @@
 package com.wlf.catalog;
 
-import com.wlf.catalog.dto.CollegeResponse;
 import com.wlf.catalog.dto.CourseResponse;
 import com.wlf.catalog.dto.TagResponse;
 import com.wlf.common.ApiResponse;
@@ -11,30 +10,18 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 学院 / 课程 / 标签的只读查询接口。见《概要设计》§5.3。
+ * 课程 / 标签的只读查询接口。见《概要设计》§5.3。
  */
 @RestController
 public class CatalogController {
 
-    private final CollegeService collegeService;
     private final CourseService courseService;
     private final TagService tagService;
 
-    public CatalogController(CollegeService collegeService,
-                             CourseService courseService,
+    public CatalogController(CourseService courseService,
                              TagService tagService) {
-        this.collegeService = collegeService;
         this.courseService = courseService;
         this.tagService = tagService;
-    }
-
-    /**
-     * 学院列表。不需要登录。
-     * 注册表单与筛选的下拉数据源。
-     */
-    @GetMapping("/api/colleges")
-    public ApiResponse<List<CollegeResponse>> colleges() {
-        return ApiResponse.ok(collegeService.list());
     }
 
     /**

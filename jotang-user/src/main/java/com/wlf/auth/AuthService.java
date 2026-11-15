@@ -5,7 +5,7 @@ import com.wlf.auth.dto.LoginRequest;
 import com.wlf.auth.dto.LoginResponse;
 import com.wlf.auth.dto.RegisterRequest;
 import com.wlf.auth.dto.UserInfo;
-import com.wlf.catalog.CollegeService;
+import com.wlf.user.college.CollegeService;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;

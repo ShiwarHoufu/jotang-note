@@ -1,4 +1,4 @@
-package com.wlf.catalog;
+package com.wlf.user.college;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.wlf.entity.College;

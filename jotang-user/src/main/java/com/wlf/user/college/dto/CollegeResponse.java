@@ -1,4 +1,4 @@
-package com.wlf.catalog.dto;
+package com.wlf.user.college.dto;
 
 import com.wlf.entity.College;
 

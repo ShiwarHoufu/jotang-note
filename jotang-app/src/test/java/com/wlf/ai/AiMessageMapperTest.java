@@ -1,7 +1,7 @@
 package com.wlf.ai;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.catalog.CollegeMapper;
+import com.wlf.user.college.CollegeMapper;
 import com.wlf.entity.AiMessage;
 import com.wlf.entity.College;
 import com.wlf.entity.User;

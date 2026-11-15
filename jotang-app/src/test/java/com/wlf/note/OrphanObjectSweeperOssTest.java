@@ -2,7 +2,7 @@ package com.wlf.note;
 
 import com.aliyun.oss.OSS;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.catalog.CollegeMapper;
+import com.wlf.user.college.CollegeMapper;
 import com.wlf.catalog.CourseMapper;
 import com.wlf.entity.College;
 import com.wlf.entity.Course;

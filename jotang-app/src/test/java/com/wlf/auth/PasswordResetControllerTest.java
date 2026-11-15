@@ -1,6 +1,6 @@
 package com.wlf.auth;
 
-import com.wlf.catalog.CollegeMapper;
+import com.wlf.user.college.CollegeMapper;
 import com.wlf.entity.College;
 import com.wlf.entity.User;
 import com.wlf.mail.MailService;

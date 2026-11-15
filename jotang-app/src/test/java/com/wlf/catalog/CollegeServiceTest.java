@@ -1,6 +1,8 @@
 package com.wlf.catalog;
 
-import com.wlf.catalog.dto.CollegeResponse;
+import com.wlf.user.college.CollegeMapper;
+import com.wlf.user.college.CollegeService;
+import com.wlf.user.college.dto.CollegeResponse;
 import com.wlf.entity.College;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

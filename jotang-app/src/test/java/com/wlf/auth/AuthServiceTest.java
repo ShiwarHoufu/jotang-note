@@ -3,7 +3,7 @@ package com.wlf.auth;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.wlf.auth.dto.RegisterRequest;
 import com.wlf.auth.dto.UserInfo;
-import com.wlf.catalog.CollegeMapper;
+import com.wlf.user.college.CollegeMapper;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FieldViolation;

@@ -1,7 +1,7 @@
-package com.wlf.catalog;
+package com.wlf.user.college;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.catalog.dto.CollegeResponse;
+import com.wlf.user.college.dto.CollegeResponse;
 import com.wlf.entity.College;
 import org.springframework.stereotype.Service;
 

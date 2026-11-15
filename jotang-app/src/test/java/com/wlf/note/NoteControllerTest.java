@@ -1,7 +1,7 @@
 package com.wlf.note;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.wlf.catalog.CollegeMapper;
+import com.wlf.user.college.CollegeMapper;
 import com.wlf.catalog.CourseMapper;
 import com.wlf.common.JwtTokenProvider;
 import com.wlf.entity.College;

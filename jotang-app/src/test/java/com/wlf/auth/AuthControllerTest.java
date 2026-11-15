@@ -1,6 +1,6 @@
 package com.wlf.auth;
 
-import com.wlf.catalog.CollegeMapper;
+import com.wlf.user.college.CollegeMapper;
 import com.wlf.entity.College;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

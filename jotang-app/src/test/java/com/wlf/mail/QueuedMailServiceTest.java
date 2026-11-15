@@ -1,6 +1,5 @@
 package com.wlf.mail;
 
-import com.wlf.config.RabbitConfig;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.amqp.AmqpException;

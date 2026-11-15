@@ -1,6 +1,6 @@
 package com.wlf.user;
 
-import com.wlf.catalog.CollegeMapper;
+import com.wlf.user.college.CollegeMapper;
 import com.wlf.common.JwtTokenProvider;
 import com.wlf.entity.College;
 import com.wlf.entity.User;

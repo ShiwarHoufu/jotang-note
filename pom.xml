@@ -51,6 +51,8 @@
     <modules>
         <module>jotang-common</module>
         <module>jotang-storage</module>
+        <module>jotang-user</module>
+        <module>jotang-note</module>
         <module>jotang-app</module>
     </modules>
 
