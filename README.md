@@ -2,8 +2,7 @@
 
 Jotang Note 是面向学生的课程笔记托管与分享平台。
 
-网站：[Jotang Note](http://47.109.133.215)\
-个人学习笔记仓库：[学习笔记](https://github.com/ShiwarHoufu/notes)
+在线地址：[Jotang Note](http://47.109.133.215)\
 
 ## 功能一览
 
@@ -24,9 +23,9 @@ Jotang Note 是面向学生的课程笔记托管与分享平台。
 | 后端 | Java 21 · Spring Boot 4.0.8 · Spring Security + JWT · MyBatis-Plus |
 | 前端 | Vue 3 · Vite · TypeScript · Element Plus · Pinia · Vue Router      |
 | 数据 | MySQL 8 · Redis 8（笔记详情缓存）                                          |
-| 消息 | RabbitMQ 4（密码找回邮件异步投递、孤儿对象补偿删除）                                    |
-| 存储 | 阿里云 OSS（笔记私有 Bucket + 头像公共读 Bucket）                                |
-| AI | Spring AI 2.0.1 + DeepSeek（OpenAI 兼容接口）                            |
+| MQ | RabbitMQ 4（密码找回邮件异步投递、孤儿对象补偿删除）                                    |
+| 存储 | 阿里云 OSS                                |
+| AI | Spring AI 2.0.1 + DeepSeek                            |
 | 部署 | Nginx + 可执行 Jar（systemd）+ Docker Compose 中间件                       |
 
 ## 目录结构
@@ -37,12 +36,12 @@ jotang-note/
 ├── src/main/resources/
 │   ├── application.yaml         # 主配置（占位符从环境变量读取）
 │   ├── application-local.yaml   # 本地敏感配置，已被 gitignore
-│   ├── schema.sql 、 data.sql    # 建表与种子数据，启动时幂等执行
-│   └── mapper/                  # MyBatis XML
-├── src/test/java/com/wlf/       # 测试；oss / mail / mq 用例默认排除
+│   ├── schema.sql 、 data.sql    # 建表与种子数据
+│   └── mapper/                  
+├── src/test/java/com/wlf/       # 测试
 ├── frontend/                    # Vue 3 前端
 ├── deploy/                      # Nginx、systemd、生产 Compose、update.sh
-├── docs/                        # 需求、技术选型、系统设计、数据库设计、部署运维、功能说明
+├── docs/                        
 └── docker-compose.yml           # 本地开发用的 RabbitMQ + Redis
 ```
 
@@ -118,7 +117,7 @@ npm run dev
 ./mvnw test
 ```
 
-依赖外部环境的用例默认被排除，需要时单独运行（运行前须清空排除项，否则一个都不会跑）：
+依赖外部环境的用例默认被排除，需要时单独运行：
 
 ```bash
 ./mvnw test -DexcludedGroups= -Dgroups=oss    # 真连阿里云 OSS
