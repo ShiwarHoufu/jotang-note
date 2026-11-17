@@ -10,10 +10,9 @@ import java.util.List;
 /**
  * note-service 内部接口的 Feign 客户端。
  *
- * <p>阶段 1 先用静态 URL；接 Nacos 后删掉 {@code url}，只留服务名。
+ * <p>服务名取 Nacos 注册名。过渡期 note 跑在 jotang-note 单体内，外提后名字不变。
  */
-@FeignClient(name = "note-service",
-        url = "${jotang.clients.note-url:http://localhost:8080}",
+@FeignClient(name = "jotang-note",
         path = "/internal/notes",
         configuration = NoteClientConfig.class)
 public interface NoteClient {

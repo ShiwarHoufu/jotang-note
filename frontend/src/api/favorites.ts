@@ -18,5 +18,5 @@ export const favoritesApi = {
     api.delete<FavoriteCountResponse>(`/notes/${noteId}/favorite`),
 
   list: (params?: FavoriteListParams) =>
-    api.get<PageResponse<FavoriteItem>>('/users/me/favorites', params),
+    api.get<PageResponse<FavoriteItem>>('/favorites/mine', params),
 }

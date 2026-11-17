@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * catalog 三个接口的 HTTP 层验证：路由、参数绑定、鉴权差异与响应体形状。
  *
  * <p>token 用真实的 {@link JwtTokenProvider} 签，而不是打桩——
- * 这样顺带把 JwtAuthFilter 的解析链路也走到了；这些接口不读 principal，
+ * 这样顺带把 IdentityFilter 的解析链路也走到了；这些接口不读 principal，
  * 所以 userId 随便给一个不存在的值也不影响。
  *
  * <p>用例自造的课程名/标签名一律带 {@link #MARKER}：

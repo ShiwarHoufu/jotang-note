@@ -2,6 +2,13 @@ spring:
   application:
     name: jotang-note
 
+  # 阶段 1 只启用注册发现；配置中心后续再接。
+  # 本地 Nacos 关闭了鉴权，不需要 username / password。
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+
   # multipart 上传参数，取值与 Nginx 侧必须对齐：
   servlet:
     multipart:
@@ -109,6 +116,10 @@ jotang:
   internal:
     # 服务间内部接口的令牌；网关不暴露 /internal/**
     token: ${JOTANG_INTERNAL_TOKEN:dev-internal-token}
+
+  gateway:
+    # 网关身份头的防伪凭证；默认值与网关一致，共享 / 生产环境用环境变量覆盖
+    token: ${JOTANG_GATEWAY_TOKEN:dev-gateway-token}
 
   mail:
     # 发件人。必须与 spring.mail.username（已认证的账号）一致，否则 QQ SMTP 直接拒收

@@ -33,6 +33,7 @@
         <aliyun-oss.version>3.18.5</aliyun-oss.version>
         <spring-ai.version>2.0.1</spring-ai.version>
         <spring-cloud.version>2025.1.0</spring-cloud.version>
+        <spring-cloud-alibaba.version>2025.1.0.0</spring-cloud-alibaba.version>
         <!--
             surefire 默认跳过的测试标签。它们都依赖本机之外的东西，离线环境或 CI 上必然失败：
 
@@ -56,6 +57,7 @@
         <module>jotang-note</module>
         <module>jotang-ai</module>
         <module>jotang-ai-app</module>
+        <module>jotang-gateway</module>
         <module>jotang-app</module>
     </modules>
 
@@ -84,6 +86,14 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+                <version>${spring-cloud-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -96,6 +106,10 @@
                     <argLine>-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</argLine>
                     <!-- 取值见 <properties> 中的 excludedGroups，便于命令行覆盖 -->
                     <excludedGroups>${excludedGroups}</excludedGroups>
+                    <systemPropertyVariables>
+                        <!-- 测试不注册 Nacos：避免测试实例污染注册表，也让离线 / CI 不依赖本机容器 -->
+                        <spring.cloud.nacos.discovery.enabled>false</spring.cloud.nacos.discovery.enabled>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>

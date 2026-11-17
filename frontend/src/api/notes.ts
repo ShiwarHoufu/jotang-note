@@ -69,7 +69,7 @@ export const notesApi = {
   delete: (id: number) => api.delete<null>(`/notes/${id}`),
 
   myNotes: (params?: MyNotesParams) =>
-    api.get<PageResponse<MyNoteItem>>('/users/me/notes', params),
+    api.get<PageResponse<MyNoteItem>>('/notes/mine', params),
 
   /** 图片预览：签发的内联签名 URL，前端 <img> 直出 */
   previewUrl: (id: number) => api.get<PresignedUrlResponse>(`/notes/${id}/preview-url`),

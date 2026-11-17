@@ -2,9 +2,10 @@ package com.wlf.ai.config;
 
 import com.wlf.common.ApiResponse;
 import com.wlf.common.ErrorCode;
-import com.wlf.common.JwtAuthFilter;
+import com.wlf.common.IdentityFilter;
 import com.wlf.common.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -32,10 +33,14 @@ public class AiSecurityConfig {
 
     private final ObjectMapper objectMapper;
     private final JwtTokenProvider jwtTokenProvider;
+    private final String gatewayToken;
 
-    public AiSecurityConfig(ObjectMapper objectMapper, JwtTokenProvider jwtTokenProvider) {
+    public AiSecurityConfig(ObjectMapper objectMapper,
+                            JwtTokenProvider jwtTokenProvider,
+                            @Value("${jotang.gateway.token:dev-gateway-token}") String gatewayToken) {
         this.objectMapper = objectMapper;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.gatewayToken = gatewayToken;
     }
 
     @Bean
@@ -51,7 +56,8 @@ public class AiSecurityConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(unauthorizedEntryPoint())
                         .accessDeniedHandler(forbiddenHandler()))
-                .addFilterBefore(new JwtAuthFilter(jwtTokenProvider), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new IdentityFilter(jwtTokenProvider, gatewayToken),
+                        UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

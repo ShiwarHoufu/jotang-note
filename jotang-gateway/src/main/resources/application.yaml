@@ -1,0 +1,52 @@
+server:
+  port: ${GATEWAY_SERVER_PORT:8088}
+
+spring:
+  application:
+    name: jotang-gateway
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        # 网关只发现别人，不把自己注册进注册表
+        register-enabled: false
+
+    gateway:
+      server:
+        webflux:
+          # 路由全部显式声明，不用「按服务名自动生成」
+          discovery:
+            locator:
+              enabled: false
+          httpclient:
+            # AI 链路单次最长 60s，网关留出余量
+            response-timeout: 120s
+          routes:
+            # 更具体的 /api/ai 必须排在 /api 前面
+            - id: ai-service
+              uri: lb://ai-service
+              order: 0
+              predicates:
+                - Path=/api/ai/**
+            - id: jotang-note
+              uri: lb://jotang-note
+              order: 1
+              predicates:
+                - Path=/api/**
+
+jwt:
+  # HS256 密钥；本地真值放在 application-local.yaml
+  secret: ${JWT_SECRET}
+  ttl: ${JWT_TTL:2h}
+
+jotang:
+  gateway:
+    # 网关写身份头时的防伪凭证；下游按同一个值校验
+    token: ${JOTANG_GATEWAY_TOKEN:dev-gateway-token}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

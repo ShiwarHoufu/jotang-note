@@ -1,7 +1,7 @@
 package com.wlf.common;
 
 /**
- * 认证主体：JWT 校验通过后由 JwtAuthFilter 放入 SecurityContext。
+ * 认证主体：网关身份头或 JWT 校验通过后由 IdentityFilter 放入 SecurityContext。
  *
  * <p>Controller 用 {@code @AuthenticationPrincipal} 直接取到，
  * 免去到处写 {@code SecurityContextHolder.getContext().getAuthentication()} 的长链。

@@ -98,7 +98,7 @@ class AdminNoteControllerTest {
      * 普通登录用户（role=USER）打管理接口 → 40300。
      *
      * <p>这条盯的是 {@code SecurityConfig} 里那条 {@code hasRole("ADMIN")}：
-     * 它靠 {@code JwtAuthFilter} 已经发出的 {@code ROLE_} 前缀权限生效。
+     * 它靠 {@code IdentityFilter} 已经发出的 {@code ROLE_} 前缀权限生效。
      * 谁要是把那个前缀去掉，或者把规则写在 {@code anyRequest()} 之后，
      * 这里会立刻暴露——而且暴露的是「普通用户能下架别人的笔记」这种级别的洞。
      */
@@ -207,7 +207,7 @@ class AdminNoteControllerTest {
         return tokenOf(insertUser("admin"), "ADMIN");
     }
 
-    /** 签指定用户、指定角色的 token。role 直接进 JWT 的 claim，由 JwtAuthFilter 转成权限 */
+    /** 签指定用户、指定角色的 token。role 直接进 JWT 的 claim，由 IdentityFilter 转成权限 */
     private String tokenOf(Long userId, String role) {
         return "Bearer " + jwtTokenProvider.issue(userId, MARKER + role, role);
     }
@@ -247,7 +247,7 @@ class AdminNoteControllerTest {
         user.setNickname(MARKER + role);
         user.setCollegeId(college.getId());
         // user.role 列本身也写成 ADMIN，免得「token 说管理员、库里说普通用户」造成困惑。
-        // 鉴权实际只看 token 里的 claim（JwtAuthFilter 不查库），但夹具与语义对齐更好读
+        // 鉴权实际只看 token 里的 claim（IdentityFilter 不查库），但夹具与语义对齐更好读
         user.setRole(role);
         userMapper.insert(user);
         return user.getId();

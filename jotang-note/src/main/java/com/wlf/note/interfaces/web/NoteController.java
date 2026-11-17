@@ -118,12 +118,12 @@ public class NoteController {
      * <p><b>已删除的不展示</b>（§4.1 的表里这一列对 {@code DELETED} 是不可见）；
      * 已下架的照常返回，由 {@code status} 让前端标注。
      *
-     * <p>路径在 {@code /api/users/me} 下但实现在本类，与「我的收藏」在
-     * {@code FavoriteController} 同例：前缀归 users，资源归各自的模块。
+     * <p>放在 note 自己的前缀下：拆 user-service 后，{@code /api/notes/**} 整段归 note，
+     * 网关不需要为「我的」列表写例外。
      *
-     * <p>登录者取自 JWT：这是「我的」列表，绝不接受请求参数传入，否则可以翻别人的上传。
+     * <p>登录者来自网关身份头或直连 JWT，绝不接受请求参数传入，否则可以翻别人的上传。
      */
-    @GetMapping("/api/users/me/notes")
+    @GetMapping("/api/notes/mine")
     public ApiResponse<PageResponse<MyNoteItemResponse>> listMyNotes(
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @ModelAttribute MyNoteListQuery query) {

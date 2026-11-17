@@ -19,20 +19,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * {@link JwtAuthFilter} 的失败分支：坏 token 一律当作匿名，由链尾统一产出 40100。
+ * {@link IdentityFilter} 的两条身份来源：网关透传的身份头优先，直连 Bearer JWT 兜底。
  *
- * <p>各接口的 {@code xxxRequiresLogin} 用例发的都是<b>不带</b> Authorization 头的匿名请求，
- * 盖不到「头在、但 token 是坏的」这条路——过滤器的 {@code parse} 失败分支正是这里要钉的。
- *
- * <p>刻意断言坏 token 的响应体与匿名响应<b>逐字节相同</b>：区分开就等于告诉攻击者
- * 他的 token 是真的只是过期了，还是干脆是伪造的。
+ * <p>不可信的头 / 坏 token 一律当作匿名，由链尾统一产出 40100。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
-class JwtAuthFilterTest {
+class IdentityFilterTest {
 
-    /** 受保护接口（不在 SecurityConfig 的放行名单里）。坏 token 在过滤器就降级为匿名，不会走到查库 */
+    /** 受保护接口（不在放行名单里）。坏身份不会走到查库 */
     private static final String PROTECTED = "/api/auth/me";
 
     @Autowired
@@ -40,6 +36,52 @@ class JwtAuthFilterTest {
 
     @Value("${jwt.secret}")
     private String secret;
+
+    @Value("${jotang.gateway.token:dev-gateway-token}")
+    private String gatewayToken;
+
+    // ---- 网关身份头 ---------------------------------------------------------
+
+    @Test
+    void gatewayHeadersAreAcceptedWhenTokenMatches() throws Exception {
+        mockMvc.perform(get("/api/notes/mine")
+                        .header(IdentityHeaders.GATEWAY_TOKEN, gatewayToken)
+                        .header(IdentityHeaders.USER_ID, "999999")
+                        .header(IdentityHeaders.USER_ROLE, "USER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    @Test
+    void gatewayHeadersAreIgnoredWhenTokenDoesNotMatch() throws Exception {
+        mockMvc.perform(get(PROTECTED)
+                        .header(IdentityHeaders.GATEWAY_TOKEN, "wrong-token")
+                        .header(IdentityHeaders.USER_ID, "1")
+                        .header(IdentityHeaders.USER_ROLE, "ADMIN"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+    }
+
+    @Test
+    void gatewayHeadersAreIgnoredWithoutToken() throws Exception {
+        mockMvc.perform(get(PROTECTED)
+                        .header(IdentityHeaders.USER_ID, "1")
+                        .header(IdentityHeaders.USER_ROLE, "ADMIN"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+    }
+
+    @Test
+    void malformedGatewayUserIdIsIgnored() throws Exception {
+        mockMvc.perform(get(PROTECTED)
+                        .header(IdentityHeaders.GATEWAY_TOKEN, gatewayToken)
+                        .header(IdentityHeaders.USER_ID, "not-a-number")
+                        .header(IdentityHeaders.USER_ROLE, "USER"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40100));
+    }
+
+    // ---- Bearer JWT 兜底 ----------------------------------------------------
 
     @Test
     void anonymousRequestIsRejectedWith40100() throws Exception {

@@ -178,7 +178,7 @@ class FavoriteControllerTest {
 
     @Test
     void listingFavoritesRequiresLogin() throws Exception {
-        mockMvc.perform(get("/api/users/me/favorites"))
+        mockMvc.perform(get("/api/favorites/mine"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(40100));
     }
@@ -188,7 +188,7 @@ class FavoriteControllerTest {
     void listingFavoritesReturnsThePageEnvelope() throws Exception {
         mockMvc.perform(post("/api/notes/{id}/favorite", noteId).header("Authorization", token()));
 
-        mockMvc.perform(get("/api/users/me/favorites").header("Authorization", token()))
+        mockMvc.perform(get("/api/favorites/mine").header("Authorization", token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.items.length()").value(1))
@@ -211,7 +211,7 @@ class FavoriteControllerTest {
         mockMvc.perform(post("/api/notes/{id}/favorite", noteId).header("Authorization", token()));
         setNoteStatus(NoteStatus.DELETED);
 
-        mockMvc.perform(get("/api/users/me/favorites").header("Authorization", token()))
+        mockMvc.perform(get("/api/favorites/mine").header("Authorization", token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].status").value("DELETED"))
                 .andExpect(jsonPath("$.data.items[0].title").value(MARKER + "笔记"))
@@ -224,7 +224,7 @@ class FavoriteControllerTest {
     /** 没有任何收藏时给空数组而不是 null，前端可以无条件遍历 */
     @Test
     void listingFavoritesWithoutAnyFavoriteYieldsAnEmptyArray() throws Exception {
-        mockMvc.perform(get("/api/users/me/favorites").header("Authorization", token()))
+        mockMvc.perform(get("/api/favorites/mine").header("Authorization", token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items").isEmpty())
                 .andExpect(jsonPath("$.data.total").value(0));
@@ -233,7 +233,7 @@ class FavoriteControllerTest {
     /** 每页上界 50 条：超了要落成 40001 加字段明细，而不是被插件静默截断 */
     @Test
     void listingFavoritesRejectsSizeAboveFifty() throws Exception {
-        mockMvc.perform(get("/api/users/me/favorites?size=51").header("Authorization", token()))
+        mockMvc.perform(get("/api/favorites/mine?size=51").header("Authorization", token()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(40001))
                 .andExpect(jsonPath("$.data[0].field").value("size"));
@@ -242,7 +242,7 @@ class FavoriteControllerTest {
     /** 分页深度上限对所有列表统一生效（§3.3）：51 × 20 = 1020 > 1000 */
     @Test
     void listingFavoritesRejectsDeepPagination() throws Exception {
-        mockMvc.perform(get("/api/users/me/favorites?page=51&size=20").header("Authorization", token()))
+        mockMvc.perform(get("/api/favorites/mine?page=51&size=20").header("Authorization", token()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(40001))
                 .andExpect(jsonPath("$.data[0].field").value("page"));

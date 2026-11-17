@@ -3,9 +3,11 @@ package com.wlf.config;
 import tools.jackson.databind.ObjectMapper;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.ErrorCode;
-import com.wlf.common.JwtAuthFilter;
+import com.wlf.common.IdentityFilter;
 import com.wlf.common.JwtTokenProvider;
+import com.wlf.common.PublicEndpoints;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -29,22 +31,20 @@ import java.io.IOException;
 public class SecurityConfig {
 
     /**
-     * 免登录接口。
+     * 免登录接口。与网关共用一份清单，避免两处漂移。
      */
-    private static final String[] PUBLIC_ENDPOINTS = {
-            "/api/auth/register",
-            "/api/auth/login",
-            "/api/auth/password/forgot",
-            "/api/auth/password/reset",
-            "/api/colleges" // 注册页要拿它填学院下拉框
-    };
+    private static final String[] PUBLIC_ENDPOINTS = PublicEndpoints.PATHS;
 
     private final ObjectMapper objectMapper;
     private final JwtTokenProvider jwtTokenProvider;
+    private final String gatewayToken;
 
-    public SecurityConfig(ObjectMapper objectMapper, JwtTokenProvider jwtTokenProvider) {
+    public SecurityConfig(ObjectMapper objectMapper,
+                          JwtTokenProvider jwtTokenProvider,
+                          @Value("${jotang.gateway.token:dev-gateway-token}") String gatewayToken) {
         this.objectMapper = objectMapper;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.gatewayToken = gatewayToken;
     }
 
     @Bean
@@ -59,7 +59,7 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         // 服务间内部接口：不走用户 JWT，由 InternalTokenInterceptor 校验服务令牌
                         .requestMatchers("/internal/**").permitAll()
-                        // 管理端（§5.6）。JwtAuthFilter 已把 JWT 里的 role 包成 ROLE_ 前缀的权限，
+                        // 管理端（§5.6）。IdentityFilter 已把 role 包成 ROLE_ 前缀的权限，
                         // hasRole("ADMIN") 正好对上，不需要在这里再解一次 token。
                         // 两条失败路径都是现成的：未登录 → AuthenticationEntryPoint 出 40100，
                         // 已登录但非管理员 → AccessDeniedHandler 出 40300（§5.7）
@@ -69,7 +69,8 @@ public class SecurityConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(unauthorizedEntryPoint())
                         .accessDeniedHandler(forbiddenHandler()))
-                .addFilterBefore(new JwtAuthFilter(jwtTokenProvider), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new IdentityFilter(jwtTokenProvider, gatewayToken),
+                        UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

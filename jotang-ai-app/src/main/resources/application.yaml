@@ -5,6 +5,12 @@ spring:
   application:
     name: ai-service
 
+  # 配置中心后续再接。
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+
   servlet:
     multipart:
       max-file-size: 100MB
@@ -60,6 +66,6 @@ aliyun:
 jotang:
   internal:
     token: ${JOTANG_INTERNAL_TOKEN:dev-internal-token}
-  clients:
-    # 阶段 1 用静态地址；接 Nacos 后删掉，只留服务名
-    note-url: ${NOTE_SERVICE_URL:http://localhost:8080}
+  gateway:
+    # 网关身份头的防伪凭证；默认值与网关一致，共享 / 生产环境用环境变量覆盖
+    token: ${JOTANG_GATEWAY_TOKEN:dev-gateway-token}

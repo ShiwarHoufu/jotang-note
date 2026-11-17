@@ -627,11 +627,11 @@ class NoteControllerTest {
                 .andExpect(jsonPath("$.code").value(40400));
     }
 
-    // ==================== GET /api/users/me/notes ====================
+    // ==================== GET /api/notes/mine ====================
 
     @Test
     void myNotesRequiresLogin() throws Exception {
-        mockMvc.perform(get("/api/users/me/notes"))
+        mockMvc.perform(get("/api/notes/mine"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(40100));
     }
@@ -647,7 +647,7 @@ class NoteControllerTest {
         insertNote(courseId, MARKER + "已下架的", NoteStatus.OFFLINE);
         insertNote(courseId, MARKER + "已删除的", NoteStatus.DELETED);
 
-        mockMvc.perform(get("/api/users/me/notes").header("Authorization", token()))
+        mockMvc.perform(get("/api/notes/mine").header("Authorization", token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.total").value(2))
@@ -666,7 +666,7 @@ class NoteControllerTest {
     /** 分页外壳与参数守卫，与其余列表同一套（§3.3 的上限对所有列表统一生效） */
     @Test
     void myNotesRejectsDeepPagination() throws Exception {
-        mockMvc.perform(get("/api/users/me/notes").param("page", "51").header("Authorization", token()))
+        mockMvc.perform(get("/api/notes/mine").param("page", "51").header("Authorization", token()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(40001))
                 .andExpect(jsonPath("$.data[0].field").value("page"));
@@ -674,7 +674,7 @@ class NoteControllerTest {
 
     @Test
     void myNotesRejectsPageBelowOne() throws Exception {
-        mockMvc.perform(get("/api/users/me/notes").param("page", "0").header("Authorization", token()))
+        mockMvc.perform(get("/api/notes/mine").param("page", "0").header("Authorization", token()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(40001))
                 .andExpect(jsonPath("$.data[0].field").value("page"));

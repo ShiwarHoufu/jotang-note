@@ -61,7 +61,7 @@ public class FavoriteController {
      * <p>参数收进 {@link FavoriteListQuery} 而不是散装 {@code @RequestParam}，
      * 否则校验失败会掉进兜底变成 50000
      */
-    @GetMapping("/api/users/me/favorites")
+    @GetMapping("/api/favorites/mine")
     public ApiResponse<PageResponse<FavoriteItemResponse>> listFavorites(
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @ModelAttribute FavoriteListQuery query) {
