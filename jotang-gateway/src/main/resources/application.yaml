@@ -23,17 +23,31 @@ spring:
             # AI 链路单次最长 60s，网关留出余量
             response-timeout: 120s
           routes:
-            # 更具体的 /api/ai 必须排在 /api 前面
             - id: ai-service
               uri: lb://ai-service
               order: 0
               predicates:
                 - Path=/api/ai/**
-            - id: jotang-note
-              uri: lb://jotang-note
+            - id: user-auth
+              uri: lb://user-service
               order: 1
               predicates:
-                - Path=/api/**
+                - Path=/api/auth/**
+            - id: user-profile
+              uri: lb://user-service
+              order: 1
+              predicates:
+                - Path=/api/users/**
+            - id: user-colleges
+              uri: lb://user-service
+              order: 1
+              predicates:
+                - Path=/api/colleges
+            - id: jotang-note
+              uri: lb://jotang-note
+              order: 2
+              predicates:
+                - Path=/api/notes/**,/api/favorites/**,/api/courses,/api/tags,/api/admin/**
 
 jwt:
   # HS256 密钥；本地真值放在 application-local.yaml

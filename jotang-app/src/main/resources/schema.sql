@@ -1,5 +1,9 @@
 -- Jotang Note MVP 建表脚本
 -- 全部 IF NOT EXISTS，可重复执行
+--
+-- 过渡期：college / user / password_reset_token 已迁到 jotang_user，运行时归 user-service；
+-- 这里保留 DDL 只给单体测试夹具（jotang-app 以 test scope 依赖 jotang-user）。
+-- 单体运行时不读写这三张表，note / favorite 也不再建指向 user 的外键。
 
 -- 学院（预置数据，用户注册时必选，D8）
 CREATE TABLE IF NOT EXISTS `college` (
@@ -62,7 +66,7 @@ CREATE TABLE IF NOT EXISTS `note` (
   KEY `idx_status_download` (`status`, `download_count`),  -- 热门·下载
   KEY `idx_course_status`   (`course_id`, `status`),       -- 课程页
   KEY `idx_uploader_status` (`uploader_id`, `status`),     -- 我的上传
-  CONSTRAINT `fk_note_uploader` FOREIGN KEY (`uploader_id`) REFERENCES `user`(`id`),
+  -- uploader_id 跨服务引用 jotang_user.user，不建外键
   CONSTRAINT `fk_note_course`   FOREIGN KEY (`course_id`)   REFERENCES `course`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -110,7 +114,7 @@ CREATE TABLE IF NOT EXISTS `favorite` (
   UNIQUE KEY `uk_user_note`   (`user_id`, `note_id`),
   KEY `idx_user_created` (`user_id`, `created_at`),
   KEY `idx_note`         (`note_id`),
-  CONSTRAINT `fk_fav_user` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`),
+  -- user_id 跨服务引用 jotang_user.user，不建外键
   CONSTRAINT `fk_fav_note` FOREIGN KEY (`note_id`) REFERENCES `note`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

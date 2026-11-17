@@ -8,7 +8,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
  * 把内部接口挂到服务令牌拦截器下。
  */
-@Configuration
+@Configuration("noteInternalApiConfig")
 public class InternalApiConfig implements WebMvcConfigurer {
 
     private final String token;
@@ -20,6 +20,6 @@ public class InternalApiConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new InternalTokenInterceptor(token))
-                .addPathPatterns("/internal/**");
+                .addPathPatterns("/internal/notes/**");
     }
 }
