@@ -1,0 +1,133 @@
+server:
+  port: ${NOTE_SERVER_PORT:8080}
+
+spring:
+  application:
+    name: jotang-note
+
+  # 阶段 1 只启用注册发现；配置中心后续再接。
+  # 本地 Nacos 关闭了鉴权，不需要 username / password。
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+
+  # multipart 上传参数，取值与 Nginx 侧必须对齐：
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 110MB
+      # 超过 1MB 的部件落磁盘而不是留在堆里：单文件可达 100MB，全压在堆上会打爆内存
+      file-size-threshold: 1MB
+      # 专用中转目录，便于定期清理残留。默认取系统临时目录下的子目录，
+      # 部署时可用 JOTANG_UPLOAD_TMP 指到独立分区——上传中转会吃磁盘，与数据盘分开更安全
+      location: ${JOTANG_UPLOAD_TMP:${java.io.tmpdir}/jotang-upload}
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:jotang_note}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # 库表与基础数据随应用启动初始化；脚本均为幂等。
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+
+  # Redis
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  # 过渡期测试夹具专用（见 pom 里 test scope 的 jotang-user）。
+  # user 模块的 SmtpMailService 永远注册、构造要 JavaMailSender，而后者只在
+  # spring.mail.host 存在时才创建；缺了它 note-app 的测试上下文起不来。
+  # 运行时 note-app 不带 user 模块，本段不参与装配。
+  mail:
+    host: ${JOTANG_MAIL_HOST:smtp.qq.com}
+
+  # RabbitMQ：孤儿对象上报 / 消费 / 死信巡检
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:admin}
+    password: ${RABBITMQ_PASSWORD:}
+    publisher-returns: true
+    template:
+      # 路由不到任何队列时让 Broker 把消息退回。
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 1
+        # **Spring 默认是 true，必须显式改掉。** true 的后果：消费抛异常时消息被无退避地
+        # 立刻重投，同一条毒消息在队列里反复打转——热点循环、队列深度永不下降、
+        # 消费线程被它一个人占死。false 之后重试耗尽即 reject，配合队列上的
+        # x-dead-letter-exchange 进死信队列（RabbitConfig#passwordResetQueue）
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          # 这一项在 Boot 4 里叫 max-retries，不是老教程里的 max-attempts。
+          max-retries: 3
+          initial-interval: 2s
+          multiplier: 2.0
+          max-interval: 10s
+
+# JWT
+jwt:
+  secret: ${JWT_SECRET}
+  ttl: ${JWT_TTL:2h}
+
+# OSS
+# bucket 名与 endpoint 不是秘密，给默认值；部署到非成都地域时用环境变量覆盖即可。
+aliyun:
+  oss:
+    access-key-id: ${JOTANG_OSS_ACCESS_KEY_ID}
+    access-key-secret: ${JOTANG_OSS_ACCESS_KEY_SECRET}
+    # 服务端访问用的 Endpoint（上传 / 删除）。生产上 ECS 与 OSS 同 Region，用内网：
+    # 内网流量免费、不占 ECS 公网出带宽。
+    # 但内网域名只在阿里云内网可解析——本机开发不在内网，连不通，故由 application-local.yaml 覆写为公网。
+    endpoint-server: ${JOTANG_OSS_ENDPOINT_SERVER:oss-cn-chengdu-internal.aliyuncs.com}
+    # 浏览器访问用的 Endpoint（签名 URL、头像直读 URL）。必须是公网，
+    endpoint-browser: ${JOTANG_OSS_ENDPOINT_BROWSER:oss-cn-chengdu.aliyuncs.com}
+    bucket-note: ${JOTANG_OSS_BUCKET_NOTE:jotang-note}
+    bucket-avatar: ${JOTANG_OSS_BUCKET_AVATAR:jotang-avatar}
+
+
+jotang:
+  internal:
+    # 服务间内部接口的令牌；网关不暴露 /internal/**
+    token: ${JOTANG_INTERNAL_TOKEN:dev-internal-token}
+
+  gateway:
+    # 网关身份头的防伪凭证；默认值与网关一致，共享 / 生产环境用环境变量覆盖
+    token: ${JOTANG_GATEWAY_TOKEN:dev-gateway-token}
+
+  # 过渡期测试夹具专用：test scope 的 jotang-user 里 PasswordResetService 要这个占位符。
+  # 不设 mode —— note-app 测试不需要邮件消费者。
+  mail:
+    from: ${JOTANG_MAIL_FROM:${spring.mail.username:}}
+    reset-link-base: ${JOTANG_MAIL_RESET_LINK_BASE:http://localhost:5173/reset-password}
+
+  # 孤儿对象对账
+  purge:
+    # 上传入库失败后的补偿删除：
+    #   none  = 只内联删一次
+    #   queue = 额外把这条待办投进 RabbitMQ，重试耗尽后进死信队列等人工处理
+    mode: ${JOTANG_PURGE_MODE:queue}
+    # 定时对账：把已删除但对象还没清掉的笔记补清一次
+    enabled: ${JOTANG_PURGE_ENABLED:true}
+    # 启动后多久跑第一轮。
+    initial-delay: ${JOTANG_PURGE_INITIAL_DELAY:1h}
+    # fixedDelay 而非 fixedRate：耗时取决于积压里要打多少次 OSS，后者会让慢的轮次排队
+    fixed-delay: ${JOTANG_PURGE_FIXED_DELAY:1h}
+    # 一轮最多处理多少条，没做完的下一轮自然接上
+    batch-size: ${JOTANG_PURGE_BATCH_SIZE:100}
+    # 死信队列深度巡检：非空说明有对象没删掉、在等人处理。只在 mode=queue 时有意义。
+    # 比邮箱那条链路便宜得多（一次查询，不打 OSS），所以节奏可以密一些。
+    dlq-check:
+      initial-delay: ${JOTANG_PURGE_DLQ_CHECK_INITIAL_DELAY:5m}
+      fixed-delay: ${JOTANG_PURGE_DLQ_CHECK_FIXED_DELAY:30m}

@@ -56,10 +56,10 @@
         <module>jotang-user</module>
         <module>jotang-user-app</module>
         <module>jotang-note</module>
+        <module>jotang-note-app</module>
         <module>jotang-ai</module>
         <module>jotang-ai-app</module>
         <module>jotang-gateway</module>
-        <module>jotang-app</module>
     </modules>
 
     <dependencyManagement>
@@ -110,7 +110,7 @@
                     <systemPropertyVariables>
                         <!-- 测试不注册 Nacos：避免测试实例污染注册表，也让离线 / CI 不依赖本机容器 -->
                         <spring.cloud.nacos.discovery.enabled>false</spring.cloud.nacos.discovery.enabled>
-                        <!-- 单体测试用本地 UserProfileReader 夹具，不发起跨服务 Feign 调用 -->
+                        <!-- note-app 测试用本地 UserProfileReader 夹具，不发起跨服务 Feign 调用 -->
                         <jotang.remote.user.enabled>false</jotang.remote.user.enabled>
                     </systemPropertyVariables>
                 </configuration>

@@ -69,7 +69,7 @@ services:
     ports:
       - "8848:8848"    # HTTP，客户端注册 / 发现
       - "9848:9848"    # gRPC，2.x+ 客户端必需
-      - "18080:8080"   # 控制台，避开 jotang-app 的 8080
+      - "18080:8080"   # 控制台，避开 note-app 的 8080
     volumes:
       - nacos-data:/home/nacos/data
 

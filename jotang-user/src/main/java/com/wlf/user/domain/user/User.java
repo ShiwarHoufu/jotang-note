@@ -10,7 +10,6 @@ import java.time.LocalDateTime;
 
 /**
  * user 表。角色 USER / ADMIN，密码 BCrypt 存储。
- * 见《概要设计》§3.2。
  * 表名加反引号：{@code user} 在 MySQL 中是关键字，避免拼 SQL 时被当作函数名。
  */
 @Getter
@@ -23,18 +22,14 @@ public class User {
     private String username;
     private String email;
 
-    /** BCrypt 哈希，绝不外传 */
     private String passwordHash;
 
     private String nickname;
 
-    /**
-     * 所属学院，注册时必选（D8）。外键指向 {@code college.id}，
-     * 因此该表的外键异常不等于数据损坏——见 AuthService 里对入参的先校验。
-     */
+    /** 所属学院，注册时必选。外键指向 {@code college.id}，*/
     private Long collegeId;
 
-    /** OSS 对象键（非完整 URL）；对外拼公网 URL 见 §6.7 */
+    /** OSS 对象键（非完整 URL）；对外拼公网 URL */
     private String avatar;
     /** USER / ADMIN */
     private String role;
