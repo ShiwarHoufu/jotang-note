@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# ⚠ 历史方案：note / user / ai 已拆为独立进程，本脚本仍按单 jar 部署。
+#   本地开发与当前拓扑见 docs/架构设计.md §7。
+#
 # 服务器侧发布脚本：拉代码 → 构建 → 换产物 → 重启。
 #
 # 用法（在服务器上，以 jotang 身份）：
@@ -43,7 +46,7 @@ npm run build
 cd ..
 
 echo "==> 替换产物"
-cp "target/$JAR" "$APP"
+cp "jotang-app/target/$JAR" "$APP"
 rsync -a --delete frontend/dist/ "$WEB/"
 
 echo "==> 拉起容器并等健康检查通过"

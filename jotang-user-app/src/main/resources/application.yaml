@@ -1,0 +1,89 @@
+server:
+  port: ${USER_SERVER_PORT:8082}
+
+spring:
+  application:
+    name: user-service
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+      file-size-threshold: 1MB
+      location: ${JOTANG_USER_UPLOAD_TMP:${java.io.tmpdir}/jotang-user-upload}
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:jotang_user}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # 用户库由 FlywayConfig 显式执行迁移；不再用 schema.sql / data.sql
+  sql:
+    init:
+      mode: never
+
+  mail:
+    host: ${JOTANG_MAIL_HOST:smtp.qq.com}
+    port: ${JOTANG_MAIL_PORT:465}
+    username: ${JOTANG_MAIL_USERNAME:}
+    password: ${JOTANG_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          ssl:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:admin}
+    password: ${RABBITMQ_PASSWORD:}
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 1
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-retries: 3
+          initial-interval: 2s
+          multiplier: 2.0
+          max-interval: 10s
+
+jwt:
+  secret: ${JWT_SECRET}
+  ttl: ${JWT_TTL:2h}
+
+aliyun:
+  oss:
+    access-key-id: ${JOTANG_OSS_ACCESS_KEY_ID}
+    access-key-secret: ${JOTANG_OSS_ACCESS_KEY_SECRET}
+    endpoint-server: ${JOTANG_OSS_ENDPOINT_SERVER:oss-cn-chengdu-internal.aliyuncs.com}
+    endpoint-browser: ${JOTANG_OSS_ENDPOINT_BROWSER:oss-cn-chengdu.aliyuncs.com}
+    bucket-note: ${JOTANG_OSS_BUCKET_NOTE:jotang-note}
+    bucket-avatar: ${JOTANG_OSS_BUCKET_AVATAR:jotang-avatar}
+
+jotang:
+  internal:
+    token: ${JOTANG_INTERNAL_TOKEN:dev-internal-token}
+  gateway:
+    token: ${JOTANG_GATEWAY_TOKEN:dev-gateway-token}
+  mail:
+    from: ${JOTANG_MAIL_FROM:${spring.mail.username:}}
+    reset-link-base: ${JOTANG_MAIL_RESET_LINK_BASE:http://localhost:5173/reset-password}
+    mode: ${JOTANG_MAIL_MODE:queue}
+  purge:
+    # 头像补偿删除与 note 共用同一个孤儿对象队列；user-service 只投递，不消费
+    mode: ${JOTANG_PURGE_MODE:queue}

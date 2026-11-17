@@ -1,0 +1,133 @@
+package com.wlf.user.application.identity;
+
+import com.wlf.user.application.identity.dto.LoginRequest;
+import com.wlf.user.application.identity.dto.LoginResponse;
+import com.wlf.user.application.identity.dto.RegisterRequest;
+import com.wlf.user.application.dto.UserInfo;
+import com.wlf.user.application.college.CollegeService;
+import com.wlf.common.BusinessException;
+import com.wlf.common.ErrorCode;
+import com.wlf.common.FieldViolation;
+import com.wlf.common.JwtTokenProvider;
+import com.wlf.user.domain.user.User;
+import com.wlf.user.domain.user.UserRepository;
+import com.wlf.storage.StorageService;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+/**
+ * 注册、登录、退出。登录校验 BCrypt 密码后由 JwtTokenProvider 签发令牌。
+ */
+@Service
+public class AuthService {
+
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtTokenProvider jwtTokenProvider;
+    private final LoginAttemptLimiter loginAttemptLimiter;
+    private final CollegeService collegeService;
+
+    /**
+     * 仅用于把 {@code UserInfo.avatarUrl} 拼出来。
+     */
+    private final StorageService storageService;
+
+    public AuthService(UserRepository userRepository,
+                       PasswordEncoder passwordEncoder,
+                       JwtTokenProvider jwtTokenProvider,
+                       LoginAttemptLimiter loginAttemptLimiter,
+                       CollegeService collegeService,
+                       StorageService storageService) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtTokenProvider = jwtTokenProvider;
+        this.loginAttemptLimiter = loginAttemptLimiter;
+        this.collegeService = collegeService;
+        this.storageService = storageService;
+    }
+
+    /**
+     * 注册。
+     */
+    public UserInfo register(RegisterRequest request) {
+        String username = request.getUsername().trim();
+        String email = request.getEmail().trim();
+        Long collegeId = request.getCollegeId();
+
+        if (!collegeService.exists(collegeId)) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, ErrorCode.PARAM_INVALID.getMessage(),
+                    List.of(new FieldViolation("collegeId", "学院不存在")));
+        }
+        if (existsByUsername(username)) {
+            throw new BusinessException(ErrorCode.USERNAME_TAKEN);
+        }
+        if (existsByEmail(email)) {
+            throw new BusinessException(ErrorCode.EMAIL_TAKEN);
+        }
+
+        User user = new User();
+        user.setUsername(username);
+        user.setEmail(email);
+        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        user.setNickname(username); // 昵称取用户名占位。
+        user.setCollegeId(collegeId);
+        user.setRole("USER");
+        user.setStatus(1);
+
+        try {
+            userRepository.insert(user);
+        }
+        catch (DuplicateKeyException ex) {
+            // 竞态：两个请求同时通过了上面的预检查。重新判定到底撞了哪个唯一索引。
+            throw new BusinessException(existsByUsername(username)
+                    ? ErrorCode.USERNAME_TAKEN
+                    : ErrorCode.EMAIL_TAKEN);
+        }
+
+        return UserInfo.from(user, storageService);
+    }
+
+    /**
+     * 登录。失败累计达阈值即锁定。
+     *
+     * <p>用户不存在与密码错误返回同一个错误码与文案，避免账号枚举。
+     */
+    public LoginResponse login(LoginRequest request) {
+        String username = request.getUsername().trim();
+        loginAttemptLimiter.ensureNotLocked(username);
+
+        User user = userRepository.findByUsername(username).orElse(null);
+
+        if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            loginAttemptLimiter.recordFailure(username);
+            throw new BusinessException(ErrorCode.BAD_CREDENTIALS);
+        }
+
+        if (user.getStatus() != null && user.getStatus() == 0) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "账号已被禁用");
+        }
+
+        loginAttemptLimiter.reset(username);
+
+        String token = jwtTokenProvider.issue(user.getId(), user.getUsername(), user.getRole());
+        return new LoginResponse(token, UserInfo.from(user, storageService));
+    }
+
+    /** 当前登录用户 */
+    public UserInfo currentUser(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "用户不存在"));
+        return UserInfo.from(user, storageService);
+    }
+
+    private boolean existsByUsername(String username) {
+        return userRepository.existsByUsername(username);
+    }
+
+    private boolean existsByEmail(String email) {
+        return userRepository.existsByEmail(email);
+    }
+}

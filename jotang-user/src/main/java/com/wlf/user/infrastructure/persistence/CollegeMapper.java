@@ -1,0 +1,14 @@
+package com.wlf.user.infrastructure.persistence;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.wlf.user.domain.college.College;
+import org.apache.ibatis.annotations.Mapper;
+
+/**
+ * college 表的数据访问。
+ *
+ * <p>单表 CRUD 由 {@link BaseMapper} 提供。
+ */
+@Mapper
+public interface CollegeMapper extends BaseMapper<College> {
+}

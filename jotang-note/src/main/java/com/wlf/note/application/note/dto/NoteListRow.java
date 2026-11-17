@@ -1,0 +1,40 @@
+package com.wlf.note.application.note.dto;
+
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.LocalDateTime;
+
+/**
+ * 列表主干查询的一行，{@link NoteMapper#selectListPage} 的返回类型。
+ *
+ * <p><b>为什么不复用 {@link NoteDetailRow}</b>：两者的列不完全重合，而且这是两条不同的 SQL。
+ * 列表不需要 {@code note_file} 的任何列（卡片不显示文件类型与大小），也不需要
+ * {@code status}（本查询只出 ONLINE）、{@code summary} / {@code teacher}（卡片不展示）、
+ * {@code created_at}（卡片显示的是「最后更新于」）。用详情那个投影接列表结果，
+ * 会有一半字段恒为 null，而类名又写着 Detail——复用在这里只会让人猜「到底哪几个真有用」。
+ *
+ * <p>标签不在这里：它与笔记是 to-many，并进分页查询会乘行（一页 20 条会变成十几条）。
+ * 单独一条 {@code IN} 查询批量取回，由 Service 按 {@code noteId} 装配。
+ */
+@Getter
+@Setter
+public class NoteListRow {
+
+    // ---- note ----
+    private Long id;
+    private String title;
+    private Long viewCount;
+    private Long downloadCount;
+    private Long favoriteCount;
+
+    /** 用户最后编辑的时间，同时是 {@code sort=latest} 的排序键（§3.3） */
+    private LocalDateTime updatedAt;
+
+    // ---- course ----
+    private Long courseId;
+    private String courseName;
+
+    // ---- user（上传者）----
+    private Long uploaderId;
+}

@@ -15,9 +15,9 @@ export default defineConfig({
     // 与 jotang.mail.reset-link-base 的默认值保持一致（《概要设计》§6.6）
     port: 5173,
     proxy: {
-      // 开发期把 /api 转给本机后端，前端代码里一律写相对路径
+      // 开发期把 /api 转给本机网关，前端代码里一律写相对路径
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:8088',
         changeOrigin: true,
       },
     },

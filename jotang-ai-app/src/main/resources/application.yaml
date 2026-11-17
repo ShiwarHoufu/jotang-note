@@ -1,0 +1,71 @@
+server:
+  port: ${AI_SERVER_PORT:8081}
+
+spring:
+  application:
+    name: ai-service
+
+  # 配置中心后续再接。
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 110MB
+      file-size-threshold: 1MB
+      location: ${JOTANG_AI_UPLOAD_TMP:${java.io.tmpdir}/jotang-ai-upload}
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:jotang_ai}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  sql:
+    init:
+      mode: never
+
+  # 与单体同一套 DeepSeek/OpenAI 兼容配置
+  ai:
+    tools:
+      limits:
+        on-limit-exceeded: return-error-response
+        max-calls-per-tool-default: 4
+        max-total-tool-calls: 6
+    openai:
+      api-key: ${JOTANG_AI_API_KEY:}
+      base-url: https://api.deepseek.com
+      chat:
+        model: deepseek-flash
+        timeout: 60s
+    model:
+      chat: openai
+      embedding: none
+      image: none
+      audio:
+        speech: none
+        transcription: none
+      moderation: none
+
+jwt:
+  secret: ${JWT_SECRET}
+  ttl: ${JWT_TTL:2h}
+
+aliyun:
+  oss:
+    access-key-id: ${JOTANG_OSS_ACCESS_KEY_ID}
+    access-key-secret: ${JOTANG_OSS_ACCESS_KEY_SECRET}
+    endpoint-server: ${JOTANG_OSS_ENDPOINT_SERVER:oss-cn-chengdu-internal.aliyuncs.com}
+    endpoint-browser: ${JOTANG_OSS_ENDPOINT_BROWSER:oss-cn-chengdu.aliyuncs.com}
+    bucket-note: ${JOTANG_OSS_BUCKET_NOTE:jotang-note}
+    bucket-avatar: ${JOTANG_OSS_BUCKET_AVATAR:jotang-avatar}
+
+jotang:
+  internal:
+    token: ${JOTANG_INTERNAL_TOKEN:dev-internal-token}
+  gateway:
+    # 网关身份头的防伪凭证；默认值与网关一致，共享 / 生产环境用环境变量覆盖
+    token: ${JOTANG_GATEWAY_TOKEN:dev-gateway-token}
