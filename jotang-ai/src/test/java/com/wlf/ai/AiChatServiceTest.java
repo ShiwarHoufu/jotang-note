@@ -2,9 +2,11 @@ package com.wlf.ai;
 
 import com.wlf.ai.application.assistant.AiChatService;
 import com.wlf.ai.application.assistant.AiRateLimiter;
-import com.wlf.ai.application.assistant.NoteTools;
 import com.wlf.ai.application.assistant.dto.AiChatHistoryResponse;
 import com.wlf.ai.application.assistant.dto.AiChatResponse;
+import com.wlf.ai.application.port.out.ChatMessage;
+import com.wlf.ai.application.port.out.ChatModelPort;
+import com.wlf.ai.application.port.out.ChatTool;
 import com.wlf.ai.application.port.out.NoteContentReader;
 import com.wlf.ai.domain.assistant.AiMessage;
 import com.wlf.ai.domain.assistant.AiMessageRepository;
@@ -15,10 +17,6 @@ import com.wlf.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
@@ -38,10 +36,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link AiChatService} 的单元测试：模型、存储与 note 模块全部 mock，不起 Spring 上下文。
+ * {@link AiChatService} 的单元测试：模型端口、存储与 note 模块全部 mock，不起 Spring 上下文。
  *
  * <p>重点是<b>编排</b>：会话的建立与续聊、历史如何重放、配额取在调模型之前、
  * 落库的原子性、上游失败翻成哪个错误码、滑动窗口怎么裁。
@@ -52,19 +51,16 @@ class AiChatServiceTest {
     private static final String MESSAGE = "帮我解释一下拉格朗日中值定理";
     private static final String CONVERSATION_ID = "3f1a0b7c-9d2e-4a51-8c60-7b4f2e1d0a33";
 
-    private ChatClient chatClient;
+    private ChatModelPort chatModelPort;
     private StorageService storageService;
     private NoteContentReader noteContentReader;
     private AiMessageRepository aiMessageRepository;
     private PlatformTransactionManager transactionManager;
     private AiChatService service;
 
-    /** 最近一次 stub 出来的请求规格，用来断言真正发出去的内容 */
-    private ChatClient.ChatClientRequestSpec requestSpec;
-
     @BeforeEach
     void setUp() {
-        chatClient = mock(ChatClient.class);
+        chatModelPort = mock(ChatModelPort.class);
         storageService = mock(StorageService.class);
         noteContentReader = mock(NoteContentReader.class);
         aiMessageRepository = mock(AiMessageRepository.class);
@@ -74,7 +70,7 @@ class AiChatServiceTest {
         when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(new SimpleTransactionStatus());
         // 限流器用真实现：它本身就是这一层的规则，mock 掉等于把被测对象掏空
-        service = new AiChatService(chatClient, new AiRateLimiter(30, Duration.ofHours(1), "对话"),
+        service = new AiChatService(chatModelPort, new AiRateLimiter(30, Duration.ofHours(1), "对话"),
                 noteContentReader, storageService, aiMessageRepository, transactionManager);
     }
 
@@ -90,29 +86,25 @@ class AiChatServiceTest {
         assertThat(response.conversationId()).isNotBlank();
     }
 
-    /** 指令仍进 system 段，用户的话走 messages 段——这层结构是防注入的唯一手段，不能被拼成一段 */
+    /** 指令仍进 system 段，用户的话单独走用户消息——这层结构是防注入的唯一手段，不能被拼成一段 */
     @Test
     void chatKeepsInstructionInSystemSegment() {
         stubModel("回答");
 
         service.chat(USER_ID, MESSAGE, null);
 
-        ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
-        verify(requestSpec).system(system.capture());
-        assertThat(system.getValue()).contains("Jotang Note");
-
-        List<Message> sent = sentMessages();
-        assertThat(sent).hasSize(1);
-        assertThat(sent.get(0)).isInstanceOf(UserMessage.class);
-        assertThat(sent.get(0).getText()).isEqualTo(MESSAGE);
+        Sent sent = sentChat();
+        assertThat(sent.system()).contains("Jotang Note");
+        assertThat(sent.history()).isEmpty();
+        assertThat(sent.userMessage()).isEqualTo(MESSAGE);
     }
 
     /**
      * 对话必须挂上笔记工具，否则模型只能凭印象编造笔记内容。
      *
-     * <p>这里只钉「挂了一个什么」，钉不到「工具真的被执行了」——执行发生在框架的
-     * {@code ToolCallingAdvisor} 里，而整条 {@code ChatClient} 在本测试里是 mock，
-     * 那个 advisor 根本不在链上。工具本身的行为由 {@code NoteToolsTest} 单独覆盖。
+     * <p>这里只钉「挂了哪几个工具」，钉不到「工具真的被执行了」——执行发生在框架的
+     * {@code ToolCallingAdvisor} 里，而整个模型端口在本测试里是 mock。
+     * 工具本身的行为由 {@code NoteToolsTest} 覆盖，端口的适配由 {@code SpringAiChatModelAdapterTest} 覆盖。
      */
     @Test
     void chatAttachesTheNoteTools() {
@@ -120,10 +112,8 @@ class AiChatServiceTest {
 
         service.chat(USER_ID, MESSAGE, null);
 
-        ArgumentCaptor<Object[]> tools = ArgumentCaptor.forClass(Object[].class);
-        verify(requestSpec).tools(tools.capture());
-        assertThat(tools.getValue()).hasSize(1);
-        assertThat(tools.getValue()[0]).isInstanceOf(NoteTools.class);
+        assertThat(sentChat().tools()).extracting(ChatTool::name)
+                .containsExactly("search_notes_by_title", "read_note_content");
     }
 
     /**
@@ -133,7 +123,7 @@ class AiChatServiceTest {
     @Test
     void chatSpendsItsOwnQuotaNotTheSummaryOne() {
         AiRateLimiter summaryRateLimiter = new AiRateLimiter(10, Duration.ofHours(1), "生成");
-        AiChatService oneShotChat = new AiChatService(chatClient,
+        AiChatService oneShotChat = new AiChatService(chatModelPort,
                 new AiRateLimiter(1, Duration.ofHours(1), "对话"),
                 noteContentReader, storageService, aiMessageRepository, transactionManager);
         stubModel("回答");
@@ -153,23 +143,23 @@ class AiChatServiceTest {
      */
     @Test
     void rateLimitedChatNeverReachesTheModel() {
-        AiChatService oneShotChat = new AiChatService(chatClient,
+        AiChatService oneShotChat = new AiChatService(chatModelPort,
                 new AiRateLimiter(1, Duration.ofHours(1), "对话"),
                 noteContentReader, storageService, aiMessageRepository, transactionManager);
         stubModel("回答");
         oneShotChat.chat(USER_ID, MESSAGE, null);
-        verify(chatClient, times(1)).prompt();
+        verifyModelCalledTimes(1);
 
         assertThatThrownBy(() -> oneShotChat.chat(USER_ID, MESSAGE, null))
                 .isInstanceOf(BusinessException.class);
 
-        verify(chatClient, times(1)).prompt();
+        verifyModelCalledTimes(1);
         // 被拒的那轮也不该落库
         verify(aiMessageRepository, times(2)).insert(any(AiMessage.class));
     }
 
     /**
-     * 续聊时历史必须按「旧 user、旧 assistant、新 user」逐条原样排在前面。
+     * 续聊时历史必须按「旧 user、旧 assistant」原样排在前面，本轮新消息单独传给端口。
      * 这条钉的是前缀缓存的前提：顺序或内容一变，缓存就从那里断掉，整段历史按全价重算。
      */
     @Test
@@ -181,14 +171,12 @@ class AiChatServiceTest {
 
         service.chat(USER_ID, "第二个问题", CONVERSATION_ID);
 
-        List<Message> sent = sentMessages();
-        assertThat(sent).hasSize(3);
-        assertThat(sent.get(0)).isInstanceOf(UserMessage.class);
-        assertThat(sent.get(0).getText()).isEqualTo("第一个问题");
-        assertThat(sent.get(1)).isInstanceOf(AssistantMessage.class);
-        assertThat(sent.get(1).getText()).isEqualTo("第一个回答");
-        assertThat(sent.get(2)).isInstanceOf(UserMessage.class);
-        assertThat(sent.get(2).getText()).isEqualTo("第二个问题");
+        Sent sent = sentChat();
+        assertThat(sent.history()).extracting(ChatMessage::role)
+                .containsExactly(AiMessageRole.USER, AiMessageRole.ASSISTANT);
+        assertThat(sent.history()).extracting(ChatMessage::content)
+                .containsExactly("第一个问题", "第一个回答");
+        assertThat(sent.userMessage()).isEqualTo("第二个问题");
     }
 
     /**
@@ -203,7 +191,7 @@ class AiChatServiceTest {
 
         service.chat(USER_ID, MESSAGE, CONVERSATION_ID);
 
-        assertThat(sentMessages()).allSatisfy(m -> assertThat(m.getText()).doesNotContain("2026"));
+        assertThat(sentChat().history()).allSatisfy(m -> assertThat(m.content()).doesNotContain("2026"));
     }
 
     @Test
@@ -232,7 +220,7 @@ class AiChatServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
 
-        verify(chatClient, never()).prompt();
+        verifyNoInteractions(chatModelPort);
         verify(aiMessageRepository, never()).insert(any(AiMessage.class));
     }
 
@@ -329,11 +317,10 @@ class AiChatServiceTest {
 
         service.chat(USER_ID, MESSAGE, CONVERSATION_ID);
 
-        List<Message> sent = sentMessages();
-        // 窗口 40 条 + 本轮新消息
-        assertThat(sent).hasSize(41);
-        assertThat(sent.get(0).getText()).isEqualTo("消息10");
-        assertThat(sent.get(39).getText()).isEqualTo("消息49");
+        List<ChatMessage> sent = sentChat().history();
+        assertThat(sent).hasSize(40);
+        assertThat(sent.get(0).content()).isEqualTo("消息10");
+        assertThat(sent.get(39).content()).isEqualTo("消息49");
     }
 
     /** 未超限时一条不裁——绝大多数会话的常态，也是前缀缓存逐轮照常命中的前提 */
@@ -344,9 +331,9 @@ class AiChatServiceTest {
 
         service.chat(USER_ID, MESSAGE, CONVERSATION_ID);
 
-        List<Message> sent = sentMessages();
-        assertThat(sent).hasSize(41);
-        assertThat(sent.get(0).getText()).isEqualTo("消息0");
+        List<ChatMessage> sent = sentChat().history();
+        assertThat(sent).hasSize(40);
+        assertThat(sent.get(0).content()).isEqualTo("消息0");
     }
 
     /** 窗口起点必须落在 USER 行上，否则上下文会从助手的半句说起 */
@@ -357,19 +344,18 @@ class AiChatServiceTest {
 
         service.chat(USER_ID, MESSAGE, CONVERSATION_ID);
 
-        assertThat(sentMessages().get(0)).isInstanceOf(UserMessage.class);
+        assertThat(sentChat().history().get(0).role()).isEqualTo(AiMessageRole.USER);
     }
 
-    /** 切片之后本轮新消息仍在最后——顺序错了模型就答非所问 */
+    /** 本轮新消息排在历史之后单独传入——顺序错了模型就答非所问 */
     @Test
-    void askAppendsNewMessageAfterTheWindow() {
+    void askPassesTheNewMessageSeparately() {
         when(aiMessageRepository.findHistory(USER_ID, CONVERSATION_ID)).thenReturn(historyOf(50));
         stubModel("回答");
 
         service.chat(USER_ID, "本轮问题", CONVERSATION_ID);
 
-        List<Message> sent = sentMessages();
-        assertThat(sent.get(sent.size() - 1).getText()).isEqualTo("本轮问题");
+        assertThat(sentChat().userMessage()).isEqualTo("本轮问题");
     }
 
     // ==================== 辅助 ====================
@@ -383,38 +369,31 @@ class AiChatServiceTest {
         return rows;
     }
 
-    /** 把 {@code ChatClient} 那条链 stub 掉，并记下请求规格供断言 */
     private void stubModel(String reply) {
-        stubRequestSpec();
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
-        when(requestSpec.call()).thenReturn(callSpec);
-        when(callSpec.content()).thenReturn(reply);
+        when(chatModelPort.chat(anyString(), anyList(), anyString(), anyList())).thenReturn(reply);
     }
 
     private void stubFailure() {
-        stubRequestSpec();
-        when(requestSpec.call()).thenThrow(new IllegalStateException("上游 500"));
+        when(chatModelPort.chat(anyString(), anyList(), anyString(), anyList()))
+                .thenThrow(new IllegalStateException("上游 500"));
     }
 
-    /**
-     * 对话走 {@code messages(List)} 再挂 {@code tools(...)}，每条链都要 stub——
-     * 漏掉的那条会返回 mock 默认的 null，链式调用直接 NPE，报错看着像生产代码的 bug。
-     */
-    @SuppressWarnings("unchecked")
-    private void stubRequestSpec() {
-        requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.system(anyString())).thenReturn(requestSpec);
-        when(requestSpec.messages(anyList())).thenReturn(requestSpec);
-        when(requestSpec.tools(any(Object[].class))).thenReturn(requestSpec);
+    private void verifyModelCalledTimes(int times) {
+        verify(chatModelPort, times(times)).chat(anyString(), anyList(), anyString(), anyList());
     }
 
-    /** 取出真正发给模型的那串消息，顺序即请求里的顺序 */
+    /** 取出真正发给模型端口的一组参数 */
     @SuppressWarnings("unchecked")
-    private List<Message> sentMessages() {
-        ArgumentCaptor<List<Message>> captor = ArgumentCaptor.forClass(List.class);
-        verify(requestSpec).messages(captor.capture());
-        return captor.getValue();
+    private Sent sentChat() {
+        ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<List<ChatMessage>> history = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<String> userMessage = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<List<ChatTool>> tools = ArgumentCaptor.forClass(List.class);
+        verify(chatModelPort).chat(system.capture(), history.capture(), userMessage.capture(), tools.capture());
+        return new Sent(system.getValue(), history.getValue(), userMessage.getValue(), tools.getValue());
+    }
+
+    private record Sent(String system, List<ChatMessage> history, String userMessage, List<ChatTool> tools) {
     }
 
     /** 一行历史。刻意带上 {@code createdAt}，用来证明它不会进 prompt */

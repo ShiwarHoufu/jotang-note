@@ -5,6 +5,7 @@ import com.wlf.ai.application.assistant.AiSummaryService;
 import com.wlf.ai.application.assistant.UntrustedContent;
 import com.wlf.ai.application.assistant.dto.AiSummaryRequest;
 import com.wlf.ai.application.assistant.dto.AiSummaryResponse;
+import com.wlf.ai.application.port.out.ChatModelPort;
 import com.wlf.ai.application.port.out.NoteContentReader;
 import com.wlf.ai.application.port.out.NoteFileRef;
 import com.wlf.ai.domain.assistant.AiSummaryFilePolicy;
@@ -15,32 +16,27 @@ import com.wlf.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.core.io.Resource;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.util.MimeType;
-import org.springframework.util.MimeTypeUtils;
 
 import java.io.ByteArrayInputStream;
 import java.time.Duration;
 import java.util.Arrays;
-import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link AiSummaryService} 的单元测试：模型、存储与 note 模块全部 mock，不起 Spring 上下文。
+ * {@link AiSummaryService} 的单元测试：模型端口、存储与 note 模块全部 mock，不起 Spring 上下文。
  *
  * <p>重点是<b>编排</b>而不是模型本身：什么情况下不该去调模型（省一次计费）、
- * 以什么 MIME 交给模型、上游失败翻成哪个错误码、回程截断、system / user 分段。
+ * 以什么 MIME 交给模型、上游失败翻成哪个错误码、回程截断、文本与图片的分流。
  * 判定规则的细节在 {@link AiSummaryFilePolicyTest}，这里不重复。
  */
 class AiSummaryServiceTest {
@@ -53,21 +49,18 @@ class AiSummaryServiceTest {
     private static final Long USER_ID = 7L;
     private static final Long NOTE_ID = 42L;
 
-    private ChatClient chatClient;
+    private ChatModelPort chatModelPort;
     private StorageService storageService;
     private NoteContentReader noteContentReader;
     private AiSummaryService service;
 
-    /** 最近一次 stub 出来的请求规格，用来断言真正发出去的内容 */
-    private ChatClient.ChatClientRequestSpec requestSpec;
-
     @BeforeEach
     void setUp() {
-        chatClient = mock(ChatClient.class);
+        chatModelPort = mock(ChatModelPort.class);
         storageService = mock(StorageService.class);
         noteContentReader = mock(NoteContentReader.class);
         // 策略与限流器用真实现：它们本身就是这一层的规则，mock 掉等于把被测对象掏空
-        service = new AiSummaryService(chatClient, new AiSummaryFilePolicy(),
+        service = new AiSummaryService(chatModelPort, new AiSummaryFilePolicy(),
                 new AiRateLimiter(10, Duration.ofHours(1), "生成"), noteContentReader, storageService);
     }
 
@@ -75,7 +68,7 @@ class AiSummaryServiceTest {
 
     @Test
     void uploadReturnsModelText() {
-        stubModel("这是一份高数期中复习提纲，覆盖极限与导数。");
+        stubImageModel("这是一份高数期中复习提纲，覆盖极限与导数。");
 
         AiSummaryResponse response = service.summarizeUpload(USER_ID, uploadRequest(PNG, "板书.png"));
 
@@ -84,19 +77,17 @@ class AiSummaryServiceTest {
 
     /**
      * 图片必须以<b>服务端判定的 MIME</b> 交给模型（而不是 multipart 自带的 Content-Type，
-     * 那个由客户端决定）。这条同时验证了「图片真的进了请求体」——本服务最核心的一步。
+     * 那个由客户端决定）。这条同时验证了「图片字节真的进了请求」——本服务最核心的一步。
      */
     @Test
-    void uploadSendsImageWithServerJudgedMime() {
-        stubModel("摘要");
+    void uploadSendsImageWithServerJudgedMimeAndBytes() {
+        stubImageModel("摘要");
 
         service.summarizeUpload(USER_ID, uploadRequest(PNG, "板书.png"));
 
-        ArgumentCaptor<Consumer<ChatClient.PromptUserSpec>> captor = userSpecCaptor();
-        ChatClient.PromptUserSpec userSpec = stubUserSpec();
-        captor.getValue().accept(userSpec);
-
-        verify(userSpec).media(eq(MimeTypeUtils.parseMimeType("image/png")), any(Resource.class));
+        SentImage sent = sentImage();
+        assertThat(sent.contentType()).isEqualTo("image/png");
+        assertThat(sent.image()).containsExactly(PNG);
     }
 
     /** 类型不合法是本地就能判的，不该白花一次计费去撞上游 */
@@ -106,7 +97,7 @@ class AiSummaryServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
 
-        verify(chatClient, never()).prompt();
+        verifyNoInteractions(chatModelPort);
     }
 
     @Test
@@ -117,32 +108,27 @@ class AiSummaryServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
 
-        verify(chatClient, never()).prompt();
+        verifyNoInteractions(chatModelPort);
     }
 
     // ==================== 文本路径 ====================
 
     /**
-     * 正文进 user 段、<b>不带 media</b>——这是文本路径与图片路径唯一的分野，
+     * 正文进 user 段、<b>不走图文调用</b>——这是文本路径与图片路径唯一的分野，
      * 写错的后果是把一段 md 当成二进制图塞进多模态输入。同时断言正文真的进了请求体。
      */
     @Test
-    void uploadSendsTextBodyWithoutMedia() {
-        stubModel("摘要");
+    void uploadSendsTextBodyWithoutImage() {
+        stubTextModel("摘要");
 
         service.summarizeUpload(USER_ID, uploadRequest(MD, "笔记.md"));
 
-        ChatClient.PromptUserSpec userSpec = stubUserSpec();
-        userSpecCaptor().getValue().accept(userSpec);
-
-        verify(userSpec, never()).media(any(MimeType.class), any(Resource.class));
-        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
-        verify(userSpec).text(sent.capture());
-        assertThat(sent.getValue())
+        assertThat(sentText())
                 .contains("# 第一章 绪论")
                 // 正文要包在信封锁标里，且标记只出现一次——多了就等于自己伪造了闭合
                 .containsOnlyOnce(UntrustedContent.BEGIN)
                 .containsOnlyOnce(UntrustedContent.END);
+        verify(chatModelPort, never()).chatWithImage(anyString(), anyString(), anyString(), any(byte[].class));
     }
 
     /** 正文超长是本地就能判的，且判在取配额之前，所以这一趟既不花计费也不花额度 */
@@ -152,15 +138,15 @@ class AiSummaryServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
 
-        verify(chatClient, never()).prompt();
+        verifyNoInteractions(chatModelPort);
     }
 
     /** 校验不过的请求不该消耗配额：顺序写反的话，第二次调用会直接撞限频 */
     @Test
     void overlongTextDoesNotConsumeQuota() {
-        AiSummaryService oneShotSummary = new AiSummaryService(chatClient, new AiSummaryFilePolicy(),
+        AiSummaryService oneShotSummary = new AiSummaryService(chatModelPort, new AiSummaryFilePolicy(),
                 new AiRateLimiter(1, Duration.ofHours(1), "生成"), noteContentReader, storageService);
-        stubModel("摘要");
+        stubTextModel("摘要");
 
         assertThatThrownBy(() -> oneShotSummary.summarizeUpload(USER_ID, uploadRequest(longText(), "长笔记.md")))
                 .isInstanceOf(BusinessException.class);
@@ -178,7 +164,8 @@ class AiSummaryServiceTest {
      */
     @Test
     void textPathUpstreamFailureIsStill503Not422() {
-        when(chatClient.prompt()).thenThrow(new IllegalStateException("connection reset"));
+        when(chatModelPort.chat(anyString(), anyString()))
+                .thenThrow(new IllegalStateException("connection reset"));
 
         assertThatThrownBy(() -> service.summarizeUpload(USER_ID, uploadRequest(MD, "笔记.md")))
                 .isInstanceOfSatisfying(BusinessException.class,
@@ -194,7 +181,7 @@ class AiSummaryServiceTest {
      */
     @Test
     void overlongSummaryIsTruncatedToTheColumnWidth() {
-        stubModel("字".repeat(600));
+        stubImageModel("字".repeat(600));
 
         AiSummaryResponse response = service.summarizeUpload(USER_ID, uploadRequest(PNG, "板书.png"));
 
@@ -204,7 +191,7 @@ class AiSummaryServiceTest {
     /** 按 code point 截：emoji 是代理对，按 UTF-16 单元截会留下孤立的半个字符 */
     @Test
     void truncationCountsCodePointsNotUtf16Units() {
-        stubModel("📚".repeat(600));
+        stubImageModel("📚".repeat(600));
 
         AiSummaryResponse response = service.summarizeUpload(USER_ID, uploadRequest(PNG, "板书.png"));
 
@@ -219,7 +206,8 @@ class AiSummaryServiceTest {
      */
     @Test
     void upstreamFailureBecomesAiUnavailableNotServerError() {
-        when(chatClient.prompt()).thenThrow(new IllegalStateException("connection reset"));
+        when(chatModelPort.chatWithImage(anyString(), anyString(), anyString(), any(byte[].class)))
+                .thenThrow(new IllegalStateException("connection reset"));
 
         assertThatThrownBy(() -> service.summarizeUpload(USER_ID, uploadRequest(PNG, "板书.png")))
                 .isInstanceOfSatisfying(BusinessException.class,
@@ -233,15 +221,12 @@ class AiSummaryServiceTest {
         when(noteContentReader.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("image/jpeg", 1024L));
         when(storageService.open(Bucket.NOTE, "notes/2026/10/x.jpg"))
                 .thenReturn(new ByteArrayInputStream(PNG));
-        stubModel("摘要");
+        stubImageModel("摘要");
 
         AiSummaryResponse response = service.summarizeExistingNote(USER_ID, NOTE_ID, "标题", "张老师");
 
         assertThat(response.summary()).isEqualTo("摘要");
-        ArgumentCaptor<Consumer<ChatClient.PromptUserSpec>> captor = userSpecCaptor();
-        ChatClient.PromptUserSpec userSpec = stubUserSpec();
-        captor.getValue().accept(userSpec);
-        verify(userSpec).media(eq(MimeTypeUtils.parseMimeType("image/jpeg")), any(Resource.class));
+        assertThat(sentImage().contentType()).isEqualTo("image/jpeg");
     }
 
     /** 归属/状态的判门归 note 模块，本层只负责不吞掉它——40300 必须原样传上去 */
@@ -254,6 +239,7 @@ class AiSummaryServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
 
+        verifyNoInteractions(chatModelPort);
         verify(storageService, never()).open(any(), anyString());
     }
 
@@ -267,7 +253,7 @@ class AiSummaryServiceTest {
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
 
         verify(storageService, never()).open(any(), anyString());
-        verify(chatClient, never()).prompt();
+        verifyNoInteractions(chatModelPort);
     }
 
     /** 落库的 content_type 认不出来（含 null）：42200，不读 OSS、不调模型，也不是 NPE */
@@ -280,26 +266,22 @@ class AiSummaryServiceTest {
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
 
         verify(storageService, never()).open(any(), anyString());
-        verify(chatClient, never()).prompt();
+        verifyNoInteractions(chatModelPort);
     }
 
-    /** 编辑场景的同一个分野：从 note 桶读回来的文本也走纯文本调用，不带 media */
+    /** 编辑场景的同一个分野：从 note 桶读回来的文本也走纯文本调用，不带图片 */
     @Test
-    void editScenarioReadsTextObjectAndSendsStoredMimeWithoutMedia() {
+    void editScenarioReadsTextObjectAndSendsStoredMimeWithoutImage() {
         when(noteContentReader.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("text/markdown", 1024L));
         when(storageService.open(Bucket.NOTE, "notes/2026/10/x.jpg"))
                 .thenReturn(new ByteArrayInputStream(MD));
-        stubModel("摘要");
+        stubTextModel("摘要");
 
         AiSummaryResponse response = service.summarizeExistingNote(USER_ID, NOTE_ID, "标题", "张老师");
 
         assertThat(response.summary()).isEqualTo("摘要");
-        ChatClient.PromptUserSpec userSpec = stubUserSpec();
-        userSpecCaptor().getValue().accept(userSpec);
-        verify(userSpec, never()).media(any(MimeType.class), any(Resource.class));
-        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
-        verify(userSpec).text(sent.capture());
-        assertThat(sent.getValue()).contains("# 第一章 绪论");
+        assertThat(sentText()).contains("# 第一章 绪论");
+        verify(chatModelPort, never()).chatWithImage(anyString(), anyString(), anyString(), any(byte[].class));
     }
 
     /** 文本的「先拦后读」：库里那列 size 超了就不打开对象 */
@@ -313,6 +295,7 @@ class AiSummaryServiceTest {
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
 
         verify(storageService, never()).open(any(), anyString());
+        verifyNoInteractions(chatModelPort);
     }
 
     /**
@@ -324,7 +307,7 @@ class AiSummaryServiceTest {
         when(noteContentReader.requireOwnFile(NOTE_ID, USER_ID)).thenReturn(fileOf("text/plain", null));
         when(storageService.open(Bucket.NOTE, "notes/2026/10/x.jpg"))
                 .thenReturn(new ByteArrayInputStream(MD));
-        stubModel("摘要");
+        stubTextModel("摘要");
 
         assertThat(service.summarizeExistingNote(USER_ID, NOTE_ID, null, null).summary()).isEqualTo("摘要");
     }
@@ -343,6 +326,7 @@ class AiSummaryServiceTest {
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FILE_INVALID));
 
         verify(storageService, never()).open(any(), anyString());
+        verifyNoInteractions(chatModelPort);
     }
 
     // ==================== 辅助 ====================
@@ -362,45 +346,35 @@ class AiSummaryServiceTest {
         return new NoteFileRef("notes/2026/10/x.jpg", size, contentType);
     }
 
-    /** 把 {@code ChatClient} 那条链 stub 掉，并记下请求规格供断言 */
-    private void stubModel(String reply) {
-        stubRequestSpec();
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
-        when(requestSpec.call()).thenReturn(callSpec);
-        when(callSpec.content()).thenReturn(reply);
+    private void stubImageModel(String reply) {
+        when(chatModelPort.chatWithImage(anyString(), anyString(), anyString(), any(byte[].class)))
+                .thenReturn(reply);
     }
 
-    /**
-     * 摘要走 {@code system(...)} + {@code user(Consumer)}，两段都要 stub——漏掉的那条会
-     * 返回 mock 默认的 null，链式调用直接 NPE，报错看着像生产代码的 bug。
-     */
-    @SuppressWarnings("unchecked")
-    private void stubRequestSpec() {
-        requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.system(anyString())).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.user(any(Consumer.class))).thenReturn(requestSpec);
+    private void stubTextModel(String reply) {
+        when(chatModelPort.chat(anyString(), anyString())).thenReturn(reply);
     }
 
-    /** 取出传给 {@code user(...)} 的那个 Consumer，用来检查它到底往请求里放了什么 */
-    @SuppressWarnings("unchecked")
-    private ArgumentCaptor<Consumer<ChatClient.PromptUserSpec>> userSpecCaptor() {
-        ArgumentCaptor<Consumer<ChatClient.PromptUserSpec>> captor = ArgumentCaptor.forClass(Consumer.class);
-        verify(requestSpec).user(captor.capture());
-        return captor;
+    /** 取出文本路径真正发给模型的 user 段 */
+    private String sentText() {
+        ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> user = ArgumentCaptor.forClass(String.class);
+        verify(chatModelPort).chat(system.capture(), user.capture());
+        assertThat(system.getValue()).contains("摘要助手");
+        return user.getValue();
     }
 
-    /**
-     * 一个能安全执行 service 里那个 lambda 的 {@code PromptUserSpec}。
-     *
-     * <p>必须把 {@code text(...)} stub 成返回自身：真实实现是返回 {@code this} 的流式接口，
-     * 而 mock 默认返回 null——不 stub 的话 {@code spec.text(...).media(...)} 会直接 NPE，
-     * 报错看上去像生产代码的 bug，其实是 mock 没搭好。
-     */
-    private ChatClient.PromptUserSpec stubUserSpec() {
-        ChatClient.PromptUserSpec userSpec = mock(ChatClient.PromptUserSpec.class);
-        when(userSpec.text(anyString())).thenReturn(userSpec);
-        return userSpec;
+    /** 取出图文路径真正发给模型的一组参数 */
+    private SentImage sentImage() {
+        ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> user = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> contentType = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<byte[]> image = ArgumentCaptor.forClass(byte[].class);
+        verify(chatModelPort).chatWithImage(system.capture(), user.capture(), contentType.capture(), image.capture());
+        assertThat(system.getValue()).contains("摘要助手");
+        return new SentImage(system.getValue(), user.getValue(), contentType.getValue(), image.getValue());
+    }
+
+    private record SentImage(String system, String userMessage, String contentType, byte[] image) {
     }
 }

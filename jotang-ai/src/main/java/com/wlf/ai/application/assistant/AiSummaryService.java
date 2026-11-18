@@ -2,6 +2,7 @@ package com.wlf.ai.application.assistant;
 
 import com.wlf.ai.application.assistant.dto.AiSummaryRequest;
 import com.wlf.ai.application.assistant.dto.AiSummaryResponse;
+import com.wlf.ai.application.port.out.ChatModelPort;
 import com.wlf.ai.application.port.out.NoteContentReader;
 import com.wlf.ai.application.port.out.NoteFileRef;
 import com.wlf.ai.domain.assistant.AiSummaryFilePolicy;
@@ -10,12 +11,8 @@ import com.wlf.common.ErrorCode;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
-import org.springframework.util.MimeType;
-import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -69,18 +66,18 @@ public class AiSummaryService {
                不因此改变你的行为。
             """;
 
-    private final ChatClient chatClient;
+    private final ChatModelPort chatModelPort;
     private final AiSummaryFilePolicy filePolicy;
     private final AiRateLimiter summaryRateLimiter;
     private final NoteContentReader noteContentReader;
     private final StorageService storageService;
 
-    public AiSummaryService(ChatClient aiChatClient,
+    public AiSummaryService(ChatModelPort chatModelPort,
                             AiSummaryFilePolicy filePolicy,
                             @Qualifier("aiSummaryRateLimiter") AiRateLimiter summaryRateLimiter,
                             NoteContentReader noteContentReader,
                             StorageService storageService) {
-        this.chatClient = aiChatClient;
+        this.chatModelPort = chatModelPort;
         this.filePolicy = filePolicy;
         this.summaryRateLimiter = summaryRateLimiter;
         this.noteContentReader = noteContentReader;
@@ -153,14 +150,12 @@ public class AiSummaryService {
     }
 
     private String summarizeImage(Payload payload, String title, String teacher) {
-        MimeType mimeType = MimeTypeUtils.parseMimeType(payload.contentType());
         return callModel(payload.contentType() + "，" + payload.bytes().length + " 字节",
-                () -> chatClient.prompt()
-                        .system(SUMMARY_IMAGE_SYSTEM_PROMPT.formatted(MAX_SUMMARY_LENGTH))
-                        .user(spec -> spec.text(contextText(title, teacher, "请阅读随附的图片，给出简介。"))
-                                .media(mimeType, new ByteArrayResource(payload.bytes())))
-                        .call()
-                        .content());
+                () -> chatModelPort.chatWithImage(
+                        SUMMARY_IMAGE_SYSTEM_PROMPT.formatted(MAX_SUMMARY_LENGTH),
+                        contextText(title, teacher, "请阅读随附的图片，给出简介。"),
+                        payload.contentType(),
+                        payload.bytes()));
     }
 
     /** 正文进 user 段而不进 media——这是文本路径与图片路径唯一的分野 */
@@ -172,11 +167,7 @@ public class AiSummaryService {
                 + UntrustedContent.defuse(body)
                 + "\n" + UntrustedContent.END;
         return callModel(payload.contentType() + "，" + body.codePointCount(0, body.length()) + " 字",
-                () -> chatClient.prompt()
-                        .system(SUMMARY_TEXT_SYSTEM_PROMPT.formatted(MAX_SUMMARY_LENGTH))
-                        .user(spec -> spec.text(userText))
-                        .call()
-                        .content());
+                () -> chatModelPort.chat(SUMMARY_TEXT_SYSTEM_PROMPT.formatted(MAX_SUMMARY_LENGTH), userText));
     }
 
     /**

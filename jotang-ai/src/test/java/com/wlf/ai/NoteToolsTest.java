@@ -1,23 +1,25 @@
 package com.wlf.ai;
 
 import com.wlf.ai.application.assistant.NoteTools;
-import com.wlf.ai.domain.assistant.AiSummaryFilePolicy;
-
-import com.wlf.common.BusinessException;
-import com.wlf.common.ErrorCode;
+import com.wlf.ai.application.port.out.ChatModelPort;
+import com.wlf.ai.application.port.out.ChatTool;
+import com.wlf.ai.application.port.out.ChatToolParameter;
 import com.wlf.ai.application.port.out.NoteContentReader;
 import com.wlf.ai.application.port.out.NoteFileRef;
 import com.wlf.ai.application.port.out.NoteSearchHit;
+import com.wlf.ai.domain.assistant.AiSummaryFilePolicy;
+import com.wlf.common.BusinessException;
+import com.wlf.common.ErrorCode;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.client.ChatClient;
+import org.mockito.ArgumentCaptor;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.function.Consumer;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -47,15 +49,49 @@ class NoteToolsTest {
 
     private NoteContentReader noteContentReader;
     private StorageService storageService;
-    private ChatClient chatClient;
+    private ChatModelPort chatModelPort;
     private NoteTools tools;
 
     @BeforeEach
     void setUp() {
         noteContentReader = mock(NoteContentReader.class);
         storageService = mock(StorageService.class);
-        chatClient = mock(ChatClient.class);
-        tools = new NoteTools(USER_ID, noteContentReader, storageService, chatClient);
+        chatModelPort = mock(ChatModelPort.class);
+        tools = new NoteTools(USER_ID, noteContentReader, storageService, chatModelPort);
+    }
+
+    // ==================== 工具定义 ====================
+
+    /** 模型看到的工具名与入参 schema 由端口契约给出，不能悄悄改名 */
+    @Test
+    void exposesTheTwoToolsWithTheirParameters() {
+        List<ChatTool> definitions = tools.tools();
+
+        assertThat(definitions).extracting(ChatTool::name)
+                .containsExactly("search_notes_by_title", "read_note_content");
+        assertThat(definitions.get(0).parameters()).extracting(ChatToolParameter::name)
+                .containsExactly("title");
+        assertThat(definitions.get(0).parameters()).extracting(ChatToolParameter::type)
+                .containsExactly(ChatToolParameter.Type.STRING);
+        assertThat(definitions.get(1).parameters()).extracting(ChatToolParameter::type)
+                .containsExactly(ChatToolParameter.Type.INTEGER);
+    }
+
+    /** 端口回调必须接到同一套业务逻辑上（书名号剥离等），而不是另写一份 */
+    @Test
+    void toolHandlerDelegatesToTheSameLogic() {
+        tools.tools().get(0).invoke(Map.of("title", "《高数笔记》"));
+
+        verify(noteContentReader).findOnlineByExactTitle("高数笔记", 5);
+    }
+
+    @Test
+    void readToolHandlerPassesTheNoteId() {
+        stubAttachment("text/plain", "内容".getBytes(StandardCharsets.UTF_8));
+
+        tools.tools().get(1).invoke(Map.of("noteId", 42));
+
+        verify(noteContentReader).readableOnlineFile(NOTE_ID);
     }
 
     // ==================== 检索 ====================
@@ -111,6 +147,9 @@ class NoteToolsTest {
         String result = tools.readNoteContent(NOTE_ID);
 
         assertThat(result).contains("板书：拉格朗日中值定理的证明");
+        ArgumentCaptor<String> contentType = ArgumentCaptor.forClass(String.class);
+        verify(chatModelPort).chatWithImage(anyString(), anyString(), contentType.capture(), any(byte[].class));
+        assertThat(contentType.getValue()).isEqualTo("image/png");
     }
 
     @Test
@@ -194,15 +233,8 @@ class NoteToolsTest {
         when(storageService.open(Bucket.NOTE, STORAGE_KEY)).thenReturn(new ByteArrayInputStream(bytes));
     }
 
-    /** 把视觉调用那条链 stub 掉：{@code system → user(Consumer) → call → content} */
-    @SuppressWarnings("unchecked")
     private void stubVision(String reply) {
-        ChatClient.ChatClientRequestSpec spec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
-        when(chatClient.prompt()).thenReturn(spec);
-        when(spec.system(anyString())).thenReturn(spec);
-        when(spec.user(any(Consumer.class))).thenReturn(spec);
-        when(spec.call()).thenReturn(callSpec);
-        when(callSpec.content()).thenReturn(reply);
+        when(chatModelPort.chatWithImage(anyString(), anyString(), anyString(), any(byte[].class)))
+                .thenReturn(reply);
     }
 }

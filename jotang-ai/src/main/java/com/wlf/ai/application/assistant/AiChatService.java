@@ -2,6 +2,8 @@ package com.wlf.ai.application.assistant;
 
 import com.wlf.ai.application.assistant.dto.AiChatHistoryResponse;
 import com.wlf.ai.application.assistant.dto.AiChatResponse;
+import com.wlf.ai.application.port.out.ChatMessage;
+import com.wlf.ai.application.port.out.ChatModelPort;
 import com.wlf.ai.application.port.out.NoteContentReader;
 import com.wlf.ai.domain.assistant.AiMessage;
 import com.wlf.ai.domain.assistant.AiMessageRepository;
@@ -10,10 +12,6 @@ import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -54,7 +52,7 @@ public class AiChatService {
             6. 纯文本格式，只允许换行，不能有其他格式符号；
             """;
 
-    private final ChatClient chatClient;
+    private final ChatModelPort chatModelPort;
     /** 摘要与对话各持一个实例、各算各的额度：两者代价差一个数量级，共用一个桶会互相挤占 */
     private final AiRateLimiter chatRateLimiter;
     private final NoteContentReader noteContentReader;
@@ -62,13 +60,13 @@ public class AiChatService {
     private final AiMessageRepository aiMessageRepository;
     private final TransactionTemplate transactionTemplate;
 
-    public AiChatService(ChatClient aiChatClient,
+    public AiChatService(ChatModelPort chatModelPort,
                          @Qualifier("aiChatRateLimiter") AiRateLimiter chatRateLimiter,
                          NoteContentReader noteContentReader,
                          StorageService storageService,
                          AiMessageRepository aiMessageRepository,
                          PlatformTransactionManager transactionManager) {
-        this.chatClient = aiChatClient;
+        this.chatModelPort = chatModelPort;
         this.chatRateLimiter = chatRateLimiter;
         this.noteContentReader = noteContentReader;
         this.storageService = storageService;
@@ -137,17 +135,12 @@ public class AiChatService {
         List<AiMessage> window = history.size() > MAX_CONTEXT_MESSAGES
                 ? history.subList(history.size() - MAX_CONTEXT_MESSAGES, history.size())
                 : history;
-        List<Message> messages = new ArrayList<>(window.size() + 1);
-        window.forEach(row -> messages.add(toModelMessage(row)));
-        messages.add(new UserMessage(message));
+        List<ChatMessage> promptHistory = new ArrayList<>(window.size());
+        window.forEach(row -> promptHistory.add(toPromptMessage(row)));
 
         try {
-            String raw = chatClient.prompt()
-                    .system(CHAT_SYSTEM_PROMPT)
-                    .messages(messages)
-                    .tools(new NoteTools(userId, noteContentReader, storageService, chatClient))
-                    .call()
-                    .content();
+            String raw = chatModelPort.chat(CHAT_SYSTEM_PROMPT, promptHistory, message,
+                    new NoteTools(userId, noteContentReader, storageService, chatModelPort).tools());
             // 模型返回 null 不算出错，给空串而不是让 NPE 变成 50000
             return raw == null ? "" : raw.strip();
         } catch (RuntimeException e) {
@@ -158,10 +151,11 @@ public class AiChatService {
         }
     }
 
-    private static Message toModelMessage(AiMessage row) {
-        return AiMessageRole.ASSISTANT.name().equals(row.getRole())
-                ? new AssistantMessage(row.getContent())
-                : new UserMessage(row.getContent());
+    private static ChatMessage toPromptMessage(AiMessage row) {
+        AiMessageRole role = AiMessageRole.ASSISTANT.name().equals(row.getRole())
+                ? AiMessageRole.ASSISTANT
+                : AiMessageRole.USER;
+        return new ChatMessage(role, row.getContent());
     }
 
     /**

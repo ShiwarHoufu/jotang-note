@@ -1,18 +1,16 @@
 package com.wlf.ai.application.assistant;
 
-import com.wlf.common.BusinessException;
+import com.wlf.ai.application.port.out.ChatModelPort;
+import com.wlf.ai.application.port.out.ChatTool;
+import com.wlf.ai.application.port.out.ChatToolParameter;
+import com.wlf.ai.application.port.out.NoteContentReader;
 import com.wlf.ai.application.port.out.NoteFileRef;
 import com.wlf.ai.application.port.out.NoteSearchHit;
-import com.wlf.ai.application.port.out.NoteContentReader;
 import com.wlf.ai.domain.assistant.AiSummaryFilePolicy;
+import com.wlf.common.BusinessException;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
-import org.springframework.core.io.ByteArrayResource;
-import org.springframework.util.MimeTypeUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -46,27 +44,46 @@ public class NoteTools {
             4. 直接输出转写结果，不要任何前缀或解释性文字。
             """;
 
+    private static final String SEARCH_NOTES = "search_notes_by_title";
+    private static final String READ_NOTE = "read_note_content";
+
+    private static final String SEARCH_NOTES_DESCRIPTION =
+            "按标题精确查找本平台在线的笔记，返回笔记 id、标题、教师与简介。"
+                    + "用户想找某篇笔记、或需要某篇笔记的内容时使用。"
+                    + "查不到就据实告诉用户没找到，不要编造标题或内容。";
+
+    private static final String READ_NOTE_DESCRIPTION = "根据笔记 id 读取一篇在线笔记附件的内容。";
+
     private final Long userId;
     private final NoteContentReader noteContentReader;
     private final StorageService storageService;
-    private final ChatClient chatClient;
+    private final ChatModelPort chatModelPort;
 
     /** 本轮已读的附件数。工具由框架在同一次 call() 里串行执行，不需要同步 */
     private int extractionsUsed;
 
-    public NoteTools(Long userId, NoteContentReader noteContentReader, StorageService storageService, ChatClient chatClient) {
+    public NoteTools(Long userId, NoteContentReader noteContentReader, StorageService storageService,
+                     ChatModelPort chatModelPort) {
         this.userId = userId;
         this.noteContentReader = noteContentReader;
         this.storageService = storageService;
-        this.chatClient = chatClient;
+        this.chatModelPort = chatModelPort;
     }
 
-    @Tool(name = "search_notes_by_title",
-            description = "按标题精确查找本平台在线的笔记，返回笔记 id、标题、教师与简介。"
-                    + "用户想找某篇笔记、或需要某篇笔记的内容时使用。"
-                    + "查不到就据实告诉用户没找到，不要编造标题或内容。")
-    public List<NoteSearchHit> searchNotesByTitle(
-            @ToolParam(description = "笔记的完整标题，逐字照抄，不要带《》书名号") String title) {
+    /** 交给模型调用的工具定义；每次请求新建一个实例，已读计数不跨轮共享 */
+    public List<ChatTool> tools() {
+        return List.of(
+                new ChatTool(SEARCH_NOTES, SEARCH_NOTES_DESCRIPTION,
+                        List.of(new ChatToolParameter("title", ChatToolParameter.Type.STRING,
+                                "笔记的完整标题，逐字照抄，不要带《》书名号")),
+                        args -> searchNotesByTitle((String) args.get("title"))),
+                new ChatTool(READ_NOTE, READ_NOTE_DESCRIPTION,
+                        List.of(new ChatToolParameter("noteId", ChatToolParameter.Type.INTEGER,
+                                "取自 search_notes_by_title 的结果")),
+                        args -> readNoteContent(((Number) args.get("noteId")).longValue())));
+    }
+
+    public List<NoteSearchHit> searchNotesByTitle(String title) {
         String normalized = normalizeTitle(title);
         List<NoteSearchHit> hits = normalized.isEmpty()
                 ? List.of()
@@ -76,9 +93,7 @@ public class NoteTools {
         return hits;
     }
 
-    @Tool(name = "read_note_content",
-            description = "根据笔记 id 读取一篇在线笔记附件的内容。")
-    public String readNoteContent(@ToolParam(description = "取自 search_notes_by_title 的结果") long noteId) {
+    public String readNoteContent(long noteId) {
         String text = readContent(noteId);
         log.info("读取笔记正文：userId={}，noteId={}，返回 {} 字", userId, noteId, text.length());
         return text;
@@ -132,12 +147,8 @@ public class NoteTools {
      */
     private String transcribeImage(String contentType, byte[] image, long noteId) {
         try {
-            String raw = chatClient.prompt()
-                    .system(TRANSCRIBE_SYSTEM_PROMPT)
-                    .user(spec -> spec.text("请转写这张图片。")
-                            .media(MimeTypeUtils.parseMimeType(contentType), new ByteArrayResource(image)))
-                    .call()
-                    .content();
+            String raw = chatModelPort.chatWithImage(
+                    TRANSCRIBE_SYSTEM_PROMPT, "请转写这张图片。", contentType, image);
             return raw == null ? "" : raw.strip();
         } catch (RuntimeException e) {
             log.error("转写笔记图片失败，userId={}，noteId={}，contentType={}", userId, noteId, contentType, e);
