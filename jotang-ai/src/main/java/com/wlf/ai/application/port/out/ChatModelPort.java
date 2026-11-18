@@ -1,5 +1,7 @@
 package com.wlf.ai.application.port.out;
 
+import com.wlf.ai.domain.chat.ChatMessage;
+
 import java.util.List;
 
 /**

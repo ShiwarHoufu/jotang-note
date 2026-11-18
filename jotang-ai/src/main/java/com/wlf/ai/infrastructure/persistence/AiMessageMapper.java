@@ -1,7 +1,6 @@
 package com.wlf.ai.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.wlf.ai.domain.assistant.AiMessage;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -12,7 +11,7 @@ import org.apache.ibatis.annotations.Select;
  * <p>单表 CRUD 由 {@link BaseMapper} 提供
  */
 @Mapper
-public interface AiMessageMapper extends BaseMapper<AiMessage> {
+public interface AiMessageMapper extends BaseMapper<AiMessagePO> {
 
     /**
      * 某用户最近一次对话所在的会话 id。

@@ -3,11 +3,11 @@ package com.wlf.ai.infrastructure.client.model;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.wlf.ai.application.port.out.ChatMessage;
 import com.wlf.ai.application.port.out.ChatModelPort;
 import com.wlf.ai.application.port.out.ChatTool;
 import com.wlf.ai.application.port.out.ChatToolParameter;
-import com.wlf.ai.domain.assistant.AiMessageRole;
+import com.wlf.ai.domain.chat.ChatMessage;
+import com.wlf.ai.domain.chat.ChatMessageRole;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -70,7 +70,7 @@ public class SpringAiChatModelAdapter implements ChatModelPort {
     }
 
     private static Message toMessage(ChatMessage message) {
-        return message.role() == AiMessageRole.ASSISTANT
+        return message.role() == ChatMessageRole.ASSISTANT
                 ? new AssistantMessage(message.content())
                 : new UserMessage(message.content());
     }
