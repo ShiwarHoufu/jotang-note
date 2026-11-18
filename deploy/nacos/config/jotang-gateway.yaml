@@ -1,2 +1,46 @@
-# jotang-gateway 专属配置。
-# 当前仅占位：路由与超时仍在 application.yaml，待下一步迁移。
+# 网关专属配置：路由、上游超时、Actuator 暴露。
+# 修改后需重启网关；自动刷新路由还要额外监听 RefreshEvent 并发布 RefreshRoutesEvent。
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # 路由全部显式声明，不用「按服务名自动生成」
+          discovery:
+            locator:
+              enabled: false
+          httpclient:
+            # AI 链路单次最长 60s，网关留出余量
+            response-timeout: 120s
+          routes:
+            - id: ai-service
+              uri: lb://ai-service
+              order: 0
+              predicates:
+                - Path=/api/ai/**
+            - id: user-auth
+              uri: lb://user-service
+              order: 1
+              predicates:
+                - Path=/api/auth/**
+            - id: user-profile
+              uri: lb://user-service
+              order: 1
+              predicates:
+                - Path=/api/users/**
+            - id: user-colleges
+              uri: lb://user-service
+              order: 1
+              predicates:
+                - Path=/api/colleges
+            - id: jotang-note
+              uri: lb://jotang-note
+              order: 2
+              predicates:
+                - Path=/api/notes/**,/api/favorites/**,/api/courses,/api/tags,/api/admin/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

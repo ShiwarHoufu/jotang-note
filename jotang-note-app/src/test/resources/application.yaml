@@ -1,0 +1,87 @@
+# 测试专用配置：会遮蔽 src/main/resources/application.yaml。
+
+# 不声明 spring.config.import，测试不连 Nacos。
+
+# 真实密钥由 application-local.yaml 覆盖，这里只放非敏感值和占位符。
+spring:
+  application:
+    name: jotang-note
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:jotang_note}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 110MB
+      file-size-threshold: 1MB
+      location: ${java.io.tmpdir}/jotang-upload-test
+
+  data:
+    redis:
+      password: ${REDIS_PASSWORD:}
+
+  # 过渡期测试夹具：test scope 的 jotang-user 需要 JavaMailSender
+  mail:
+    host: smtp.qq.com
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: ${RABBITMQ_PASSWORD:}
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 1
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-retries: 3
+          initial-interval: 2s
+          multiplier: 2.0
+          max-interval: 10s
+
+jwt:
+  secret: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
+
+aliyun:
+  oss:
+    access-key-id: ${JOTANG_OSS_ACCESS_KEY_ID:test}
+    access-key-secret: ${JOTANG_OSS_ACCESS_KEY_SECRET:test}
+    endpoint-server: oss-cn-chengdu.aliyuncs.com
+    endpoint-browser: oss-cn-chengdu.aliyuncs.com
+    bucket-note: jotang-note-dev
+    bucket-avatar: jotang-avatar-dev
+
+jotang:
+  internal:
+    token: dev-internal-token
+  gateway:
+    token: dev-gateway-token
+  mail:
+    from: ${JOTANG_MAIL_FROM:test@example.com}
+    reset-link-base: http://localhost:5173/reset-password
+  purge:
+    mode: queue
+    enabled: true
+    initial-delay: 1h
+    fixed-delay: 1h
+    batch-size: 100
+    dlq-check:
+      initial-delay: 5m
+      fixed-delay: 30m
+  remote:
+    user:
+      enabled: false

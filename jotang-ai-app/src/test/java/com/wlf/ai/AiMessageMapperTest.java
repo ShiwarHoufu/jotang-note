@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 验证 {@link AiMessage} 与 ai_message 表的列映射，以及「取自己的会话」那条查询的隔离性。
  *
- * <p><b>值得为它单独起真库</b>：{@code AiServiceTest} 把仓储整个 mock 掉了，
+ * <p><b>值得为它单独起真库</b>：{@code AiChatServiceTest} 把仓储整个 mock 掉了，
  * 列名映射错了不会有任何用例变红——{@code conversation_id} 映射不上会让取历史安静地返回空，
  * 模型从某一轮起就丢掉了全部上下文，不报任何错。所以第一条用例冲的就是列映射。
  *
@@ -91,7 +91,7 @@ class AiMessageMapperTest {
 
     // ==================== 辅助 ====================
 
-    /** 与 {@code AiService#loadHistory} 同一条查询 */
+    /** 与 {@code AiChatService#loadHistory} 同一条查询 */
     private List<AiMessage> selectConversation(Long userId, String conversation) {
         return aiMessageMapper.selectList(Wrappers.<AiMessage>lambdaQuery()
                 .eq(AiMessage::getUserId, userId)

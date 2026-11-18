@@ -1,6 +1,6 @@
 package com.wlf.ai.interfaces.web;
 
-import com.wlf.ai.application.assistant.AiService;
+import com.wlf.ai.application.assistant.AiSummaryService;
 import com.wlf.ai.application.assistant.dto.AiSummaryRequest;
 import com.wlf.ai.application.assistant.dto.AiSummaryResponse;
 import com.wlf.common.ApiResponse;
@@ -19,10 +19,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class AiSummaryController {
 
-    private final AiService aiService;
+    private final AiSummaryService aiSummaryService;
 
-    public AiSummaryController(AiService aiService) {
-        this.aiService = aiService;
+    public AiSummaryController(AiSummaryService aiSummaryService) {
+        this.aiSummaryService = aiSummaryService;
     }
 
     /**
@@ -31,7 +31,7 @@ public class AiSummaryController {
     @PostMapping("/api/ai/summary")
     public ApiResponse<AiSummaryResponse> summarizeUpload(@AuthenticationPrincipal AuthenticatedUser user,
                                                           @Valid @ModelAttribute AiSummaryRequest request) {
-        return ApiResponse.ok(aiService.summarizeUpload(user.userId(), request));
+        return ApiResponse.ok(aiSummaryService.summarizeUpload(user.userId(), request));
     }
 
     /**
@@ -42,6 +42,6 @@ public class AiSummaryController {
                                                         @PathVariable Long noteId,
                                                         @RequestParam(required = false) String title,
                                                         @RequestParam(required = false) String teacher) {
-        return ApiResponse.ok(aiService.summarizeExistingNote(user.userId(), noteId, title, teacher));
+        return ApiResponse.ok(aiSummaryService.summarizeExistingNote(user.userId(), noteId, title, teacher));
     }
 }

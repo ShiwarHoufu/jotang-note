@@ -8,65 +8,15 @@ spring:
   # 共享配置在前，服务配置在后（后者覆盖前者）
   config:
     import:
-      - optional:nacos:jotang-shared.yaml?group=JOTANG
-      - optional:nacos:jotang-gateway.yaml?group=JOTANG
+      - nacos:jotang-shared.yaml?group=JOTANG
+      - nacos:jotang-gateway.yaml?group=JOTANG
 
   cloud:
     nacos:
       server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      # 必须在 spring.config.import 解析前可见，故不能只放 application-local.yaml
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
       discovery:
         # 网关只发现别人，不把自己注册进注册表
         register-enabled: false
-
-    gateway:
-      server:
-        webflux:
-          # 路由全部显式声明，不用「按服务名自动生成」
-          discovery:
-            locator:
-              enabled: false
-          httpclient:
-            # AI 链路单次最长 60s，网关留出余量
-            response-timeout: 120s
-          routes:
-            - id: ai-service
-              uri: lb://ai-service
-              order: 0
-              predicates:
-                - Path=/api/ai/**
-            - id: user-auth
-              uri: lb://user-service
-              order: 1
-              predicates:
-                - Path=/api/auth/**
-            - id: user-profile
-              uri: lb://user-service
-              order: 1
-              predicates:
-                - Path=/api/users/**
-            - id: user-colleges
-              uri: lb://user-service
-              order: 1
-              predicates:
-                - Path=/api/colleges
-            - id: jotang-note
-              uri: lb://jotang-note
-              order: 2
-              predicates:
-                - Path=/api/notes/**,/api/favorites/**,/api/courses,/api/tags,/api/admin/**
-
-jwt:
-  # HS256 密钥；本地真值放在 application-local.yaml
-  secret: ${JWT_SECRET}
-  ttl: ${JWT_TTL:2h}
-
-jotang:
-  gateway:
-    # 网关写身份头时的防伪凭证；下游按同一个值校验
-    token: ${JOTANG_GATEWAY_TOKEN:dev-gateway-token}
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health

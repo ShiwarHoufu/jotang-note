@@ -36,7 +36,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>这条为什么单开一个类：{@code NoteControllerTest} 的 {@code /raw} 用例只断言响应体字节对，
  * 而「先把整份读进堆再交给 Spring 写」同样能通过那条断言——可那是错的。文本上限是 100MB
- * （{@code NoteFilePolicy}），{@code AiService} / {@code NoteTools} 里那种 {@code readAllBytes()}
+ * （{@code NoteFilePolicy}），{@code AiSummaryService} / {@code NoteTools} 里那种 {@code readAllBytes()}
  * 写法在这里会把一个上百 MB 的对象整个拉进内存。只有 {@code isSameAs} 能钉住这条。
  */
 @SpringBootTest

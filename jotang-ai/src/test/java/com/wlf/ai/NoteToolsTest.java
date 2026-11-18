@@ -32,7 +32,7 @@ import static org.mockito.Mockito.when;
 /**
  * {@link NoteTools} 的单元测试：note 模块、OSS 与模型全部 mock，不起 Spring 上下文。
  *
- * <p>这里才钉得住「工具被调用时到底做了什么」——{@code AiServiceTest} 里整条
+ * <p>这里才钉得住「工具被调用时到底做了什么」——{@code AiChatServiceTest} 里整条
  * {@code ChatClient} 是 mock，框架的 {@code ToolCallingAdvisor} 不在链上，
  * 工具根本不会被执行。
  *

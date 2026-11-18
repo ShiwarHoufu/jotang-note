@@ -1,6 +1,6 @@
 package com.wlf.ai;
 
-import com.wlf.ai.application.assistant.AiService;
+import com.wlf.ai.application.assistant.AiChatService;
 import com.wlf.ai.application.assistant.dto.AiChatHistoryResponse;
 import com.wlf.ai.application.assistant.dto.AiChatResponse;
 import com.wlf.common.BusinessException;
@@ -30,8 +30,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * {@link com.wlf.ai.interfaces.web.AiChatController} 的 HTTP 层验证：路由、参数绑定、鉴权与响应形状。
  *
- * <p>{@link AiService} 换成 mock——真调一次会花钱，而且结果取决于模型。
- * 编排在 {@link AiServiceTest} 里验。
+ * <p>{@link AiChatService} 换成 mock——真调一次会花钱，而且结果取决于模型。
+ * 编排在 {@link AiChatServiceTest} 里验。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -48,7 +48,7 @@ class AiChatControllerTest {
     private JwtTokenProvider jwtTokenProvider;
 
     @MockitoBean
-    private AiService aiService;
+    private AiChatService aiChatService;
 
     // ==================== 鉴权 ====================
 
@@ -72,7 +72,7 @@ class AiChatControllerTest {
     /** 不带 conversationId → 开新会话，回复里带回服务端生成的 id 供前端下一轮续聊 */
     @Test
     void chatReturnsReplyAndConversationIdInTheCommonEnvelope() throws Exception {
-        when(aiService.chat(any(), anyString(), any()))
+        when(aiChatService.chat(any(), anyString(), any()))
                 .thenReturn(new AiChatResponse("你好，有什么可以帮你？", CONVERSATION_ID));
 
         mockMvc.perform(post("/api/ai/chat")
@@ -86,13 +86,13 @@ class AiChatControllerTest {
                 .andExpect(jsonPath("$.data.conversationId").value(CONVERSATION_ID));
 
         // 用户与消息都取自请求，userId 钉死在 JWT 里那个值上
-        verify(aiService).chat(USER_ID, "你好", null);
+        verify(aiChatService).chat(USER_ID, "你好", null);
     }
 
     /** 带上上一轮的 id → 续聊，原样透传给 service */
     @Test
     void chatPassesExistingConversationIdThrough() throws Exception {
-        when(aiService.chat(any(), anyString(), any()))
+        when(aiChatService.chat(any(), anyString(), any()))
                 .thenReturn(new AiChatResponse("接着答", CONVERSATION_ID));
 
         mockMvc.perform(post("/api/ai/chat")
@@ -102,7 +102,7 @@ class AiChatControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.conversationId").value(CONVERSATION_ID));
 
-        verify(aiService).chat(USER_ID, "接着说", CONVERSATION_ID);
+        verify(aiChatService).chat(USER_ID, "接着说", CONVERSATION_ID);
     }
 
     /** 会话标识超长是参数问题，不是「这段会话不存在」 */
@@ -120,7 +120,7 @@ class AiChatControllerTest {
     /** 陌生会话（不存在，或属于别人）：40400，不区分这两种情形 */
     @Test
     void strangerConversationIsMappedTo404() throws Exception {
-        when(aiService.chat(any(), anyString(), any()))
+        when(aiChatService.chat(any(), anyString(), any()))
                 .thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
 
         mockMvc.perform(post("/api/ai/chat")
@@ -157,7 +157,7 @@ class AiChatControllerTest {
 
     @Test
     void chatUpstreamFailureIsMappedTo503WithAiUnavailableCode() throws Exception {
-        when(aiService.chat(any(), anyString(), any()))
+        when(aiChatService.chat(any(), anyString(), any()))
                 .thenThrow(new BusinessException(ErrorCode.AI_UNAVAILABLE, "对话服务暂不可用，请稍后重试"));
 
         mockMvc.perform(post("/api/ai/chat")
@@ -173,7 +173,7 @@ class AiChatControllerTest {
 
     @Test
     void latestReturnsHistoryInTheCommonEnvelope() throws Exception {
-        when(aiService.history(USER_ID)).thenReturn(new AiChatHistoryResponse(CONVERSATION_ID, List.of(
+        when(aiChatService.history(USER_ID)).thenReturn(new AiChatHistoryResponse(CONVERSATION_ID, List.of(
                 new AiChatHistoryResponse.Message("USER", "第一个问题"),
                 new AiChatHistoryResponse.Message("ASSISTANT", "第一个回答"))));
 
@@ -192,7 +192,7 @@ class AiChatControllerTest {
      */
     @Test
     void latestReturnsEmptyPayloadWhenThereIsNothingToResume() throws Exception {
-        when(aiService.history(USER_ID)).thenReturn(AiChatHistoryResponse.empty());
+        when(aiChatService.history(USER_ID)).thenReturn(AiChatHistoryResponse.empty());
 
         mockMvc.perform(get("/api/ai/chat/latest").header("Authorization", bearer(USER_ID)))
                 .andExpect(status().isOk())
@@ -204,12 +204,12 @@ class AiChatControllerTest {
     /** 读谁的会话由 token 决定，不能由请求参数决定 */
     @Test
     void latestReadsTheSessionOfTheTokenOwner() throws Exception {
-        when(aiService.history(USER_ID)).thenReturn(AiChatHistoryResponse.empty());
+        when(aiChatService.history(USER_ID)).thenReturn(AiChatHistoryResponse.empty());
 
         mockMvc.perform(get("/api/ai/chat/latest").header("Authorization", bearer(USER_ID)))
                 .andExpect(status().isOk());
 
-        verify(aiService).history(USER_ID);
+        verify(aiChatService).history(USER_ID);
     }
 
     private String bearer(Long userId) {

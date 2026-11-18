@@ -77,13 +77,12 @@ services:
     restart: unless-stopped
     environment:
       MODE: standalone
-      # 本机开发关闭鉴权；共享 / 生产环境必须打开，并换掉下面三项
-      NACOS_AUTH_ENABLE: "false"
-      # Nacos 3.x 的启动脚本即使关闭鉴权也要求这三项存在。下面是官方示例里的开发值，
-      # 不是秘密；真要用鉴权时从 .env 覆盖。
-      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-VGhpc0lzTXlDdXN0b21TZWNyZXRLZXkwMTIzNDU2Nzg=}
-      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
-      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
+      # 开启鉴权：配置 API 与控制台都需要登录；客户端用 spring.cloud.nacos.username/password
+      NACOS_AUTH_ENABLE: "true"
+      # 三项必须有值：token 为 Base64 编码、解码后至少 32 字节；identity 两侧保持一致
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:?缺少 .env 或未设置 NACOS_AUTH_TOKEN}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:?缺少 .env 或未设置 NACOS_AUTH_IDENTITY_KEY}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:?缺少 .env 或未设置 NACOS_AUTH_IDENTITY_VALUE}
       # Nacos 常驻约 512MB，限住堆避免和 IDE、三个应用抢内存
       JVM_XMS: 256m
       JVM_XMX: 256m

@@ -1,2 +1,42 @@
 # jotang-note 专属配置。
-# 当前仅占位：孤儿对象对账等配置仍在 application.yaml，待下一步迁移。
+# 密钥只写占位符，实际值由环境变量或 application-local.yaml 提供。
+spring:
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 110MB
+      file-size-threshold: 1MB
+      # 专用中转目录，便于定期清理残留
+      location: ${JOTANG_UPLOAD_TMP:${java.io.tmpdir}/jotang-upload}
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:jotang_note}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # 库表与基础数据随应用启动初始化
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+
+jotang:
+  # 孤儿对象对账
+  purge:
+    # 上传入库失败后的补偿删除：
+    #   none  = 只内联删一次
+    #   queue = 额外把这条待办投进 RabbitMQ，重试耗尽后进死信队列等人工处理
+    mode: queue
+    # 定时对账：把已删除但对象还没清掉的笔记补清一次
+    enabled: true
+    # 启动后多久跑第一轮
+    initial-delay: 1h
+    # fixedDelay 而非 fixedRate：耗时取决于积压里要打多少次 OSS
+    fixed-delay: 1h
+    # 一轮最多处理多少条，没做完的下一轮自然接上
+    batch-size: 100
+    # 死信队列深度巡检
+    dlq-check:
+      initial-delay: 5m
+      fixed-delay: 30m

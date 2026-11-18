@@ -1,6 +1,6 @@
 package com.wlf.ai;
 
-import com.wlf.ai.application.assistant.AiService;
+import com.wlf.ai.application.assistant.AiSummaryService;
 import com.wlf.ai.application.assistant.dto.AiSummaryResponse;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
@@ -28,8 +28,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * {@link com.wlf.ai.interfaces.web.AiSummaryController} 的 HTTP 层验证：路由、参数绑定、鉴权与响应形状。
  *
- * <p>{@link AiService} 换成 mock——真调一次会花钱，而且结果取决于模型。
- * 编排在 {@link AiServiceTest} 与 {@link AiSummaryFilePolicyTest} 里验。
+ * <p>{@link AiSummaryService} 换成 mock——真调一次会花钱，而且结果取决于模型。
+ * 编排在 {@link AiSummaryServiceTest} 与 {@link AiSummaryFilePolicyTest} 里验。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -46,7 +46,7 @@ class AiSummaryControllerTest {
     private JwtTokenProvider jwtTokenProvider;
 
     @MockitoBean
-    private AiService aiService;
+    private AiSummaryService aiSummaryService;
 
     // ==================== 鉴权 ====================
 
@@ -68,7 +68,7 @@ class AiSummaryControllerTest {
      */
     @Test
     void uploaderComesFromJwtNotFromRequest() throws Exception {
-        when(aiService.summarizeUpload(eq(USER_ID), any()))
+        when(aiSummaryService.summarizeUpload(eq(USER_ID), any()))
                 .thenReturn(new AiSummaryResponse("摘要"));
 
         mockMvc.perform(multipart("/api/ai/summary")
@@ -77,14 +77,14 @@ class AiSummaryControllerTest {
                         .header("Authorization", bearer(USER_ID)))
                 .andExpect(status().isOk());
 
-        verify(aiService).summarizeUpload(eq(USER_ID), any());
+        verify(aiSummaryService).summarizeUpload(eq(USER_ID), any());
     }
 
     // ==================== 上传场景 ====================
 
     @Test
     void uploadReturnsSummaryInTheCommonEnvelope() throws Exception {
-        when(aiService.summarizeUpload(any(), any()))
+        when(aiSummaryService.summarizeUpload(any(), any()))
                 .thenReturn(new AiSummaryResponse("这是一份高数期中复习提纲。"));
 
         mockMvc.perform(multipart("/api/ai/summary")
@@ -109,7 +109,7 @@ class AiSummaryControllerTest {
 
     @Test
     void editEndpointBindsNoteIdAndPassesOptionalContext() throws Exception {
-        when(aiService.summarizeExistingNote(any(), any(), any(), any()))
+        when(aiSummaryService.summarizeExistingNote(any(), any(), any(), any()))
                 .thenReturn(new AiSummaryResponse("摘要"));
 
         mockMvc.perform(post("/api/ai/summary/notes/{id}", 42L)
@@ -119,20 +119,20 @@ class AiSummaryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.summary").value("摘要"));
 
-        verify(aiService).summarizeExistingNote(USER_ID, 42L, "高数复习", "张老师");
+        verify(aiSummaryService).summarizeExistingNote(USER_ID, 42L, "高数复习", "张老师");
     }
 
     /** 上下文是可选的：前端表单还没填完也能生成（§5.8） */
     @Test
     void editEndpointWorksWithoutContext() throws Exception {
-        when(aiService.summarizeExistingNote(any(), any(), any(), any()))
+        when(aiSummaryService.summarizeExistingNote(any(), any(), any(), any()))
                 .thenReturn(new AiSummaryResponse("摘要"));
 
         mockMvc.perform(post("/api/ai/summary/notes/{id}", 42L)
                         .header("Authorization", bearer(USER_ID)))
                 .andExpect(status().isOk());
 
-        verify(aiService).summarizeExistingNote(eq(USER_ID), eq(42L), isNull(), isNull());
+        verify(aiSummaryService).summarizeExistingNote(eq(USER_ID), eq(42L), isNull(), isNull());
     }
 
     // ==================== 错误码映射 ====================
@@ -143,7 +143,7 @@ class AiSummaryControllerTest {
      */
     @Test
     void upstreamFailureIsMappedTo503WithAiUnavailableCode() throws Exception {
-        when(aiService.summarizeUpload(any(), any()))
+        when(aiSummaryService.summarizeUpload(any(), any()))
                 .thenThrow(new BusinessException(ErrorCode.AI_UNAVAILABLE));
 
         mockMvc.perform(multipart("/api/ai/summary")
@@ -157,7 +157,7 @@ class AiSummaryControllerTest {
     /** 限频走的是另一个码：42300 是「账号锁定」，42900 才是「调用太频繁」（§5.7） */
     @Test
     void rateLimitIsMappedTo429WithItsOwnCode() throws Exception {
-        when(aiService.summarizeUpload(any(), any()))
+        when(aiSummaryService.summarizeUpload(any(), any()))
                 .thenThrow(new BusinessException(ErrorCode.AI_RATE_LIMITED, "生成过于频繁，请 3 分钟后再试"));
 
         mockMvc.perform(multipart("/api/ai/summary")

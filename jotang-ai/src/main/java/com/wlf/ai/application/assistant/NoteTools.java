@@ -28,7 +28,7 @@ public class NoteTools {
     /** 同名笔记最多回几条。标题在库上没有唯一约束 */
     private static final int MAX_HITS = 5;
 
-    /** 单轮最多真读几份附件。框架那层限的是「工具被调几次」，这里限的是「读了几份文件」 */
+    /** 单轮最多真读几份附件。*/
     private static final int MAX_EXTRACTIONS = 2;
 
     /** 单份附件上限，与摘要同口径。必须在打开 OSS 之前用库里的 size 判，否则先读进堆再拒 */

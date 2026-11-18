@@ -1,2 +1,43 @@
 # user-service 专属配置。
-# 当前仅占位：邮件与资料相关配置仍在 application.yaml，待下一步迁移。
+# 密钥只写占位符，实际值由环境变量或 application-local.yaml 提供。
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+      file-size-threshold: 1MB
+      location: ${JOTANG_USER_UPLOAD_TMP:${java.io.tmpdir}/jotang-user-upload}
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:jotang_user}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # 用户库由 FlywayConfig 显式执行迁移
+  sql:
+    init:
+      mode: never
+
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: ${JOTANG_MAIL_USERNAME:}
+    password: ${JOTANG_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          ssl:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+jotang:
+  mail:
+    from: ${JOTANG_MAIL_FROM:${spring.mail.username:}}
+    reset-link-base: http://localhost:5173/reset-password
+    mode: queue
+  purge:
+    # 头像补偿删除与 note 共用同一个孤儿对象队列；user-service 只投递，不消费
+    mode: queue

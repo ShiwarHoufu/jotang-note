@@ -1,2 +1,41 @@
 # ai-service 专属配置。
-# 当前仅占位：模型与工具限额仍在 application.yaml，待下一步迁移。
+# 密钥只写占位符，实际值由环境变量或 application-local.yaml 提供。
+spring:
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 110MB
+      file-size-threshold: 1MB
+      location: ${JOTANG_AI_UPLOAD_TMP:${java.io.tmpdir}/jotang-ai-upload}
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:jotang_ai}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  sql:
+    init:
+      mode: never
+
+  # 与单体同一套 DeepSeek/OpenAI 兼容配置
+  ai:
+    tools:
+      limits:
+        on-limit-exceeded: return-error-response
+        max-calls-per-tool-default: 4
+        max-total-tool-calls: 6
+    openai:
+      api-key: ${JOTANG_AI_API_KEY:}
+      base-url: https://api.deepseek.com
+      chat:
+        model: deepseek-flash
+        timeout: 60s
+    model:
+      chat: openai
+      embedding: none
+      image: none
+      audio:
+        speech: none
+        transcription: none
+      moderation: none

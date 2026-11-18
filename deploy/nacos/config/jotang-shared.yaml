@@ -1,8 +1,8 @@
-# 跨服务共享配置（本机环境值）。
-# 这里只放非敏感项；JWT secret、内部令牌、DB/MQ 密码、OSS AK/SK 暂留在各服务的
-# application-local.yaml，待 Nacos 开启鉴权后再迁入。
+# 跨服务共享配置。
+# 密钥只写占位符，实际值由环境变量或 application-local.yaml 提供。
 jwt:
   ttl: 2h
+  secret: ${JWT_SECRET}
 
 DB_HOST: localhost
 DB_PORT: 3306
@@ -13,15 +13,39 @@ spring:
     redis:
       host: localhost
       port: 6379
+      password: ${REDIS_PASSWORD:}
   rabbitmq:
     host: localhost
     port: 5672
     username: admin
+    password: ${RABBITMQ_PASSWORD:}
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 1
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-retries: 3
+          initial-interval: 2s
+          multiplier: 2.0
+          max-interval: 10s
 
 aliyun:
   oss:
+    access-key-id: ${JOTANG_OSS_ACCESS_KEY_ID}
+    access-key-secret: ${JOTANG_OSS_ACCESS_KEY_SECRET}
     # 本机不在阿里云内网，服务端访问也走公网
     endpoint-server: oss-cn-chengdu.aliyuncs.com
     endpoint-browser: oss-cn-chengdu.aliyuncs.com
     bucket-note: jotang-note-dev
     bucket-avatar: jotang-avatar-dev
+
+jotang:
+  internal:
+    token: ${JOTANG_INTERNAL_TOKEN:dev-internal-token}
+  gateway:
+    token: ${JOTANG_GATEWAY_TOKEN:dev-gateway-token}
