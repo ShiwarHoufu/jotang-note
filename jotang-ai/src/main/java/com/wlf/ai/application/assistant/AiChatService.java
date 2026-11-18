@@ -4,17 +4,18 @@ import com.wlf.ai.application.assistant.command.ChatCommand;
 import com.wlf.ai.application.assistant.prompt.ChatPrompt;
 import com.wlf.ai.application.assistant.result.ChatHistoryResult;
 import com.wlf.ai.application.assistant.result.ChatResult;
+import com.wlf.ai.application.port.out.AiQuota;
 import com.wlf.ai.application.port.out.ChatModelPort;
-import com.wlf.ai.application.port.out.NoteContentReader;
+import com.wlf.ai.application.port.out.NoteAttachmentPort;
+import com.wlf.ai.application.port.out.NoteLookupPort;
+import com.wlf.ai.application.port.out.RateLimitPort;
 import com.wlf.ai.domain.chat.ChatMessage;
 import com.wlf.ai.domain.chat.ContextWindow;
 import com.wlf.ai.domain.chat.Conversation;
 import com.wlf.ai.domain.chat.ConversationRepository;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
-import com.wlf.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -24,32 +25,35 @@ import java.util.List;
 /**
  * AI 对话的应用服务：一轮问答与恢复最近一次会话。
  *
- * <p>对话会把消息写进 {@code ai_message}；模型可经 {@link NoteTools} 检索笔记。
+ * <p>对话会把消息写进 {@code ai_message}；模型可经 {@link NoteToolset} 检索笔记。
  */
 @Slf4j
 @Service
 public class AiChatService {
 
     private final ChatModelPort chatModelPort;
-    /** 摘要与对话各持一个实例、各算各的额度：两者代价差一个数量级，共用一个桶会互相挤占 */
-    private final AiRateLimiter chatRateLimiter;
-    private final NoteContentReader noteContentReader;
-    private final StorageService storageService;
+    /** 对话与摘要各算各的额度：两者代价差一个数量级，共用一个桶会互相挤占 */
+    private final RateLimitPort rateLimit;
+    private final NoteLookupPort noteLookupPort;
+    private final NoteAttachmentPort noteAttachmentPort;
+    private final ImageTranscriber imageTranscriber;
     private final ConversationRepository conversationRepository;
     private final TransactionTemplate transactionTemplate;
 
     public AiChatService(ChatModelPort chatModelPort,
-                         @Qualifier("aiChatRateLimiter") AiRateLimiter chatRateLimiter,
-                         NoteContentReader noteContentReader,
-                         StorageService storageService,
+                         RateLimitPort rateLimit,
+                         NoteLookupPort noteLookupPort,
+                         NoteAttachmentPort noteAttachmentPort,
+                         ImageTranscriber imageTranscriber,
                          ConversationRepository conversationRepository,
                          PlatformTransactionManager transactionManager) {
         this.chatModelPort = chatModelPort;
-        this.chatRateLimiter = chatRateLimiter;
-        this.noteContentReader = noteContentReader;
-        this.storageService = storageService;
+        this.rateLimit = rateLimit;
+        this.noteLookupPort = noteLookupPort;
+        this.noteAttachmentPort = noteAttachmentPort;
+        this.imageTranscriber = imageTranscriber;
         this.conversationRepository = conversationRepository;
-        // 与 NoteContentReader 同：自己 new，显式持有事务边界，读代码时不必去猜注解在哪一层生效
+        // 自己 new，显式持有事务边界，读代码时不必去猜注解在哪一层生效
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -60,7 +64,7 @@ public class AiChatService {
         Conversation conversation = loadOrStart(command);
 
         // 取配额
-        chatRateLimiter.requireSlot(command.userId());
+        rateLimit.acquire(command.userId(), AiQuota.CHAT);
 
         String reply = ask(conversation, command.message());
 
@@ -104,7 +108,8 @@ public class AiChatService {
 
         try {
             String raw = chatModelPort.chat(ChatPrompt.SYSTEM, window, message,
-                    new NoteTools(conversation.userId(), noteContentReader, storageService, chatModelPort).tools());
+                    new NoteToolset(conversation.userId(), noteLookupPort, noteAttachmentPort, imageTranscriber)
+                            .tools());
             return raw == null ? "" : raw.strip();
         } catch (RuntimeException e) {
             log.error("调用对话模型失败，异常类型={}", e.getClass().getName(), e);

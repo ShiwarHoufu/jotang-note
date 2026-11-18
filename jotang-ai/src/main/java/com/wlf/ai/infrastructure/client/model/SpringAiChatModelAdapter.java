@@ -48,7 +48,7 @@ public class SpringAiChatModelAdapter implements ChatModelPort {
                 .system(systemPrompt)
                 .messages(messages);
         if (!tools.isEmpty()) {
-            spec = spec.toolCallbacks(toCallbacks(tools));
+            spec = spec.tools(toCallbacks(tools).toArray(ToolCallback[]::new));
         }
         return textOf(spec.call().content());
     }

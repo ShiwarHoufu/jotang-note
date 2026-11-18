@@ -14,7 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Setter
 public class AiSummaryRequest {
 
-    /** 待摘要的文件。交给模型前会过 {@code AiSummaryFilePolicy} 的白名单与大小上限 */
+    /** 待摘要的文件。交给模型前会过 {@code SummaryFilePolicy} 的白名单与大小上限 */
     @NotNull(message = "请选择文件")
     private MultipartFile file;
 

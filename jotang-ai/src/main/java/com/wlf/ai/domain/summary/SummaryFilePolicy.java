@@ -1,13 +1,9 @@
-package com.wlf.ai.domain.assistant;
+package com.wlf.ai.domain.summary;
 
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FileMagic;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -16,9 +12,7 @@ import java.util.function.Predicate;
 /**
  * AI 摘要的输入准入判定。
  */
-@Slf4j
-@Component
-public class AiSummaryFilePolicy {
+public class SummaryFilePolicy {
 
     /** 单份附件内联进请求体的上限。*/
     public static final long MAX_SIZE_BYTES = 10L * 1024 * 1024;
@@ -30,7 +24,7 @@ public class AiSummaryFilePolicy {
     public static final long MAX_TEXT_BYTES = (long) MAX_TEXT_CHARS * 4;
 
     /** 读文件头的字节数：必须 ≥ 最长的魔数（WEBP 需要 12 字节），取 16 留些余量 */
-    private static final int HEAD_BYTES = 16;
+    public static final int HEAD_BYTES = 16;
 
     /** 一种受支持的类型 */
     private record Format(String contentType, Predicate<byte[]> magic) {
@@ -57,15 +51,15 @@ public class AiSummaryFilePolicy {
     }
 
     /**
-     * 判定 待摘要 的上传文件是否准入
-     * 并给出交给模型的 MIME。
+     * 判定待摘要的上传文件是否准入，并给出交给模型的 MIME。
      *
      * @param originalName 客户端送来的原始文件名，可含路径（会被清洗掉）
      * @param size         字节数，取自 multipart
+     * @param head         文件头，最多 {@link #HEAD_BYTES} 字节；文本类型不看
      * @return 服务端判定的 MIME，如 {@code image/jpeg} 或 {@code text/markdown}
-     * @throws BusinessException 42200 类型 / 大小不合法；50000 读取流本身失败
+     * @throws BusinessException 42200 类型 / 大小不合法
      */
-    public String inspect(String originalName, long size, InputStream content) {
+    public String inspect(String originalName, long size, byte[] head) {
         if (size <= 0) {
             throw new BusinessException(ErrorCode.FILE_INVALID, "文件内容为空");
         }
@@ -85,7 +79,7 @@ public class AiSummaryFilePolicy {
             return format.contentType();
         }
         // 魔数与扩展名不符
-        if (!format.magic().test(readHead(content))) {
+        if (!format.magic().test(head)) {
             throw new BusinessException(ErrorCode.FILE_INVALID,
                     "文件内容与扩展名 ." + extension + " 不符");
         }
@@ -105,7 +99,6 @@ public class AiSummaryFilePolicy {
             throw new BusinessException(ErrorCode.FILE_INVALID, "这篇笔记的附件类型不支持生成摘要");
         }
     }
-
 
     public static boolean isText(String contentType) {
         return FORMATS.values().stream()
@@ -128,7 +121,6 @@ public class AiSummaryFilePolicy {
         }
     }
 
-
     static BusinessException textTooLong() {
         return new BusinessException(ErrorCode.FILE_INVALID,
                 "笔记正文超过 " + MAX_TEXT_CHARS + " 字，无法生成摘要");
@@ -138,7 +130,6 @@ public class AiSummaryFilePolicy {
         return new BusinessException(ErrorCode.FILE_INVALID,
                 "图片超过 " + (MAX_SIZE_BYTES >> 20) + "MB，无法生成摘要");
     }
-
 
     public static void requireTextWithinLimit(String text) {
         if (text.codePointCount(0, text.length()) > MAX_TEXT_CHARS) {
@@ -172,14 +163,5 @@ public class AiSummaryFilePolicy {
             throw new BusinessException(ErrorCode.FILE_INVALID, "文件缺少扩展名：" + name);
         }
         return name.substring(dot + 1).toLowerCase(Locale.ROOT);
-    }
-
-    private static byte[] readHead(InputStream content) {
-        try {
-            return content.readNBytes(HEAD_BYTES);
-        } catch (IOException e) {
-            log.error("读取待摘要图片的文件头失败", e);
-            throw new BusinessException(ErrorCode.SERVER_ERROR, "读取图片失败");
-        }
     }
 }

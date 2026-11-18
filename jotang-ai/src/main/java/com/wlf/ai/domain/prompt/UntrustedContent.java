@@ -1,7 +1,7 @@
-package com.wlf.ai.application.assistant;
+package com.wlf.ai.domain.prompt;
 
 /**
- * 把用户上传的正文喂给模型时的信封锁标，由对话的 {@code NoteTools} 与摘要的文本路径共用。
+ * 把用户上传的正文喂给模型时的信封锁标，由对话的 {@code NoteToolset} 与摘要的文本路径共用。
  */
 public final class UntrustedContent {
 
