@@ -1,5 +1,6 @@
 package com.wlf.ai.application.assistant;
 
+import com.wlf.ai.application.assistant.prompt.NoteToolPrompt;
 import com.wlf.ai.application.port.out.ChatModelPort;
 import com.wlf.ai.application.port.out.ChatTool;
 import com.wlf.ai.application.port.out.ChatToolParameter;
@@ -34,25 +35,8 @@ public class NoteTools {
 
     private static final int MAX_TEXT_CHARS = 4000;
 
-    private static final String TRANSCRIBE_SYSTEM_PROMPT = """
-            你在转写一份笔记图片，转写结果会给另一个模型阅读。
-
-            要求：
-            1. 逐字转写图中所有可见文字，保留原有的分点、公式与符号；
-            2. 不要总结、不要概括、不要补充图中没有的内容；
-            3. 图里没有文字时，客观说明它是什么（手写板书 / 截图 / 与课程无关的照片）；
-            4. 直接输出转写结果，不要任何前缀或解释性文字。
-            """;
-
     private static final String SEARCH_NOTES = "search_notes_by_title";
     private static final String READ_NOTE = "read_note_content";
-
-    private static final String SEARCH_NOTES_DESCRIPTION =
-            "按标题精确查找本平台在线的笔记，返回笔记 id、标题、教师与简介。"
-                    + "用户想找某篇笔记、或需要某篇笔记的内容时使用。"
-                    + "查不到就据实告诉用户没找到，不要编造标题或内容。";
-
-    private static final String READ_NOTE_DESCRIPTION = "根据笔记 id 读取一篇在线笔记附件的内容。";
 
     private final Long userId;
     private final NoteContentReader noteContentReader;
@@ -73,11 +57,11 @@ public class NoteTools {
     /** 交给模型调用的工具定义；每次请求新建一个实例，已读计数不跨轮共享 */
     public List<ChatTool> tools() {
         return List.of(
-                new ChatTool(SEARCH_NOTES, SEARCH_NOTES_DESCRIPTION,
+                new ChatTool(SEARCH_NOTES, NoteToolPrompt.SEARCH_NOTES_DESCRIPTION,
                         List.of(new ChatToolParameter("title", ChatToolParameter.Type.STRING,
                                 "笔记的完整标题，逐字照抄，不要带《》书名号")),
                         args -> searchNotesByTitle((String) args.get("title"))),
-                new ChatTool(READ_NOTE, READ_NOTE_DESCRIPTION,
+                new ChatTool(READ_NOTE, NoteToolPrompt.READ_NOTE_DESCRIPTION,
                         List.of(new ChatToolParameter("noteId", ChatToolParameter.Type.INTEGER,
                                 "取自 search_notes_by_title 的结果")),
                         args -> readNoteContent(((Number) args.get("noteId")).longValue())));
@@ -148,7 +132,7 @@ public class NoteTools {
     private String transcribeImage(String contentType, byte[] image, long noteId) {
         try {
             String raw = chatModelPort.chatWithImage(
-                    TRANSCRIBE_SYSTEM_PROMPT, "请转写这张图片。", contentType, image);
+                    NoteToolPrompt.TRANSCRIBE_SYSTEM, "请转写这张图片。", contentType, image);
             return raw == null ? "" : raw.strip();
         } catch (RuntimeException e) {
             log.error("转写笔记图片失败，userId={}，noteId={}，contentType={}", userId, noteId, contentType, e);

@@ -1,4 +1,4 @@
-package com.wlf.ai.application.assistant.dto;
+package com.wlf.ai.interfaces.web.dto;
 
 /**
  * 对话响应体。服务端不做会话记忆以外的任何事：消息落库只为下一轮带上下文。

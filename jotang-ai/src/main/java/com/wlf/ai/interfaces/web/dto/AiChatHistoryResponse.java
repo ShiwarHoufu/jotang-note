@@ -1,4 +1,4 @@
-package com.wlf.ai.application.assistant.dto;
+package com.wlf.ai.interfaces.web.dto;
 
 import java.util.List;
 
@@ -12,14 +12,5 @@ public record AiChatHistoryResponse(String conversationId, List<Message> message
 
     /** 一条历史消息。 */
     public record Message(String role, String content) {
-    }
-
-    /**
-     * 无可恢复的会话。
-     *
-     * <p>用户从没用过对话、以及会话在查询与回显之间被删掉，都走这个形态。
-     */
-    public static AiChatHistoryResponse empty() {
-        return new AiChatHistoryResponse(null, List.of());
     }
 }

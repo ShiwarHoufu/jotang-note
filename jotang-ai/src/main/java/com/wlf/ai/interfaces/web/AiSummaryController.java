@@ -1,8 +1,11 @@
 package com.wlf.ai.interfaces.web;
 
 import com.wlf.ai.application.assistant.AiSummaryService;
-import com.wlf.ai.application.assistant.dto.AiSummaryRequest;
-import com.wlf.ai.application.assistant.dto.AiSummaryResponse;
+import com.wlf.ai.application.assistant.command.SummaryNoteCommand;
+import com.wlf.ai.application.assistant.command.SummaryUploadCommand;
+import com.wlf.ai.application.assistant.result.SummaryResult;
+import com.wlf.ai.interfaces.web.dto.AiSummaryRequest;
+import com.wlf.ai.interfaces.web.dto.AiSummaryResponse;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;
 import jakarta.validation.Valid;
@@ -20,9 +23,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AiSummaryController {
 
     private final AiSummaryService aiSummaryService;
+    private final SummaryAssembler assembler;
 
-    public AiSummaryController(AiSummaryService aiSummaryService) {
+    public AiSummaryController(AiSummaryService aiSummaryService, SummaryAssembler assembler) {
         this.aiSummaryService = aiSummaryService;
+        this.assembler = assembler;
     }
 
     /**
@@ -31,7 +36,9 @@ public class AiSummaryController {
     @PostMapping("/api/ai/summary")
     public ApiResponse<AiSummaryResponse> summarizeUpload(@AuthenticationPrincipal AuthenticatedUser user,
                                                           @Valid @ModelAttribute AiSummaryRequest request) {
-        return ApiResponse.ok(aiSummaryService.summarizeUpload(user.userId(), request));
+        SummaryUploadCommand command = assembler.toCommand(user.userId(), request);
+        SummaryResult result = aiSummaryService.summarizeUpload(command);
+        return ApiResponse.ok(assembler.toResponse(result));
     }
 
     /**
@@ -42,6 +49,8 @@ public class AiSummaryController {
                                                         @PathVariable Long noteId,
                                                         @RequestParam(required = false) String title,
                                                         @RequestParam(required = false) String teacher) {
-        return ApiResponse.ok(aiSummaryService.summarizeExistingNote(user.userId(), noteId, title, teacher));
+        SummaryNoteCommand command = assembler.toCommand(user.userId(), noteId, title, teacher);
+        SummaryResult result = aiSummaryService.summarizeExistingNote(command);
+        return ApiResponse.ok(assembler.toResponse(result));
     }
 }
