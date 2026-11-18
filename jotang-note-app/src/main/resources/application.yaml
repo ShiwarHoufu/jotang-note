@@ -5,12 +5,16 @@ spring:
   application:
     name: jotang-note
 
-  # 阶段 1 只启用注册发现；配置中心后续再接。
   # 本地 Nacos 关闭了鉴权，不需要 username / password。
+  # 共享配置在前，服务配置在后（后者覆盖前者）
+  config:
+    import:
+      - optional:nacos:jotang-shared.yaml?group=JOTANG
+      - optional:nacos:jotang-note.yaml?group=JOTANG
+
   cloud:
     nacos:
-      discovery:
-        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+      server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
 
   # multipart 上传参数，取值与 Nginx 侧必须对齐：
   servlet:

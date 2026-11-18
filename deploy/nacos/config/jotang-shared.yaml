@@ -1,0 +1,27 @@
+# 跨服务共享配置（本机环境值）。
+# 这里只放非敏感项；JWT secret、内部令牌、DB/MQ 密码、OSS AK/SK 暂留在各服务的
+# application-local.yaml，待 Nacos 开启鉴权后再迁入。
+jwt:
+  ttl: 2h
+
+DB_HOST: localhost
+DB_PORT: 3306
+DB_USERNAME: root
+
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+
+aliyun:
+  oss:
+    # 本机不在阿里云内网，服务端访问也走公网
+    endpoint-server: oss-cn-chengdu.aliyuncs.com
+    endpoint-browser: oss-cn-chengdu.aliyuncs.com
+    bucket-note: jotang-note-dev
+    bucket-avatar: jotang-avatar-dev

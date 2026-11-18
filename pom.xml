@@ -108,8 +108,10 @@
                     <!-- 取值见 <properties> 中的 excludedGroups，便于命令行覆盖 -->
                     <excludedGroups>${excludedGroups}</excludedGroups>
                     <systemPropertyVariables>
-                        <!-- 测试不注册 Nacos：避免测试实例污染注册表，也让离线 / CI 不依赖本机容器 -->
+                        <!-- 测试不连 Nacos：避免污染注册表，也让离线 / CI 不依赖本机容器 -->
                         <spring.cloud.nacos.discovery.enabled>false</spring.cloud.nacos.discovery.enabled>
+                        <!-- 关掉配置中心后，optional:nacos: 导入会被跳过，不会尝试连接 -->
+                        <spring.cloud.nacos.config.enabled>false</spring.cloud.nacos.config.enabled>
                         <!-- note-app 测试用本地 UserProfileReader 夹具，不发起跨服务 Feign 调用 -->
                         <jotang.remote.user.enabled>false</jotang.remote.user.enabled>
                     </systemPropertyVariables>

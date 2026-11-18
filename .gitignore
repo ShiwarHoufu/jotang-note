@@ -41,3 +41,8 @@ application-local.yaml
 dump.rdb
 # Compose 的环境变量文件，含 RabbitMQ 密码；仓库里只提交 .env.example
 .env
+
+
+.screenshots
+# 本机数据库备份（含业务数据，禁止提交）
+deploy/mysql/backup/

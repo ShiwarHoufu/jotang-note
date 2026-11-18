@@ -1,11 +1,33 @@
-# 起 RabbitMQ 与 Redis。不含 MySQL：本机已有实例，再起一份会争 3307 端口。
-# 将来 MySQL 要迁进来时再单独加 service。
+# 起 MySQL、RabbitMQ、Redis 与 Nacos。
 #
 # 密码不落仓库，从同目录 .env 读取（Compose 会自动加载该文件）。
-# 与 application.yaml 里 jwt.secret / OSS AccessKey 的做法一致：仓库只存占位，
-# 真值走本地未跟踪文件。.env 已被 .gitignore 忽略，模板见 .env.example。
 
 services:
+  mysql:
+    image: mysql:8.4
+    container_name: jotang-mysql
+    restart: unless-stopped
+    environment:
+      # 应用沿用 root 连接；密码从 .env 读取，需与 application-local.yaml 保持一致
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?缺少 .env 或未设置 MYSQL_ROOT_PASSWORD}
+      # JDBC URL 与表数据都按 Asia/Shanghai 处理
+      TZ: Asia/Shanghai
+    ports:
+      # 只绑回环：应用都在本机，没必要对局域网暴露
+      - "127.0.0.1:3306:3306"
+    volumes:
+      # 与 Redis 不同，这里是唯一一份业务数据，卷必须保留
+      - mysql-data:/var/lib/mysql
+      # 仅在数据卷为空（首次启动）时执行，用于创建三个业务库
+      - ./deploy/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # 首次启动要初始化系统库，start_period 给足
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
   rabbitmq:
     # -management 后缀才带网页管理台（15672）。不带后缀的 rabbitmq:4 没有 UI，
     # 本地开发没有它排查队列会很痛苦。
@@ -74,6 +96,7 @@ services:
       - nacos-data:/home/nacos/data
 
 volumes:
+  mysql-data:
   rabbitmq-data:
 #    name: rabbitmq-data
   nacos-data:

@@ -64,10 +64,14 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Nacos 注册发现：网关经服务名转发 -->
+        <!-- Nacos 注册发现与配置中心 -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
         </dependency>
         <!-- 读 user-service 的上传者资料 -->
         <dependency>
