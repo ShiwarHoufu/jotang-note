@@ -1,10 +1,8 @@
 package com.wlf.ai.config;
 
-import com.wlf.ai.application.port.out.AiQuota;
-import com.wlf.ai.application.port.out.RateLimitPolicy;
-import com.wlf.ai.application.port.out.RateLimitPort;
-import com.wlf.ai.domain.summary.SummaryFilePolicy;
-import com.wlf.ai.infrastructure.ratelimit.InMemoryRateLimitAdapter;
+import com.wlf.ai.infrastructure.quota.AiQuota;
+import com.wlf.ai.infrastructure.quota.FixedWindowRateLimiter;
+import com.wlf.ai.infrastructure.quota.QuotaRule;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,14 +25,9 @@ public class AiModuleConfig {
     }
 
     @Bean
-    public SummaryFilePolicy summaryFilePolicy() {
-        return new SummaryFilePolicy();
-    }
-
-    @Bean
-    public RateLimitPort rateLimitPort() {
-        return new InMemoryRateLimitAdapter(Map.of(
-                AiQuota.SUMMARY, new RateLimitPolicy(20, Duration.ofHours(1), "生成"),
-                AiQuota.CHAT, new RateLimitPolicy(30, Duration.ofHours(1), "对话")));
+    public FixedWindowRateLimiter aiRateLimiter() {
+        return new FixedWindowRateLimiter(Map.of(
+                AiQuota.SUMMARY, new QuotaRule(20, Duration.ofHours(1), "生成"),
+                AiQuota.CHAT, new QuotaRule(30, Duration.ofHours(1), "对话")));
     }
 }
