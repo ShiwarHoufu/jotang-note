@@ -1,8 +1,0 @@
-# 测试专用配置：会遮蔽 src/main/resources/application.yaml。
-# 不声明 spring.config.import，测试不连 Nacos。
-spring:
-  application:
-    name: jotang-gateway
-
-jwt:
-  secret: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
