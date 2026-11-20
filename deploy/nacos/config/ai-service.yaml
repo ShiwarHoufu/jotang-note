@@ -31,11 +31,30 @@ spring:
       chat:
         model: deepseek-flash
         timeout: 60s
+      # embedding 走硅基流动，对话仍用 DeepSeek；模型级配置覆盖上面的地址和 key
+      embedding:
+        api-key: ${JOTANG_EMBEDDING_API_KEY:}
+        base-url: ${JOTANG_EMBEDDING_BASE_URL:https://api.siliconflow.cn/v1}
+        model: ${JOTANG_EMBEDDING_MODEL:BAAI/bge-m3}
     model:
       chat: openai
-      embedding: none
+      embedding: openai
       image: none
       audio:
         speech: none
         transcription: none
       moderation: none
+
+    vectorstore:
+      qdrant:
+        host: ${QDRANT_HOST:127.0.0.1}
+        port: ${QDRANT_PORT:6334}       # gRPC，不是 6333
+        collection-name: university_docs
+        initialize-schema: true
+        use-tls: false
+
+jotang:
+  ai:
+    kb:
+      # 相对路径按进程工作目录解析；从 jotang-ai-app 启动时即 jotang-ai-app/data/kb
+      dir: ${JOTANG_AI_KB_DIR:./data/kb}
