@@ -1,12 +1,12 @@
 package com.wlf.ai.rag.ingest;
 
+import com.wlf.ai.infrastructure.vectorstore.KbChunkFields;
+import com.wlf.ai.infrastructure.vectorstore.KbVectorStore;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -61,15 +61,57 @@ public class KbIngestionService {
 
     private final String kbDir;
     private final KbDocumentReader documentReader;
-    private final VectorStore vectorStore;
+    private final KbVectorStore kbVectorStore;
 
     public KbIngestionService(@Value("${jotang.ai.kb.dir}") String kbDir,
                               KbDocumentReader documentReader,
-                              VectorStore vectorStore) {
+                              KbVectorStore kbVectorStore) {
         this.kbDir = kbDir;
         this.documentReader = documentReader;
-        this.vectorStore = vectorStore;
+        this.kbVectorStore = kbVectorStore;
     }
+
+
+
+    /** 导入整个知识库目录。 */
+    public IngestReport ingestAll() {
+        List<Resource> resources = loadResources();
+        List<String> failed = new ArrayList<>();
+        int indexed = 0;
+
+        for (Resource resource : resources) {
+            try {
+                int chunks = ingest(resource);
+                indexed++;
+                log.info("已导入 {}，{} 个块", resource.getFilename(), chunks);
+            } catch (BusinessException e) {
+                failed.add(resource.getFilename() + "：" + e.getMessage());
+                log.warn("导入失败 {}：{}", resource.getFilename(), e.getMessage());
+            } catch (RuntimeException e) {
+                failed.add(resource.getFilename() + "：" + e.getMessage());
+                log.error("导入失败 {}", resource.getFilename(), e);
+            }
+        }
+
+        log.info("知识库导入完成：文件 {} 个，成功 {} 个，失败 {} 个",
+                resources.size(), indexed, failed.size());
+        return new IngestReport(resources.size(), indexed, failed);
+    }
+
+
+    /** 导入单个文件：解析 → 切块 → 补元数据 → 覆盖该文档在向量库里的旧块。 */
+    public int ingest(Resource resource) {
+        KbMetadata metadata = metadataOf(resource);
+        List<Document> rawChunks = splitter.apply(documentReader.read(resource));
+        List<Document> enrichedChunks = enrich(rawChunks, metadata);
+        if (enrichedChunks.isEmpty()) {
+            return 0;
+        }
+
+        kbVectorStore.replaceDocument(metadata.documentId(), enrichedChunks);
+        return enrichedChunks.size();
+    }
+
 
     /** 加载知识库目录下的所有普通文件，按路径排序；不支持的类型留给读取阶段拒绝。 */
     public List<Resource> loadResources() {
@@ -105,67 +147,23 @@ public class KbIngestionService {
         return resources;
     }
 
-    /** 把读取到的文档切成检索块；Spring AI 会把原文档的元数据复制到每个块。 */
-    public List<Document> split(List<Document> documents) {
-        return splitter.apply(documents);
-    }
 
-    /** 导入整个知识库目录；单个文件失败不影响其他文件。 */
-    public IngestReport ingestAll() {
-        List<Resource> resources = loadResources();
-        List<String> failed = new ArrayList<>();
-        int indexed = 0;
 
-        for (Resource resource : resources) {
-            try {
-                int chunks = ingest(resource);
-                indexed++;
-                log.info("已导入 {}，{} 个块", resource.getFilename(), chunks);
-            } catch (BusinessException e) {
-                failed.add(resource.getFilename() + "：" + e.getMessage());
-                log.warn("导入失败 {}：{}", resource.getFilename(), e.getMessage());
-            } catch (RuntimeException e) {
-                failed.add(resource.getFilename() + "：" + e.getMessage());
-                log.error("导入失败 {}", resource.getFilename(), e);
-            }
-        }
-
-        log.info("知识库导入完成：文件 {} 个，成功 {} 个，失败 {} 个",
-                resources.size(), indexed, failed.size());
-        return new IngestReport(resources.size(), indexed, failed);
-    }
-
-    /** 导入单个文件：解析 → 切块 → 补元数据 → 覆盖该文档在向量库里的旧块。 */
-    public int ingest(Resource resource) {
-        KbMetadata metadata = metadataOf(resource);
-        List<Document> chunks = enrich(split(documentReader.read(resource)), metadata);
-        if (chunks.isEmpty()) {
-            return 0;
-        }
-
-        // 先删旧块：文档更新后 chunk 数可能变少，只靠 upsert 会留下多余的点
-        vectorStore.delete(new FilterExpressionBuilder()
-                .eq("document_id", metadata.documentId())
-                .build());
-        vectorStore.add(chunks);
-        return chunks.size();
-    }
 
     private List<Document> enrich(List<Document> chunks, KbMetadata metadata) {
         return chunks.stream().map(chunk -> {
-            int chunkIndex = intValue(chunk.getMetadata().get("chunk_index"));
-            int totalChunks = intValue(chunk.getMetadata().get("total_chunks"));
+            int chunkIndex = intValue(chunk.getMetadata().get(KbChunkFields.CHUNK_INDEX));
+            int totalChunks = intValue(chunk.getMetadata().get(KbChunkFields.TOTAL_CHUNKS));
 
             // Qdrant payload 只接受标量；TextReader 的 charset 等对象字段不能带进去
             Map<String, Object> payload = new HashMap<>();
-            payload.put("document_id", metadata.documentId());
-            payload.put("document_path", metadata.path());
-            payload.put("title", metadata.title());
-            payload.put("department", metadata.department());
-            payload.put("source_url", metadata.sourceUrl());
-            payload.put("status", "active");
-            payload.put("chunk_index", chunkIndex);
-            payload.put("total_chunks", totalChunks);
+            payload.put(KbChunkFields.DOCUMENT_ID, metadata.documentId());
+            payload.put(KbChunkFields.DOCUMENT_PATH, metadata.path());
+            payload.put(KbChunkFields.TITLE, metadata.title());
+            payload.put(KbChunkFields.SOURCE_URL, metadata.sourceUrl());
+            payload.put(KbChunkFields.STATUS, KbChunkFields.STATUS_ACTIVE);
+            payload.put(KbChunkFields.CHUNK_INDEX, chunkIndex);
+            payload.put(KbChunkFields.TOTAL_CHUNKS, totalChunks);
 
             return Document.builder()
                     .id(pointId(metadata.documentId(), chunkIndex))
@@ -179,10 +177,8 @@ public class KbIngestionService {
         String path = relativePath(resource);
         String filename = resource.getFilename();
         String title = stripExtension(filename);
-        int separator = path.indexOf('/');
-        String department = separator > 0 ? path.substring(0, separator) : "";
         // source_url 等官网来源信息等 manifest 接入后再补
-        return new KbMetadata(sha256(path), path, title, department, "");
+        return new KbMetadata(sha256(path), path, title, "");
     }
 
     private String relativePath(Resource resource) {
@@ -223,8 +219,8 @@ public class KbIngestionService {
         return dot > 0 ? filename.substring(0, dot) : filename;
     }
 
-    private record KbMetadata(String documentId, String path, String title,
-                              String department, String sourceUrl) {
+
+    private record KbMetadata(String documentId, String path, String title, String sourceUrl) {
     }
 
     /** 一次全量导入的结果。 */

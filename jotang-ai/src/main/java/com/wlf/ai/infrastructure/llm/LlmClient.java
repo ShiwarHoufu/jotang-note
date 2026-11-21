@@ -1,6 +1,7 @@
 package com.wlf.ai.infrastructure.llm;
 
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -27,15 +28,23 @@ public class LlmClient {
 
     /** 多轮对话，可选挂载工具。 */
     public String chat(String systemPrompt, List<LlmMessage> history, String userMessage, Object... tools) {
-        List<Message> messages = new ArrayList<>(history.size() + 1);
-        history.forEach(row -> messages.add(toMessage(row)));
-        messages.add(new UserMessage(userMessage));
-
         ChatClient.ChatClientRequestSpec spec = chatClient.prompt()
                 .system(systemPrompt)
-                .messages(messages);
+                .messages(conversation(history, userMessage));
         if (tools.length > 0) {
             spec = spec.tools(tools);
+        }
+        return text(spec.call().content());
+    }
+
+    /** 多轮对话，挂载 advisor（如 RAG 检索）。 */
+    public String chatWithAdvisor(String systemPrompt, List<LlmMessage> history, String userMessage,
+                                  Advisor... advisors) {
+        ChatClient.ChatClientRequestSpec spec = chatClient.prompt()
+                .system(systemPrompt)
+                .messages(conversation(history, userMessage));
+        if (advisors.length > 0) {
+            spec = spec.advisors(advisors);
         }
         return text(spec.call().content());
     }
@@ -57,6 +66,13 @@ public class LlmClient {
                         .media(MimeTypeUtils.parseMimeType(contentType), new ByteArrayResource(image)))
                 .call()
                 .content());
+    }
+
+    private static List<Message> conversation(List<LlmMessage> history, String userMessage) {
+        List<Message> messages = new ArrayList<>(history.size() + 1);
+        history.forEach(row -> messages.add(toMessage(row)));
+        messages.add(new UserMessage(userMessage));
+        return messages;
     }
 
     private static Message toMessage(LlmMessage message) {

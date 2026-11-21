@@ -11,7 +11,7 @@
 
     <artifactId>jotang-ai</artifactId>
     <name>jotang-ai</name>
-    <description>AI 摘要、对话与后续 RAG</description>
+    <description>AI 摘要、对话与RAG</description>
 
     <dependencies>
         <dependency>
@@ -58,6 +58,11 @@
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-tika-document-reader</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-rag</artifactId>
         </dependency>
 
         <dependency>
