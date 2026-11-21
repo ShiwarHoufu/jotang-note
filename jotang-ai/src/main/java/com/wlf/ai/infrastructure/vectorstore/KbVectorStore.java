@@ -8,12 +8,9 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-/** 知识库块在向量库中的读写入口：屏蔽 Spring AI 的检索参数与批写细节。 */
+/** 知识库块在向量库中的读写入口：屏蔽检索参数细节。 */
 @Component
 public class KbVectorStore {
-
-    /** 低于这个相似度的块不返回，避免把无关内容塞给模型 */
-    private static final double SIMILARITY_THRESHOLD = 0.5;
 
     private final VectorStore vectorStore;
 
@@ -22,18 +19,28 @@ public class KbVectorStore {
     }
 
     /** 按语义检索有效文档的块。 */
-    public List<Document> search(String query, int topK) {
+    public List<Document> search(String query, int topK, double threshHold) {
         return vectorStore.similaritySearch(SearchRequest.builder()
                 .query(query)
                 .topK(topK)
-                .similarityThreshold(SIMILARITY_THRESHOLD)
+                .similarityThreshold(threshHold)
                 .filterExpression(new FilterExpressionBuilder()
                         .eq(KbChunkFields.STATUS, KbChunkFields.STATUS_ACTIVE)
                         .build())
                 .build());
     }
 
-    /** 覆盖一篇文档的全部块；先删旧块，避免块数变少时留下多余的点。 */
+    /** 追加一批块；
+     * point id 相同的块会被覆盖。 */
+    public void append(List<Document> chunks) {
+        if (chunks.isEmpty()) {
+            return;
+        }
+        vectorStore.add(chunks);
+    }
+
+    /** 覆盖一篇文档的全部块；
+     * 先删旧块，避免块数变少时留下多余的点。 */
     public void replaceDocument(String documentId, List<Document> chunks) {
         vectorStore.delete(new FilterExpressionBuilder()
                 .eq(KbChunkFields.DOCUMENT_ID, documentId)

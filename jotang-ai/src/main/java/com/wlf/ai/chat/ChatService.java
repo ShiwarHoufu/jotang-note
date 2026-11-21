@@ -13,6 +13,7 @@ import com.wlf.ai.infrastructure.vectorstore.KbVectorStore;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -71,6 +72,8 @@ public class ChatService {
                 .orElseGet(History::empty);
     }
 
+
+
     private List<LlmMessage> requireHistory(Long userId, String conversationId) {
         List<LlmMessage> history = conversationStore.findMessages(userId, conversationId);
         if (history.isEmpty()) {
@@ -84,7 +87,8 @@ public class ChatService {
             return llmClient.chat(ChatPrompt.SYSTEM, contextWindow(history), message,
                     new KbSearchTool(userId, kbVectorStore),
                     new NoteSearchTool(userId, noteGateway),
-                    new NoteReadTool(userId, noteGateway, llmClient)).strip();
+                    new NoteReadTool(userId, noteGateway, llmClient)
+            ).strip();
         } catch (RuntimeException e) {
             log.error("调用对话模型失败，异常类型={}", e.getClass().getName(), e);
             throw new BusinessException(ErrorCode.AI_UNAVAILABLE, "对话服务暂不可用，请稍后重试");
@@ -98,6 +102,8 @@ public class ChatService {
         }
         return List.copyOf(history.subList(history.size() - CONTEXT_MESSAGES, history.size()));
     }
+
+
 
     /** 一轮问答的输出。 */
     public record Reply(String reply, String conversationId) {

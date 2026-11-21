@@ -13,6 +13,8 @@ public class KbSearchTool {
 
     /** 单轮最多回几块。一块约 600 token，4 块已够回答一个问题 */
     private static final int MAX_HITS = 4;
+    /** 低于这个相似度的块不返回，避免把无关内容塞给模型 */
+    private static final double SIMILARITY_THRESHOLD = 0.5;
 
     private final Long userId;
     private final KbVectorStore kbVectorStore;
@@ -35,7 +37,7 @@ public class KbSearchTool {
 
         List<KbHit> hits;
         try {
-            hits = kbVectorStore.search(normalized, MAX_HITS).stream()
+            hits = kbVectorStore.search(normalized, MAX_HITS, SIMILARITY_THRESHOLD).stream()
                     .map(KbHit::from)
                     .toList();
         } catch (RuntimeException e) {

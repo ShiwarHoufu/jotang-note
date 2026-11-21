@@ -31,6 +31,7 @@ spring:
       chat:
         model: deepseek-flash
         timeout: 60s
+        parallel-tool-calls: false
       # embedding 走硅基流动，对话仍用 DeepSeek；模型级配置覆盖上面的地址和 key
       embedding:
         api-key: ${JOTANG_EMBEDDING_API_KEY:}

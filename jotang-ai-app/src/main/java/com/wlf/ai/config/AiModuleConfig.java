@@ -1,5 +1,6 @@
 package com.wlf.ai.config;
 
+import com.wlf.ai.chat.advisor.LoggingAdvisor;
 import com.wlf.ai.infrastructure.quota.AiQuota;
 import com.wlf.ai.infrastructure.quota.FixedWindowRateLimiter;
 import com.wlf.ai.infrastructure.quota.QuotaRule;
@@ -20,8 +21,8 @@ import java.util.Map;
 public class AiModuleConfig {
 
     @Bean
-    public ChatClient aiChatClient(ChatClient.Builder builder) {
-        return builder.build();
+    public ChatClient aiChatClient(ChatClient.Builder builder, LoggingAdvisor loggingAdvisor) {
+        return builder.defaultAdvisors(loggingAdvisor).build();
     }
 
     @Bean
