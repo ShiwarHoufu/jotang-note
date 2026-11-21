@@ -11,7 +11,7 @@
 
     <artifactId>jotang-ai</artifactId>
     <name>jotang-ai</name>
-    <description>AI 摘要、对话与后续 RAG</description>
+    <description>AI 摘要、对话与RAG</description>
 
     <dependencies>
         <dependency>
@@ -46,8 +46,23 @@
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-qdrant</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+
+        <!-- 知识库文档读取：Tika 由 Spring AI 的 reader 统一带版本 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-tika-document-reader</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-rag</artifactId>
         </dependency>
 
         <dependency>

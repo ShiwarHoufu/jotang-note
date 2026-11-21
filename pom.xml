@@ -31,7 +31,7 @@
         <java.version>21</java.version>
         <jjwt.version>0.13.0</jjwt.version>
         <aliyun-oss.version>3.18.5</aliyun-oss.version>
-        <spring-ai.version>2.0.1</spring-ai.version>
+        <spring-ai.version>2.1.0</spring-ai.version>
         <spring-cloud.version>2025.1.0</spring-cloud.version>
         <spring-cloud-alibaba.version>2025.1.0.0</spring-cloud-alibaba.version>
         <!--

@@ -23,7 +23,10 @@ public class NoteSearchTool {
         this.noteGateway = noteGateway;
     }
 
-    @Tool(name = "search_notes_by_title", description = NoteToolPrompts.SEARCH_NOTES_DESCRIPTION)
+    @Tool(name = "search_notes_by_title", description =
+            "按标题精确查找本平台在线的笔记，返回笔记 id、标题、教师与简介。"
+            + "用户想找某篇笔记、或需要某篇笔记的内容时使用。"
+            + "查不到就据实告诉用户没找到，不要编造标题或内容。")
     public List<NoteHit> searchNotes(
             @ToolParam(description = "笔记的完整标题，逐字照抄，不要带《》书名号") String title) {
         String normalized = normalizeTitle(title);

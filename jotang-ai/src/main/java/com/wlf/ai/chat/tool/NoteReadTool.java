@@ -38,7 +38,7 @@ public class NoteReadTool {
         this.llmClient = llmClient;
     }
 
-    @Tool(name = "read_note_content", description = NoteToolPrompts.READ_NOTE_DESCRIPTION)
+    @Tool(name = "read_note_content", description = "根据笔记 id 读取一篇在线笔记附件的内容。")
     public String readNote(@ToolParam(description = "取自 search_notes_by_title 的结果") long noteId) {
         String text = readContent(noteId);
         log.info("读取笔记正文：userId={}，noteId={}，返回 {} 字", userId, noteId, text.length());
@@ -91,7 +91,15 @@ public class NoteReadTool {
     private String transcribe(String contentType, byte[] image, long noteId) {
         try {
             return llmClient.chatWithImage(
-                    NoteToolPrompts.TRANSCRIBE_SYSTEM, "请转写这张图片。", contentType, image).strip();
+                    """
+            你在转写一份笔记图片，转写结果会给另一个模型阅读。
+
+            要求：
+            1. 逐字转写图中所有可见文字，保留原有的分点、公式与符号；
+            2. 不要总结、不要概括、不要补充图中没有的内容；
+            3. 图里没有文字时，客观说明它是什么（手写板书 / 截图 / 与课程无关的照片）；
+            4. 直接输出转写结果，不要任何前缀或解释性文字。
+            """, "请转写这张图片。", contentType, image).strip();
         } catch (RuntimeException e) {
             log.error("转写笔记图片失败，userId={}，noteId={}，contentType={}", userId, noteId, contentType, e);
             return null;

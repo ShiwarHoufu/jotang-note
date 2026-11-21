@@ -1,6 +1,7 @@
 package com.wlf.ai.infrastructure.llm;
 
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -12,9 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 模型调用的唯一入口：屏蔽 Spring AI 的协议细节，统一空响应。
- *
- * <p>供应商切换、重试与降级都收在这里，业务侧只关心「问一句话、拿一段文本」。
+ * 模型调用的唯一入口。
  */
 @Component
 public class LlmClient {
@@ -25,20 +24,19 @@ public class LlmClient {
         this.chatClient = chatClient;
     }
 
-    /** 多轮对话，可选挂载工具。 */
-    public String chat(String systemPrompt, List<LlmMessage> history, String userMessage, Object... tools) {
-        List<Message> messages = new ArrayList<>(history.size() + 1);
-        history.forEach(row -> messages.add(toMessage(row)));
-        messages.add(new UserMessage(userMessage));
 
+    /** 多轮对话。 */
+    public String chat(String systemPrompt, List<LlmMessage> history, String userMessage,
+                      Object... tools) {
         ChatClient.ChatClientRequestSpec spec = chatClient.prompt()
                 .system(systemPrompt)
-                .messages(messages);
+                .messages(conversation(history, userMessage));
         if (tools.length > 0) {
             spec = spec.tools(tools);
         }
         return text(spec.call().content());
     }
+
 
     /** 单轮文本。 */
     public String chat(String systemPrompt, String userMessage) {
@@ -57,6 +55,15 @@ public class LlmClient {
                         .media(MimeTypeUtils.parseMimeType(contentType), new ByteArrayResource(image)))
                 .call()
                 .content());
+    }
+
+
+
+    private static List<Message> conversation(List<LlmMessage> history, String userMessage) {
+        List<Message> messages = new ArrayList<>(history.size() + 1);
+        history.forEach(row -> messages.add(toMessage(row)));
+        messages.add(new UserMessage(userMessage));
+        return messages;
     }
 
     private static Message toMessage(LlmMessage message) {

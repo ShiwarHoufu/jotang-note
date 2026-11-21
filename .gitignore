@@ -46,3 +46,7 @@ dump.rdb
 .screenshots
 # 本机数据库备份（含业务数据，禁止提交）
 deploy/mysql/backup/
+
+### 知识库原始文件（体积大、可重新收集） ###
+jotang-ai-app/data/kb/*
+!jotang-ai-app/data/kb/.gitkeep

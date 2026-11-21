@@ -1,6 +1,7 @@
 package com.wlf.ai.chat;
 
 import com.wlf.ai.chat.persistence.ConversationStore;
+import com.wlf.ai.chat.tool.KbSearchTool;
 import com.wlf.ai.chat.tool.NoteReadTool;
 import com.wlf.ai.chat.tool.NoteSearchTool;
 import com.wlf.ai.infrastructure.llm.LlmClient;
@@ -8,9 +9,11 @@ import com.wlf.ai.infrastructure.llm.LlmMessage;
 import com.wlf.ai.infrastructure.note.NoteGateway;
 import com.wlf.ai.infrastructure.quota.AiQuota;
 import com.wlf.ai.infrastructure.quota.FixedWindowRateLimiter;
+import com.wlf.ai.infrastructure.vectorstore.KbVectorStore;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -19,7 +22,7 @@ import java.util.UUID;
 /**
  * AI 对话：一轮问答与恢复最近一次会话。
  *
- * <p>对话会把消息写进 {@code ai_message}；模型可经笔记工具检索笔记。
+ * <p>对话会把消息写进 {@code ai_message}；模型可经工具检索笔记与知识库。
  */
 @Slf4j
 @Service
@@ -33,15 +36,18 @@ public class ChatService {
     private final FixedWindowRateLimiter rateLimiter;
     private final NoteGateway noteGateway;
     private final ConversationStore conversationStore;
+    private final KbVectorStore kbVectorStore;
 
     public ChatService(LlmClient llmClient,
                        FixedWindowRateLimiter rateLimiter,
                        NoteGateway noteGateway,
-                       ConversationStore conversationStore) {
+                       ConversationStore conversationStore,
+                       KbVectorStore kbVectorStore) {
         this.llmClient = llmClient;
         this.rateLimiter = rateLimiter;
         this.noteGateway = noteGateway;
         this.conversationStore = conversationStore;
+        this.kbVectorStore = kbVectorStore;
     }
 
     /** 一轮对话。留空 conversationId 即开新会话；带了 id 却查不到一律 40400。 */
@@ -66,6 +72,8 @@ public class ChatService {
                 .orElseGet(History::empty);
     }
 
+
+
     private List<LlmMessage> requireHistory(Long userId, String conversationId) {
         List<LlmMessage> history = conversationStore.findMessages(userId, conversationId);
         if (history.isEmpty()) {
@@ -77,8 +85,10 @@ public class ChatService {
     private String ask(Long userId, List<LlmMessage> history, String message) {
         try {
             return llmClient.chat(ChatPrompt.SYSTEM, contextWindow(history), message,
+                    new KbSearchTool(userId, kbVectorStore),
                     new NoteSearchTool(userId, noteGateway),
-                    new NoteReadTool(userId, noteGateway, llmClient)).strip();
+                    new NoteReadTool(userId, noteGateway, llmClient)
+            ).strip();
         } catch (RuntimeException e) {
             log.error("调用对话模型失败，异常类型={}", e.getClass().getName(), e);
             throw new BusinessException(ErrorCode.AI_UNAVAILABLE, "对话服务暂不可用，请稍后重试");
@@ -92,6 +102,8 @@ public class ChatService {
         }
         return List.copyOf(history.subList(history.size() - CONTEXT_MESSAGES, history.size()));
     }
+
+
 
     /** 一轮问答的输出。 */
     public record Reply(String reply, String conversationId) {
