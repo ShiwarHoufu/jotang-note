@@ -62,6 +62,11 @@ function toApiError(code: number, message: string, data?: unknown): ApiError {
   return new ApiError(code, message, data)
 }
 
+/** 给非 axios 链路（SSE 流）复用同一套错误处理：401 清登录态，其余非表单码弹全局提示 */
+export function raiseApiError(code: number, message: string, data?: unknown): ApiError {
+  return toApiError(code, message, data)
+}
+
 http.interceptors.response.use(
   (response) => {
     const body = response.data as ApiResponse<unknown>

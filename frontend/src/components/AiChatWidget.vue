@@ -2,7 +2,7 @@
 import { ChatDotRound, Close, Loading, Plus } from '@element-plus/icons-vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { nextTick, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 
 import { aiApi } from '@/api/ai'
 
@@ -11,6 +11,8 @@ interface ChatMessage {
   content: string
   /** ASSISTANT 消息的预渲染 HTML（marked + DOMPurify，与 NotePreview 同一条消毒路径） */
   html?: string
+  /** 正在流式接收：渲染纯文本，结束后再转 Markdown */
+  streaming?: boolean
 }
 
 const open = ref(false)
@@ -22,11 +24,32 @@ const listEl = ref<HTMLElement>()
 /** 本次页面生命周期内已经尝试过恢复——避免反复展开面板重复请求 */
 const resumeAttempted = ref(false)
 const resuming = ref(false)
+/** 当前这一轮的流式请求；离开页面时要断掉 */
+let inFlight: AbortController | null = null
 
 async function scrollToBottom() {
   await nextTick()
   listEl.value?.scrollTo({ top: listEl.value.scrollHeight })
 }
+
+/** 每个 token 都滚动一次太频，合并到下一帧 */
+let scrollQueued = false
+function queueScrollToBottom() {
+  if (scrollQueued) {
+    return
+  }
+  scrollQueued = true
+  requestAnimationFrame(() => {
+    scrollQueued = false
+    void scrollToBottom()
+  })
+}
+
+async function renderMarkdown(msg: ChatMessage) {
+  msg.html = msg.content ? DOMPurify.sanitize(await marked.parse(msg.content)) : ''
+}
+
+onBeforeUnmount(() => inFlight?.abort())
 
 /**
  * 接回最近一次会话。挂在「首次展开面板」而不是 onMounted 上：组件挂在 MainLayout 里，
@@ -82,19 +105,44 @@ async function send() {
   input.value = ''
   sending.value = true
   messages.value.push({ role: 'USER', content: text })
-  // 先占一个气泡：成功填内容，失败整体移除（42900/50300 等已由 http 层全局提示）
-  const pending: ChatMessage = { role: 'ASSISTANT', content: '' }
+  // 先占一个气泡：流式期间显示纯文本，结束后转 Markdown，失败整体移除。
+  // 必须是 reactive 的：push 进数组后继续改原始对象不会触发视图更新
+  const pending = reactive<ChatMessage>({ role: 'ASSISTANT', content: '', streaming: true })
   messages.value.push(pending)
   await scrollToBottom()
+
+  const previousConversationId = conversationId.value
+  const controller = new AbortController()
+  inFlight = controller
   try {
-    const res = await aiApi.chat(text, conversationId.value)
-    conversationId.value = res.conversationId
-    pending.content = res.reply
-    // 模型可能返回空串，空回复不是错误（《功能说明》§1.3）
-    pending.html = res.reply ? DOMPurify.sanitize(await marked.parse(res.reply)) : ''
+    await aiApi.chatStream(text, conversationId.value, controller.signal, {
+      onStart: (id) => {
+        conversationId.value = id
+      },
+      onDelta: (chunk) => {
+        pending.content += chunk
+        queueScrollToBottom()
+      },
+      onDone: (id) => {
+        conversationId.value = id
+        // 渲染完再切回 Markdown 分支，避免中间闪一下空气泡
+        void renderMarkdown(pending).then(() => {
+          pending.streaming = false
+          void scrollToBottom()
+        })
+      },
+      onError: () => {
+        messages.value.pop()
+        // 这一轮没落库，新会话的 id 在库里不存在，留着会让下一轮 40400
+        conversationId.value = previousConversationId
+      },
+    })
   } catch {
+    // 42900 / 50300 等已由 raiseApiError 统一提示；空回复不是错误（《功能说明》§1.3）
     messages.value.pop()
+    conversationId.value = previousConversationId
   } finally {
+    inFlight = null
     sending.value = false
     await scrollToBottom()
   }
@@ -102,6 +150,7 @@ async function send() {
 
 /** 开启新对话：清空本地消息并丢弃 conversationId，下一条即新会话 */
 function reset() {
+  inFlight?.abort()
   messages.value = []
   conversationId.value = undefined
 }
@@ -130,6 +179,10 @@ function reset() {
               :class="msg.role === 'USER' ? 'mine' : 'theirs'"
             >
               <div v-if="msg.role === 'USER'" class="bubble user">{{ msg.content }}</div>
+              <!-- 流式期间先按纯文本显示，避免每来一个 token 就整段重新解析 Markdown -->
+              <div v-else-if="msg.streaming && msg.content" class="bubble assistant streaming">
+                {{ msg.content }}
+              </div>
               <!-- eslint-disable-next-line vue/no-v-html -- 内容已过 DOMPurify（与 NotePreview 同一路径） -->
               <div v-else-if="msg.content" class="bubble assistant markdown-body" v-html="msg.html" />
               <div v-else class="bubble assistant pending">
@@ -357,6 +410,10 @@ function reset() {
   border: 1px solid var(--el-border-color-lighter);
   border-top-left-radius: 2px;
   white-space: normal;
+}
+
+.bubble.assistant.streaming {
+  white-space: pre-wrap;
 }
 
 .bubble.pending {
