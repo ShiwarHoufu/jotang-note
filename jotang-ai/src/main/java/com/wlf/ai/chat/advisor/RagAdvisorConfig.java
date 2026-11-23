@@ -10,7 +10,8 @@ import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** RAG 问答的检索增强 Advisor。 */
+/** RAG 问答的检索增强 Advisor。
+ * （当前未启用） */
 @Configuration
 public class RagAdvisorConfig {
 

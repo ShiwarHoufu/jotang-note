@@ -4,6 +4,7 @@ import com.wlf.common.ApiResponse;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.IdentityFilter;
 import com.wlf.common.JwtTokenProvider;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -51,6 +52,9 @@ public class AiSecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // SSE 结束时容器会再派发一次 ASYNC：这一跳没有 SecurityContext，
+                        // 原始 REQUEST 已经鉴过权，别在这里再拦一次
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling

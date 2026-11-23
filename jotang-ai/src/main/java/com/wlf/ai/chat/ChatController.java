@@ -3,14 +3,18 @@ package com.wlf.ai.chat;
 import com.wlf.ai.chat.dto.ChatHistoryResponse;
 import com.wlf.ai.chat.dto.ChatRequest;
 import com.wlf.ai.chat.dto.ChatResponse;
+import com.wlf.ai.chat.dto.ChatStreamEvent;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -30,6 +34,14 @@ public class ChatController {
                                           @Valid @RequestBody ChatRequest request) {
         ChatService.Reply result = chatService.chat(user.userId(), request.message(), request.conversationId());
         return ApiResponse.ok(new ChatResponse(result.reply(), result.conversationId()));
+    }
+
+    /** 一问一答，流式（SSE）。 */
+    @PostMapping(value = "/api/ai/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<ChatStreamEvent>> chatStream(@AuthenticationPrincipal AuthenticatedUser user,
+                                                             @Valid @RequestBody ChatRequest request) {
+        ChatService.Streamed result = chatService.stream(user.userId(), request.message(), request.conversationId());
+        return result.events().map(event -> ServerSentEvent.builder(event).event(event.type()).build());
     }
 
     /** 恢复：把该用户最近一次会话及其历史交回前端。 */

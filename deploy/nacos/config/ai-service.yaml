@@ -28,9 +28,10 @@ spring:
     openai:
       api-key: ${JOTANG_AI_API_KEY:}
       base-url: https://api.deepseek.com
+      # 整个请求的 callTimeout；流式回答可能超过 60s（chat.timeout 在 2.1 已废弃）
+      timeout: 5m
       chat:
         model: deepseek-flash
-        timeout: 60s
         parallel-tool-calls: false
       # embedding 走硅基流动，对话仍用 DeepSeek；模型级配置覆盖上面的地址和 key
       embedding:

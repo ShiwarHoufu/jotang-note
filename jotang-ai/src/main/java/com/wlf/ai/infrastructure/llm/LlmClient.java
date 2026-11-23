@@ -8,6 +8,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MimeTypeUtils;
+import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,6 +38,18 @@ public class LlmClient {
         return text(spec.call().content());
     }
 
+
+    /** 多轮对话，流式返回增量文本。 */
+    public Flux<String> streamChat(String systemPrompt, List<LlmMessage> history, String userMessage,
+                                   Object... tools) {
+        ChatClient.ChatClientRequestSpec spec = chatClient.prompt()
+                .system(systemPrompt)
+                .messages(conversation(history, userMessage));
+        if (tools.length > 0) {
+            spec = spec.tools(tools);
+        }
+        return spec.stream().content();
+    }
 
     /** 单轮文本。 */
     public String chat(String systemPrompt, String userMessage) {
