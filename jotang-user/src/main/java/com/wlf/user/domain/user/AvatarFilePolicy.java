@@ -4,7 +4,6 @@ import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FileMagic;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -15,32 +14,23 @@ import java.util.UUID;
 import java.util.function.Predicate;
 
 /**
- * 头像文件的准入判定与对象键生成。见《概要设计》§6.7。
- *
- * <p><b>为什么不能复用 {@code NoteFilePolicy}</b>：两者看着都是「扩展名 + 魔数」，
- * 但白名单与上限不同（头像 3 种 / 5MB，笔记 15 种 / 100MB），对象键的拼法也不同
- * （{@code avatars/{userId}/{uuid}.{ext}} vs {@code notes/yyyy/MM/{uuid}.{ext}}）。§1.1 明说
- * 白名单与对象键属于<b>调用方</b>的策略，note 与 user 各持一份。共用的只有「字节是什么类型」
- * 这层事实，已抽到 {@link FileMagic}。
+ * 头像文件的准入判定与对象键生成。
  *
  * <p><b>为什么白名单必须严格执行</b>：头像桶是<b>公共读</b>的，对象会在 OSS 域名下被内联渲染。
- * 一旦放进来 svg 或 html，就是一个存储型 XSS（§8.3、§6.7）。故只认 jpg / jpeg / png / webp
+ * 一旦放进来 svg 或 html，就是一个存储型 XSS。故只认 jpg / jpeg / png / webp
  * 四种扩展名，且要求文件头与扩展名一致——改后缀的伪装文件过不了魔数。
  */
 @Slf4j
-@Component
 public class AvatarFilePolicy {
 
-    /** 单文件上限 5MB（§5.2、§6.7）。头像经 ECS 中转上传，与大文件的 100MB 是两回事 */
+    /** 单文件上限。头像经 ECS 中转上传，与大文件是两回事 */
     public static final long MAX_SIZE_BYTES = 5L * 1024 * 1024;
-
     /** 读文件头的字节数：必须 ≥ 最长的魔数（WEBP 需要 12 字节），取 16 留些余量 */
     private static final int HEAD_BYTES = 16;
 
     /**
-     * 扩展名 → 判定格式。键是小写扩展名（不含点），值为该类型的元信息。
-     *
-     * <p>用 {@link LinkedHashMap} 只为让表在源码里保持人类录入的顺序，运行时不依赖顺序。
+     * 扩展名 → 判定格式。
+     * 键是小写扩展名（不含点），值为该类型的元信息。
      */
     private static final Map<String, Format> FORMATS = buildFormats();
 
@@ -59,12 +49,6 @@ public class AvatarFilePolicy {
 
     /**
      * 判定一份头像文件是否准入。
-     *
-     * <p><b>本方法会读取 {@code content} 的文件头</b>；调用方在上传前需重新打开一个流——
-     * {@code MultipartFile#getInputStream} 可重复调用。
-     *
-     * <p>判定只看扩展名与文件头，<b>不看 multipart 自带的 {@code Content-Type}</b>：
-     * 那个值由客户端决定，正是 §6.7 要求「以服务端判定为准」的原因。
      *
      * @param originalName 客户端送来的原始文件名，可含路径（会被清洗掉）
      * @param size         字节数，取自 multipart
@@ -94,10 +78,7 @@ public class AvatarFilePolicy {
     }
 
     /**
-     * 生成 OSS 对象键 {@code avatars/{userId}/{uuid}.{ext}}（§6.7）。
-     *
-     * <p><b>键是版本化的</b>：每次上传都换一个新的 uuid，旧对象不覆盖。这样头像桶可以放心
-     * 配 {@code immutable} 长缓存而不会串图——浏览器缓存的旧 URL 指向一个永不改变的对象。
+     * 生成 OSS 对象键。
      *
      * <p>用 {@code userId} 做一级目录而非平铺：便于按用户排查，也让「这个 key 属于谁」
      * 一眼可读（它同时出现在公网 URL 里，属于公开信息）。

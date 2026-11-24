@@ -89,13 +89,6 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- 过渡期测试夹具：测试用本地 UserService 造上传者数据，不发起跨服务调用 -->
-        <dependency>
-            <groupId>com.wlf</groupId>
-            <artifactId>jotang-user</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
-            <scope>test</scope>
-        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc-test</artifactId>

@@ -1,6 +1,6 @@
 package com.wlf.user.infrastructure.mail;
 
-import com.wlf.user.application.port.out.MailService;
+import com.wlf.user.domain.notification.MailService;
 import com.wlf.user.infrastructure.config.RabbitConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.MessageDeliveryMode;

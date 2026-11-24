@@ -26,7 +26,7 @@ import java.util.List;
 public interface NoteMapper extends BaseMapper<Note> {
 
     /**
-     * 详情主干（note、note_file、course、user、college）。
+     * 详情主干（note、note_file、course；上传者另走 UserProfileReader）。
      * 不筛 status：已下架的笔记也要查得出来，是否展示由 Service 决定。
      */
     NoteDetailRow selectDetail(@Param("id") Long id);
