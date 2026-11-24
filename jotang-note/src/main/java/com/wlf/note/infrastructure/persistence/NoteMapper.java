@@ -2,15 +2,13 @@ package com.wlf.note.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.wlf.note.application.catalog.dto.TagResponse;
-import com.wlf.note.application.note.dto.MyNoteRow;
-import com.wlf.note.application.note.dto.NoteDetailRow;
-import com.wlf.note.application.note.dto.NoteFileOwnershipRow;
-import com.wlf.note.application.note.dto.NoteListRow;
-import com.wlf.note.application.note.dto.NoteOwnershipRow;
-import com.wlf.note.application.note.dto.NoteTagRef;
-import com.wlf.note.application.note.dto.PendingPurgeRow;
-import com.wlf.note.domain.note.Note;
+import com.wlf.note.domain.note.query.MyNoteSnapshot;
+import com.wlf.note.domain.note.query.NoteDetailSnapshot;
+import com.wlf.note.domain.note.query.NoteFileOwnershipSnapshot;
+import com.wlf.note.domain.note.query.NoteListSnapshot;
+import com.wlf.note.domain.note.query.NoteTagRefSnapshot;
+import com.wlf.note.domain.note.query.PendingPurgeSnapshot;
+import com.wlf.note.infrastructure.persistence.po.NotePO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -23,16 +21,16 @@ import java.util.List;
  * note 表的数据访问：单表 CRUD 由 {@link BaseMapper} 提供，跨表检索走 {@code NoteMapper.xml}。
  */
 @Mapper
-public interface NoteMapper extends BaseMapper<Note> {
+public interface NoteMapper extends BaseMapper<NotePO> {
 
     /**
      * 详情主干（note、note_file、course；上传者另走 UserProfileReader）。
      * 不筛 status：已下架的笔记也要查得出来，是否展示由 Service 决定。
      */
-    NoteDetailRow selectDetail(@Param("id") Long id);
+    NoteDetailSnapshot selectDetail(@Param("id") Long id);
 
     /** 某篇笔记的标签，按 tag.id 升序。to-many，不并进详情主干。 */
-    List<TagResponse> selectTagRefs(@Param("noteId") Long noteId);
+    List<NoteTagRefSnapshot> selectTagRefs(@Param("noteId") Long noteId);
 
     /**
      * 列表 / 搜索的一页，只返回 ONLINE。
@@ -41,25 +39,25 @@ public interface NoteMapper extends BaseMapper<Note> {
      * {@code sort} 传排序白名单的 {@code name()}，避免 SQL 里拼接 {@code ${}}。
      *
      * @param tagId   按标签筛选；等值 JOIN 至多匹配一行，不会让分页行数翻倍
-     * @param keyword 已由 {@code NoteService#escapeLikeKeyword} 转义过的 LIKE 模式
+     * @param keyword 已由查询服务转义过的 LIKE 模式
      */
-    IPage<NoteListRow> selectListPage(IPage<NoteListRow> page,
-                                      @Param("status") String status,
-                                      @Param("sort") String sort,
-                                      @Param("courseId") Long courseId,
-                                      @Param("tagId") Long tagId,
-                                      @Param("keyword") String keyword);
+    IPage<NoteListSnapshot> selectListPage(IPage<NoteListSnapshot> page,
+                                           @Param("status") String status,
+                                           @Param("sort") String sort,
+                                           @Param("courseId") Long courseId,
+                                           @Param("tagId") Long tagId,
+                                           @Param("keyword") String keyword);
 
     /** 一批笔记的标签，避免 N+1。noteIds 必须非空，空页应在调用方短路。 */
-    List<NoteTagRef> selectTagRefsByNoteIds(@Param("noteIds") Collection<Long> noteIds);
+    List<NoteTagRefSnapshot> selectTagRefsByNoteIds(@Param("noteIds") Collection<Long> noteIds);
 
     /**
      * 「我的上传」的一页。
      * DELETED 在 SQL 里排除：放到 Service 过滤会让 total 把已删除的也算进去。
      */
-    IPage<MyNoteRow> selectMyNotePage(IPage<MyNoteRow> page,
-                                      @Param("uploaderId") Long uploaderId,
-                                      @Param("excludedStatus") String excludedStatus);
+    IPage<MyNoteSnapshot> selectMyNotePage(IPage<MyNoteSnapshot> page,
+                                           @Param("uploaderId") Long uploaderId,
+                                           @Param("excludedStatus") String excludedStatus);
 
     /** 浏览量原子自增，仅当笔记处于给定状态；状态由调用方传入。 */
     @Update("UPDATE note SET view_count = view_count + 1 WHERE id = #{id} AND status = #{status}")
@@ -87,18 +85,15 @@ public interface NoteMapper extends BaseMapper<Note> {
     @Select("SELECT status FROM note WHERE id = #{id} FOR UPDATE")
     String selectStatusForUpdate(@Param("id") Long id);
 
-    /**
-     * 锁住笔记行并读归属与状态，供删除 / 编辑做校验。
-     * 调用方持有 X 锁后，后续写语句不必再带归属或状态守卫。
-     */
-    @Select("SELECT uploader_id, status FROM note WHERE id = #{id} FOR UPDATE")
-    NoteOwnershipRow selectOwnershipForUpdate(@Param("id") Long id);
+    /** 锁住笔记行并读出整行，供编辑 / 删除 / 上下架加载聚合。 */
+    @Select("SELECT * FROM note WHERE id = #{id} FOR UPDATE")
+    NotePO selectByIdForUpdate(@Param("id") Long id);
 
-    /** 同 {@link #selectOwnershipForUpdate}，但不加锁：ai 编辑场景只读，拿到对象键后还要读 OSS、调模型。 */
-    NoteFileOwnershipRow selectFileOwnership(@Param("id") Long id);
+    /** 附件位置，不加锁：ai 编辑场景只读，拿到对象键后还要读 OSS、调模型。 */
+    NoteFileOwnershipSnapshot selectFileOwnership(@Param("id") Long id);
 
     /** 孤儿对象对账候选：已删除且未清理的笔记；排除空 storage_key，免得每轮重复选中。 */
-    List<PendingPurgeRow> selectPendingPurge(@Param("status") String status, @Param("limit") int limit);
+    List<PendingPurgeSnapshot> selectPendingPurge(@Param("status") String status, @Param("limit") int limit);
 
     /** 管理员下架 / 恢复：只改 status，不碰 updated_at 与 deleted_at。 */
     @Update("UPDATE note SET status = #{status} WHERE id = #{id}")

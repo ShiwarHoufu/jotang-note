@@ -1,22 +1,43 @@
 package com.wlf.note.domain.catalog;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Getter;
-import lombok.Setter;
+import com.wlf.common.BusinessException;
+import com.wlf.common.ErrorCode;
+import com.wlf.note.domain.catalog.model.TagName;
 
-/**
- * tag 表。data.sql 预置若干常用标签，用户上传时也可自由打标，与 note 多对多。
- * 见《概要设计》§3.2。
- */
-@Getter
-@Setter
-@TableName("tag")
-public class Tag {
+/** 标签，名称唯一。 */
+public final class Tag {
 
-    @TableId(type = IdType.AUTO)
     private Long id;
+    private final String name;
 
-    private String name;
+    private Tag(Long id, String name) {
+        this.id = id;
+        this.name = name;
+    }
+
+    public static Tag create(TagName name) {
+        return new Tag(null, name.value());
+    }
+
+    public static Tag reconstitute(Long id, TagName name) {
+        return new Tag(id, name.value());
+    }
+
+    public void assignId(Long id) {
+        if (id == null || id <= 0) {
+            throw new BusinessException(ErrorCode.SERVER_ERROR, "标签 id 不合法");
+        }
+        if (this.id != null) {
+            throw new BusinessException(ErrorCode.SERVER_ERROR, "标签 id 已存在");
+        }
+        this.id = id;
+    }
+
+    public Long id() {
+        return id;
+    }
+
+    public String name() {
+        return name;
+    }
 }

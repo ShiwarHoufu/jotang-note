@@ -4,6 +4,7 @@ import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
@@ -36,4 +37,8 @@ public interface NoteTagMapper {
      */
     @Delete("DELETE FROM note_tag WHERE note_id = #{noteId}")
     int deleteByNoteId(@Param("noteId") Long noteId);
+
+    /** 读取一篇笔记的全部标签 id。 */
+    @Select("SELECT tag_id FROM note_tag WHERE note_id = #{noteId} ORDER BY tag_id")
+    List<Long> selectTagIds(@Param("noteId") Long noteId);
 }

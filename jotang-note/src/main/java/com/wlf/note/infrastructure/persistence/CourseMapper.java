@@ -1,7 +1,7 @@
 package com.wlf.note.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.wlf.note.domain.catalog.Course;
+import com.wlf.note.infrastructure.persistence.po.CoursePO;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
@@ -10,5 +10,5 @@ import org.apache.ibatis.annotations.Mapper;
  * <p>单表 CRUD 由 {@link BaseMapper} 提供，不写 XML。
  */
 @Mapper
-public interface CourseMapper extends BaseMapper<Course> {
+public interface CourseMapper extends BaseMapper<CoursePO> {
 }

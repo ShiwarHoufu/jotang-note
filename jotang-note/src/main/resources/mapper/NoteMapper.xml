@@ -13,7 +13,7 @@
 
       不筛 status，状态该怎么用是 Service 的事。
     -->
-    <select id="selectDetail" resultType="com.wlf.note.application.note.dto.NoteDetailRow">
+    <select id="selectDetail" resultType="com.wlf.note.domain.note.query.NoteDetailSnapshot">
         SELECT n.id,
                n.title,
                n.summary,
@@ -39,9 +39,10 @@
     <!--
       标签
     -->
-    <select id="selectTagRefs" resultType="com.wlf.note.application.catalog.dto.TagResponse">
-        SELECT t.id,
-               t.name
+    <select id="selectTagRefs" resultType="com.wlf.note.domain.note.query.NoteTagRefSnapshot">
+        SELECT nt.note_id,
+               t.id   AS tag_id,
+               t.name AS tag_name
         FROM note_tag nt
                  JOIN tag t ON t.id = nt.tag_id
         WHERE nt.note_id = #{noteId}
@@ -52,7 +53,7 @@
       列表 / 搜索主干。
       与详情那条最大的区别有两个：只出 ONLINE。不 JOIN note_file
     -->
-    <select id="selectListPage" resultType="com.wlf.note.application.note.dto.NoteListRow">
+    <select id="selectListPage" resultType="com.wlf.note.domain.note.query.NoteListSnapshot">
         SELECT n.id,
                n.title,
                n.view_count,
@@ -108,7 +109,7 @@
       DELETED 无条件排除
       不 JOIN user / college。上传者恒等于调用方自己。
     -->
-    <select id="selectMyNotePage" resultType="com.wlf.note.application.note.dto.MyNoteRow">
+    <select id="selectMyNotePage" resultType="com.wlf.note.domain.note.query.MyNoteSnapshot">
         SELECT n.id,
                n.status,
                n.title,
@@ -130,7 +131,7 @@
 
       调用方保证 noteIds 非空：IN () 是语法错误，空页应当在 Service 里直接短路。
     -->
-    <select id="selectTagRefsByNoteIds" resultType="com.wlf.note.application.note.dto.NoteTagRef">
+    <select id="selectTagRefsByNoteIds" resultType="com.wlf.note.domain.note.query.NoteTagRefSnapshot">
         SELECT nt.note_id,
                t.id   AS tag_id,
                t.name AS tag_name
@@ -146,7 +147,7 @@
     <!--
       归属 + 附件位置，服务 ai 模块的编辑场景。
     -->
-    <select id="selectFileOwnership" resultType="com.wlf.note.application.note.dto.NoteFileOwnershipRow">
+    <select id="selectFileOwnership" resultType="com.wlf.note.domain.note.query.NoteFileOwnershipSnapshot">
         SELECT n.uploader_id  AS uploader_id,
                n.status       AS status,
                f.storage_key  AS storage_key,
@@ -161,7 +162,7 @@
       孤儿对象对账的候选集：
       已删除、但对象还没被物理清理的笔记。
     -->
-    <select id="selectPendingPurge" resultType="com.wlf.note.application.note.dto.PendingPurgeRow">
+    <select id="selectPendingPurge" resultType="com.wlf.note.domain.note.query.PendingPurgeSnapshot">
         SELECT n.id AS note_id,
                nf.storage_key
         FROM note n

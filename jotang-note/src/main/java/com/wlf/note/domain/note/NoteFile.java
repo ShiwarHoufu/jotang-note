@@ -1,44 +1,72 @@
 package com.wlf.note.domain.note;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Getter;
-import lombok.Setter;
-
-import java.time.LocalDateTime;
+import com.wlf.note.domain.note.model.ContentType;
+import com.wlf.note.domain.note.model.FileSize;
+import com.wlf.note.domain.note.model.OriginalFileName;
+import com.wlf.note.domain.note.model.StorageKey;
 
 /**
- * note_file 表。一份笔记一个文件（{@code uk_note_id} 保证），
- * 独立成表是为 V2「一份笔记多个附件」留余地。
- * 见《概要设计》§3.2。
+ * 笔记附件，属于 Note 聚合。
+ *
+ * <p>一份笔记一个文件，上传后不可更换。
  */
-@Getter
-@Setter
-@TableName("note_file")
-public class NoteFile {
+public final class NoteFile {
 
-    @TableId(type = IdType.AUTO)
-    private Long id;
+    private final StorageKey storageKey;
+    private final OriginalFileName originalName;
+    private final FileSize size;
+    private final ContentType contentType;
+    private boolean purged;
 
-    private Long noteId;
+    private NoteFile(StorageKey storageKey,
+                     OriginalFileName originalName,
+                     FileSize size,
+                     ContentType contentType,
+                     boolean purged) {
+        this.storageKey = storageKey;
+        this.originalName = originalName;
+        this.size = size;
+        this.contentType = contentType;
+        this.purged = purged;
+    }
 
-    /** OSS 对象键：{@code notes/yyyy/MM/{uuid}.{ext}}，由 NoteFilePolicy#objectKey 生成 */
-    private String storageKey;
+    public static NoteFile attach(StorageKey storageKey,
+                                  OriginalFileName originalName,
+                                  FileSize size,
+                                  ContentType contentType) {
+        return new NoteFile(storageKey, originalName, size, contentType, false);
+    }
 
-    /** 原始文件名，下载时用它还原（已清洗掉客户端可能送来的路径） */
-    private String originalName;
+    public static NoteFile reconstitute(StorageKey storageKey,
+                                        OriginalFileName originalName,
+                                        FileSize size,
+                                        ContentType contentType,
+                                        boolean purged) {
+        return new NoteFile(storageKey, originalName, size, contentType, purged);
+    }
 
-    /** 列是 BIGINT UNSIGNED，必须用 Long */
-    private Long size;
+    /** 对象已物理清理，幂等。 */
+    public void markPurged() {
+        this.purged = true;
+    }
 
-    /** 服务端判定的类型，上传时写入对象元数据，读取时不再覆写（§6.2） */
-    private String contentType;
+    public StorageKey storageKey() {
+        return storageKey;
+    }
 
-    /**
-     * 1=对象已物理清理。
-     */
-    private Integer isPurged;
+    public OriginalFileName originalName() {
+        return originalName;
+    }
 
-    private LocalDateTime createdAt;
+    public FileSize size() {
+        return size;
+    }
+
+    public ContentType contentType() {
+        return contentType;
+    }
+
+    public boolean isPurged() {
+        return purged;
+    }
 }

@@ -1,43 +1,72 @@
 package com.wlf.note.domain.favorite;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Getter;
-import lombok.Setter;
+import com.wlf.common.BusinessException;
+import com.wlf.common.ErrorCode;
 
 import java.time.LocalDateTime;
 
 /**
- * favorite 表。见《概要设计》§3.2、§6.5。
+ * 收藏聚合根。
  *
- * <p>没有「收藏时间倒序」之外的业务列，四列而已——这正是软删除换来的：
- * {@code note_id} 指向的 note 行永不物理删除，所以这个引用永不悬空，
- * 收藏列表直接 JOIN 读 {@code note.status} 就能渲染「已下架 / 已删除」占位，
- * <b>不必在 favorite 里存标题快照</b>（D4，§3.3）。
- *
- * <p>去重靠 {@code uk_user_note} 唯一索引兜底，<b>不在 Java 侧做「先查再插」</b>：
- * 那套在并发下会漏，两个请求可以同时查到「没收藏过」。重复收藏撞唯一键后由
- * {@code FavoriteService} 转成 40902（§3.3）。
+ * <p>去重由 {@code uk_user_note} 兜底；笔记软删除后收藏关系保留。
  */
-@Getter
-@Setter
-@TableName("favorite")
-public class Favorite {
+public final class Favorite {
 
-    @TableId(type = IdType.AUTO)
     private Long id;
+    private final Long userId;
+    private final Long noteId;
+    private final LocalDateTime createdAt;
 
-    /** 收藏者。与 {@code note.uploader_id} 无关，这里说的是「谁收藏了」而非「谁传的」 */
-    private Long userId;
+    private Favorite(Long id, Long userId, Long noteId, LocalDateTime createdAt) {
+        this.id = id;
+        this.userId = userId;
+        this.noteId = noteId;
+        this.createdAt = createdAt;
+    }
 
-    /** 被收藏的笔记。可为 OFFLINE / DELETED 状态的笔记（§6.5 不解除收藏关系） */
-    private Long noteId;
+    public static Favorite create(Long userId, Long noteId) {
+        requireIds(userId, noteId);
+        return new Favorite(null, userId, noteId, null);
+    }
 
-    /**
-     * 由建表语句的 {@code DEFAULT CURRENT_TIMESTAMP} 兜底，Java 侧不赋值——
-     * 与 {@code note} 的三个计数列同理：MyBatis-Plus 默认跳过 null 字段，
-     * 在 Java 侧再写一遍时间只会多一处可能与 DDL 不一致的地方。
-     */
-    private LocalDateTime createdAt;
+    public static Favorite reconstitute(Long id, Long userId, Long noteId, LocalDateTime createdAt) {
+        if (id == null || id <= 0) {
+            throw new BusinessException(ErrorCode.SERVER_ERROR, "收藏 id 不合法");
+        }
+        requireIds(userId, noteId);
+        return new Favorite(id, userId, noteId, createdAt);
+    }
+
+    /** 落库后回填自增 id。 */
+    public void assignId(Long id) {
+        if (id == null || id <= 0) {
+            throw new BusinessException(ErrorCode.SERVER_ERROR, "收藏 id 不合法");
+        }
+        if (this.id != null) {
+            throw new BusinessException(ErrorCode.SERVER_ERROR, "收藏 id 已存在");
+        }
+        this.id = id;
+    }
+
+    private static void requireIds(Long userId, Long noteId) {
+        if (userId == null || userId <= 0 || noteId == null || noteId <= 0) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "收藏对象不合法");
+        }
+    }
+
+    public Long id() {
+        return id;
+    }
+
+    public Long userId() {
+        return userId;
+    }
+
+    public Long noteId() {
+        return noteId;
+    }
+
+    public LocalDateTime createdAt() {
+        return createdAt;
+    }
 }

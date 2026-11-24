@@ -1,7 +1,7 @@
 package com.wlf.note.infrastructure.client.user;
 
-import com.wlf.note.application.note.dto.UserProfile;
-import com.wlf.note.application.port.out.UserProfileReader;
+import com.wlf.note.domain.uploader.UploaderProfile;
+import com.wlf.note.domain.uploader.UploaderProfileReader;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 @ConditionalOnProperty(name = "jotang.remote.user.enabled", havingValue = "true", matchIfMissing = true)
-public class RemoteUserProfileReader implements UserProfileReader {
+public class RemoteUserProfileReader implements UploaderProfileReader {
 
     private final UserClient userClient;
 
@@ -28,7 +28,7 @@ public class RemoteUserProfileReader implements UserProfileReader {
     }
 
     @Override
-    public Map<Long, UserProfile> batchGet(Collection<Long> userIds) {
+    public Map<Long, UploaderProfile> batchGet(Collection<Long> userIds) {
         if (userIds == null || userIds.isEmpty()) {
             return Map.of();
         }
@@ -37,7 +37,7 @@ public class RemoteUserProfileReader implements UserProfileReader {
             return userClient.batch(ids).stream()
                     .collect(Collectors.toMap(
                             InternalUserProfile::id,
-                            profile -> new UserProfile(profile.id(), profile.nickname(),
+                            profile -> new UploaderProfile(profile.id(), profile.nickname(),
                                     profile.avatarKey(), profile.collegeName())));
         } catch (RuntimeException ex) {
             log.warn("读取用户资料失败，上传者信息降级为空：{}", ex.getMessage());

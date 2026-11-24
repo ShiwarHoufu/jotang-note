@@ -3,8 +3,8 @@ package com.wlf.note.domain.note;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FileMagic;
+import com.wlf.note.domain.note.model.FileSize;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,11 +27,10 @@ import java.util.function.Predicate;
  * 上传文件的准入判定与对象键生成。
  */
 @Slf4j
-@Component
 public class NoteFilePolicy {
 
     /** 单文件上限 100MB，与 Nginx 的 {@code client_max_body_size}、后端 multipart 配置同源 */
-    public static final long MAX_SIZE_BYTES = 100L * 1024 * 1024;
+    public static final long MAX_SIZE_BYTES = FileSize.MAX_BYTES;
 
     /** 与 {@code note_file.original_name VARCHAR(255)} 对齐。utf8mb4 下 VARCHAR 单位是字符不是字节 */
     private static final int MAX_ORIGINAL_NAME_LENGTH = 255;

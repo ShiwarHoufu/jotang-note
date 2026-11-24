@@ -1,47 +1,45 @@
 package com.wlf.note.interfaces.web;
 
-import com.wlf.note.application.catalog.CourseService;
-import com.wlf.note.application.catalog.TagService;
-import com.wlf.note.application.catalog.dto.CourseResponse;
-import com.wlf.note.application.catalog.dto.TagResponse;
 import com.wlf.common.ApiResponse;
+import com.wlf.note.application.service.CourseService;
+import com.wlf.note.application.service.TagService;
+import com.wlf.note.interfaces.web.assembler.CatalogAssembler;
+import com.wlf.note.interfaces.web.dto.CourseResponse;
+import com.wlf.note.interfaces.web.dto.TagResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/**
- * 课程 / 标签的只读查询接口。见《概要设计》§5.3。
- */
+/** 课程 / 标签的只读查询接口。 */
 @RestController
 public class CatalogController {
 
     private final CourseService courseService;
     private final TagService tagService;
+    private final CatalogAssembler catalogAssembler;
 
     public CatalogController(CourseService courseService,
-                             TagService tagService) {
+                             TagService tagService,
+                             CatalogAssembler catalogAssembler) {
         this.courseService = courseService;
         this.tagService = tagService;
+        this.catalogAssembler = catalogAssembler;
     }
 
-    /**
-     * 课程列表。{@code keyword} 按课程名模糊匹配，不传则返回全部。
-     */
     @GetMapping("/api/courses")
     public ApiResponse<List<CourseResponse>> courses(
             @RequestParam(required = false) String keyword) {
-        return ApiResponse.ok(courseService.list(keyword));
+        return ApiResponse.ok(courseService.list(keyword).stream()
+                .map(catalogAssembler::toResponse)
+                .toList());
     }
 
-    /**
-     * 候选标签：
-     * 最常用的若干个，按使用量倒序。
-     * 筛选栏与上传表单的候选标签。
-     */
     @GetMapping("/api/tags")
     public ApiResponse<List<TagResponse>> tags() {
-        return ApiResponse.ok(tagService.list());
+        return ApiResponse.ok(tagService.list().stream()
+                .map(catalogAssembler::toResponse)
+                .toList());
     }
 }
