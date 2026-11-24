@@ -1,5 +1,8 @@
 package com.wlf.user.domain.user;
 
+import com.wlf.user.domain.user.model.Email;
+import com.wlf.user.domain.user.model.Username;
+
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -11,21 +14,21 @@ public interface UserRepository {
 
     Optional<User> findById(Long id);
 
-    Optional<User> findByUsername(String username);
+    Optional<User> findByUsername(Username username);
 
-    Optional<User> findByEmail(String email);
+    Optional<User> findByEmail(Email email);
 
-    boolean existsByUsername(String username);
+    boolean existsByUsername(Username username);
 
-    boolean existsByEmail(String email);
+    boolean existsByEmail(Email email);
 
     List<User> findByIds(Collection<Long> ids);
 
     void insert(User user);
 
-    void updateProfile(Long userId, String nickname, Long collegeId);
+    void updateProfile(User user);
 
-    void updateAvatar(Long userId, String avatar);
+    void updateAvatar(User user);
 
-    void updatePassword(Long userId, String passwordHash);
+    void updatePassword(User user);
 }

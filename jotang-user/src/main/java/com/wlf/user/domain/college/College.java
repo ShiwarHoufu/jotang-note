@@ -1,25 +1,28 @@
 package com.wlf.user.domain.college;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Getter;
-import lombok.Setter;
+import java.util.Objects;
 
-/**
- * college 表。预置数据，用户注册时必选，用户不能自建。
- * 见《概要设计》§3.2、决策 D8。
- *
- * <p>学院挂在用户而不是课程上：笔记的学院归属由上传者推导，
- * 因此这里只有 id 与名称，没有任何统计字段。
- */
-@Getter
-@Setter
-@TableName("college")
-public class College {
+/** 学院：预置的只读参照数据，用户按 id 引用。 */
+public final class College {
 
-    @TableId(type = IdType.AUTO)
-    private Long id;
+    private final Long id;
+    private final String name;
 
-    private String name;
+    private College(Long id, String name) {
+        this.id = Objects.requireNonNull(id);
+        this.name = Objects.requireNonNull(name);
+    }
+
+    /** 仅供仓储重建。 */
+    public static College reconstitute(Long id, String name) {
+        return new College(id, name);
+    }
+
+    public Long id() {
+        return id;
+    }
+
+    public String name() {
+        return name;
+    }
 }

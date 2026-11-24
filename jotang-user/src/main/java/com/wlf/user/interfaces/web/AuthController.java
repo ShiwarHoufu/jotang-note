@@ -1,15 +1,20 @@
 package com.wlf.user.interfaces.web;
 
-import com.wlf.user.application.identity.AuthService;
-import com.wlf.user.application.identity.PasswordResetService;
-import com.wlf.user.application.identity.dto.ForgotPasswordRequest;
-import com.wlf.user.application.identity.dto.LoginRequest;
-import com.wlf.user.application.identity.dto.LoginResponse;
-import com.wlf.user.application.identity.dto.RegisterRequest;
-import com.wlf.user.application.identity.dto.ResetPasswordRequest;
-import com.wlf.user.application.dto.UserInfo;
+import com.wlf.user.application.service.AuthService;
+import com.wlf.user.application.service.PasswordResetService;
+import com.wlf.user.application.result.LoginResult;
+import com.wlf.user.application.result.UserResult;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;
+import com.wlf.user.interfaces.web.assembler.AuthAssembler;
+import com.wlf.user.interfaces.web.assembler.PasswordResetAssembler;
+import com.wlf.user.interfaces.web.assembler.UserAssembler;
+import com.wlf.user.interfaces.web.dto.ForgotPasswordRequest;
+import com.wlf.user.interfaces.web.dto.LoginRequest;
+import com.wlf.user.interfaces.web.dto.LoginResponse;
+import com.wlf.user.interfaces.web.dto.RegisterRequest;
+import com.wlf.user.interfaces.web.dto.ResetPasswordRequest;
+import com.wlf.user.interfaces.web.dto.UserResponse;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,31 +32,38 @@ public class AuthController {
 
     private final AuthService authService;
     private final PasswordResetService passwordResetService;
+    private final AuthAssembler authAssembler;
+    private final PasswordResetAssembler passwordResetAssembler;
+    private final UserAssembler userAssembler;
 
-    public AuthController(AuthService authService, PasswordResetService passwordResetService) {
+    public AuthController(AuthService authService,
+                          PasswordResetService passwordResetService,
+                          AuthAssembler authAssembler,
+                          PasswordResetAssembler passwordResetAssembler,
+                          UserAssembler userAssembler) {
         this.authService = authService;
         this.passwordResetService = passwordResetService;
+        this.authAssembler = authAssembler;
+        this.passwordResetAssembler = passwordResetAssembler;
+        this.userAssembler = userAssembler;
     }
 
     @PostMapping("/register")
-    public ApiResponse<UserInfo> register(@Valid @RequestBody RegisterRequest request) {
-        return ApiResponse.ok(authService.register(request));
+    public ApiResponse<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
+        UserResult result = authService.register(authAssembler.toCommand(request));
+        return ApiResponse.ok(userAssembler.toResponse(result));
     }
 
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-        return ApiResponse.ok(authService.login(request));
+        LoginResult result = authService.login(authAssembler.toCommand(request));
+        return ApiResponse.ok(authAssembler.toLoginResponse(result));
     }
 
-
-
-    /*
-     @AuthenticationPrincipal 是 Spring Security 提供的参数注解
-     作用是：在 Controller 方法参数上，直接把`SecurityContext` 里存的那份“身份主体”（Principal）取出来注入
-     */
     @GetMapping("/me")
-    public ApiResponse<UserInfo> me(@AuthenticationPrincipal AuthenticatedUser currentUser) {
-        return ApiResponse.ok(authService.currentUser(currentUser.userId()));
+    public ApiResponse<UserResponse> me(@AuthenticationPrincipal AuthenticatedUser currentUser) {
+        UserResult result = authService.currentUser(authAssembler.toQuery(currentUser.userId()));
+        return ApiResponse.ok(userAssembler.toResponse(result));
     }
 
     /**
@@ -71,7 +83,7 @@ public class AuthController {
      */
     @PostMapping("/password/forgot")
     public ApiResponse<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
-        passwordResetService.forgot(request.getEmail());
+        passwordResetService.forgot(passwordResetAssembler.toCommand(request));
         return ApiResponse.ok();
     }
 
@@ -82,7 +94,7 @@ public class AuthController {
      */
     @PostMapping("/password/reset")
     public ApiResponse<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        passwordResetService.reset(request.getToken(), request.getNewPassword());
+        passwordResetService.reset(passwordResetAssembler.toCommand(request));
         return ApiResponse.ok();
     }
 }

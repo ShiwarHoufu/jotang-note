@@ -1,6 +1,6 @@
 package com.wlf.user.infrastructure.mail;
 
-import com.wlf.user.application.port.out.MailService;
+import com.wlf.user.domain.notification.MailService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;

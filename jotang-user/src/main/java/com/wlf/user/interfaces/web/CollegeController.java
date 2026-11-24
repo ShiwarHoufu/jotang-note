@@ -1,8 +1,10 @@
 package com.wlf.user.interfaces.web;
 
 import com.wlf.common.ApiResponse;
-import com.wlf.user.application.college.CollegeService;
-import com.wlf.user.application.college.dto.CollegeResponse;
+import com.wlf.user.application.service.CollegeService;
+import com.wlf.user.application.result.CollegeResult;
+import com.wlf.user.interfaces.web.assembler.CollegeAssembler;
+import com.wlf.user.interfaces.web.dto.CollegeResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -15,13 +17,18 @@ import java.util.List;
 public class CollegeController {
 
     private final CollegeService collegeService;
+    private final CollegeAssembler collegeAssembler;
 
-    public CollegeController(CollegeService collegeService) {
+    public CollegeController(CollegeService collegeService, CollegeAssembler collegeAssembler) {
         this.collegeService = collegeService;
+        this.collegeAssembler = collegeAssembler;
     }
 
     @GetMapping("/api/colleges")
     public ApiResponse<List<CollegeResponse>> colleges() {
-        return ApiResponse.ok(collegeService.list());
+        List<CollegeResult> results = collegeService.list();
+        return ApiResponse.ok(results.stream()
+                .map(collegeAssembler::toResponse)
+                .toList());
     }
 }

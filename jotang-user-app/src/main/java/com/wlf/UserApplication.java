@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Import;
  * <p>放在 {@code com.wlf} 下，测试类（{@code com.wlf.auth} / {@code com.wlf.user}）才能按包层级找到它。
  */
 @SpringBootApplication(scanBasePackages = {"com.wlf.user", "com.wlf.common"})
-@MapperScan("com.wlf.user.infrastructure.persistence")
+@MapperScan("com.wlf.user.infrastructure.persistence.mapper")
 @Import({OssConfig.class, OssStorageService.class, StorageRabbitConfig.class, QueuedOrphanObjectPublisher.class})
 public class UserApplication {
 
