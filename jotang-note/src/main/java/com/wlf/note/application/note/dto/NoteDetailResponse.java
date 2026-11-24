@@ -11,8 +11,8 @@ import java.util.List;
 /**
  * 详情出参。
  *
- * <p>七张表：{@code note} / {@code note_file} / {@code course} / {@code user} /
- * {@code college} / {@code note_tag}⋈{@code tag} / {@code favorite}。
+ * <p>本服务的表：{@code note} / {@code note_file} / {@code course} / {@code note_tag}⋈{@code tag} / {@code favorite}；
+ * 上传者及其学院来自 user-service。
  *
  * @param status    {@link NoteStatus} 枚举而非裸字符串
  * @param course    复用了已发布的 {@link CourseResponse}

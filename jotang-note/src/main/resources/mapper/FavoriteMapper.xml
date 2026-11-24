@@ -4,8 +4,8 @@
 <!--
   favorite 模块的跨表检索语句。
 
-  全部是 INNER JOIN：这几条连接关系在建表语句里都有外键兜着——
-  fk_fav_note / fk_note_course / fk_note_uploader 非空，user.college_id 非空。
+  全部是 INNER JOIN：连接键都有外键兜着——favorite.note_id → note.id、note.course_id → course.id。
+  上传者资料不在这里 JOIN，走 user-service。
 -->
 <mapper namespace="com.wlf.note.infrastructure.persistence.FavoriteMapper">
 
