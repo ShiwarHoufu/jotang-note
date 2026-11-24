@@ -3,17 +3,25 @@ package com.wlf.note.interfaces.web;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.AuthenticatedUser;
 import com.wlf.common.PageResponse;
-import com.wlf.note.application.note.dto.MyNoteItemResponse;
-import com.wlf.note.application.note.dto.MyNoteListQuery;
-import com.wlf.note.application.note.NoteService;
-import com.wlf.note.application.note.dto.NoteCreatedResponse;
-import com.wlf.note.application.note.dto.NoteRawContent;
-import com.wlf.note.application.note.dto.NoteDetailResponse;
-import com.wlf.note.application.note.dto.NoteListItemResponse;
-import com.wlf.note.application.note.dto.NoteListQuery;
-import com.wlf.note.application.note.dto.NotePreviewUrlResponse;
-import com.wlf.note.application.note.dto.NoteUpdateRequest;
-import com.wlf.note.application.note.dto.NoteUploadRequest;
+import com.wlf.note.application.command.DeleteNoteCommand;
+import com.wlf.note.application.query.MyNoteListQuery;
+import com.wlf.note.application.query.NoteListQuery;
+import com.wlf.note.application.result.MyNoteItemResult;
+import com.wlf.note.application.result.NoteListItemResult;
+import com.wlf.note.application.result.PageResult;
+import com.wlf.note.application.result.RawContentResult;
+import com.wlf.note.application.service.NoteCommandService;
+import com.wlf.note.application.service.NoteQueryService;
+import com.wlf.note.interfaces.web.assembler.NoteAssembler;
+import com.wlf.note.interfaces.web.dto.MyNoteItemResponse;
+import com.wlf.note.interfaces.web.dto.MyNoteListRequest;
+import com.wlf.note.interfaces.web.dto.NoteCreatedResponse;
+import com.wlf.note.interfaces.web.dto.NoteDetailResponse;
+import com.wlf.note.interfaces.web.dto.NoteListItemResponse;
+import com.wlf.note.interfaces.web.dto.NoteListRequest;
+import com.wlf.note.interfaces.web.dto.NotePreviewUrlResponse;
+import com.wlf.note.interfaces.web.dto.NoteUpdateRequest;
+import com.wlf.note.interfaces.web.dto.NoteUploadRequest;
 import jakarta.validation.Valid;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.MediaType;
@@ -30,65 +38,44 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
 
-/**
- * 笔记接口。
- *
- * <p>当前有上传、详情、列表、我的上传、编辑、删除与预览；搜索 / 下载随后续切片补上。
- * 全部接口都要求登录
- */
+/** 笔记接口。 */
 @RestController
 public class NoteController {
 
-    private final NoteService noteService;
+    private final NoteCommandService noteCommandService;
+    private final NoteQueryService noteQueryService;
+    private final NoteAssembler noteAssembler;
 
-    public NoteController(NoteService noteService) {
-        this.noteService = noteService;
+    public NoteController(NoteCommandService noteCommandService,
+                          NoteQueryService noteQueryService,
+                          NoteAssembler noteAssembler) {
+        this.noteCommandService = noteCommandService;
+        this.noteQueryService = noteQueryService;
+        this.noteAssembler = noteAssembler;
     }
 
-    /**
-     * 上传笔记。
-     *
-     * <p>返回体只有新笔记的 id，前端据此跳详情页。
-     */
-    // multipart/form-data（文件上传表单）不能用 @RequestBody，要用 @ModelAttribute 接收
     @PostMapping("/api/notes")
     public ApiResponse<NoteCreatedResponse> upload(@AuthenticationPrincipal AuthenticatedUser user,
                                                    @Valid @ModelAttribute NoteUploadRequest request) {
-        return ApiResponse.ok(noteService.upload(user.userId(), request));
+        return ApiResponse.ok(noteAssembler.toResponse(
+                noteCommandService.upload(noteAssembler.toCommand(user.userId(), request))));
     }
 
-    /**
-     * 笔记详情。
-     *
-     * <p>已下架的笔记只对上传者本人与管理员开放，其余人 40301；
-     * 已删除的对所有人 40301。
-     * id 不存 40400。
-     */
     @GetMapping("/api/notes/{id}")
     public ApiResponse<NoteDetailResponse> detail(@AuthenticationPrincipal AuthenticatedUser user,
                                                   @PathVariable Long id) {
-        return ApiResponse.ok(noteService.detail(id, user.userId(), user.isAdmin()));
+        return ApiResponse.ok(noteAssembler.toResponse(
+                noteQueryService.detail(id, user.userId(), user.isAdmin())));
     }
 
-    /**
-     * 图片预览：
-     * 返回 OSS 签名 URL，前端 {@code <img>} 直出。
-     */
     @GetMapping("/api/notes/{id}/preview-url")
     public ApiResponse<NotePreviewUrlResponse> previewUrl(@PathVariable Long id) {
-        return ApiResponse.ok(noteService.previewUrl(id));
+        return ApiResponse.ok(noteAssembler.toResponse(noteQueryService.previewUrl(id)));
     }
 
-    /**
-     * 文本预览：
-     * 后端代理返回原文
-     *
-     * <p>不套 {@code ApiResponse} ：成功时响应体是文件原文本身；
-     * 失败仍由 {@code GlobalExceptionHandler} 写回 JSON 信封。
-     */
     @GetMapping("/api/notes/{id}/raw")
     public ResponseEntity<InputStreamResource> raw(@PathVariable Long id) {
-        NoteRawContent content = noteService.openRaw(id);
+        RawContentResult content = noteQueryService.openRaw(id);
         return ResponseEntity.ok()
                 .contentType(new MediaType("text", "plain", StandardCharsets.UTF_8))
                 .header("X-Content-Type-Options", "nosniff")
@@ -96,61 +83,40 @@ public class NoteController {
                 .body(new InputStreamResource(content.content()));
     }
 
-    /**
-     * 笔记列表。
-     *
-     * <p>参数收进 {@link NoteListQuery} 而不是一串 {@code @RequestParam}：校验与类型转换失败
-     * 才能落成 40001 加字段明细，而不是掉进兜底变成 50000（理由见该类的注释）。
-     *
-     * <p>登录者同样取自 JWT，只用于显示收藏态。
-     */
-    // 多个查询参数收进一个对象用 @ModelAttribute；这条与 /{id} 的区别只是路径是否带变量
     @GetMapping("/api/notes")
     public ApiResponse<PageResponse<NoteListItemResponse>> list(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @Valid @ModelAttribute NoteListQuery query) {
-        return ApiResponse.ok(noteService.list(user.userId(), query));
+            @Valid @ModelAttribute NoteListRequest request) {
+        NoteListQuery query = noteAssembler.toQuery(request);
+        PageResult<NoteListItemResult> result = noteQueryService.list(user.userId(), query);
+        return ApiResponse.ok(new PageResponse<>(
+                result.items().stream().map(noteAssembler::toResponse).toList(),
+                result.total(), result.page(), result.size()));
     }
 
-    /**
-     * 我的上传。按上传时间倒序分页。
-     *
-     * <p><b>已删除的不展示</b>（§4.1 的表里这一列对 {@code DELETED} 是不可见）；
-     * 已下架的照常返回，由 {@code status} 让前端标注。
-     *
-     * <p>放在 note 自己的前缀下：拆 user-service 后，{@code /api/notes/**} 整段归 note，
-     * 网关不需要为「我的」列表写例外。
-     *
-     * <p>登录者来自网关身份头或直连 JWT，绝不接受请求参数传入，否则可以翻别人的上传。
-     */
     @GetMapping("/api/notes/mine")
     public ApiResponse<PageResponse<MyNoteItemResponse>> listMyNotes(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @Valid @ModelAttribute MyNoteListQuery query) {
-        return ApiResponse.ok(noteService.listMyNotes(user.userId(), query));
+            @Valid @ModelAttribute MyNoteListRequest request) {
+        MyNoteListQuery query = noteAssembler.toQuery(request);
+        PageResult<MyNoteItemResult> result = noteQueryService.listMine(user.userId(), query);
+        return ApiResponse.ok(new PageResponse<>(
+                result.items().stream().map(noteAssembler::toResponse).toList(),
+                result.total(), result.page(), result.size()));
     }
 
-    /**
-     * 编辑自己笔记元数据。
-     *
-     * <p><b>PUT 的语义是全量替换</b>：没传的字段等于清空。前端编辑表单本就该回填全部字段再整体提交。
-     * <p>已删除的笔记报 40301；已下架的可以编辑（改完仍是下架状态）。
-     */
     @PutMapping("/api/notes/{id}")
     public ApiResponse<Void> update(@AuthenticationPrincipal AuthenticatedUser user,
                                     @PathVariable Long id,
                                     @Valid @RequestBody NoteUpdateRequest request) {
-        noteService.update(id, user.userId(), request);
+        noteCommandService.update(noteAssembler.toCommand(id, user.userId(), request));
         return ApiResponse.ok();
     }
 
-    /**
-     * 软删除自己的笔记。
-     */
     @DeleteMapping("/api/notes/{id}")
     public ApiResponse<Void> delete(@AuthenticationPrincipal AuthenticatedUser user,
                                     @PathVariable Long id) {
-        noteService.delete(id, user.userId());
+        noteCommandService.delete(new DeleteNoteCommand(id, user.userId()));
         return ApiResponse.ok();
     }
 }

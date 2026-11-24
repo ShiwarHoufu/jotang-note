@@ -1,45 +1,32 @@
 package com.wlf.note.interfaces.web;
 
 import com.wlf.common.ApiResponse;
-import com.wlf.note.application.note.NoteService;
+import com.wlf.note.application.command.ChangeNoteStatusCommand;
+import com.wlf.note.application.service.NoteCommandService;
+import com.wlf.note.domain.note.NoteStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 管理员笔记下架 / 恢复接口，仅 role=ADMIN 可访问。
- * 只改 status，不动 OSS 对象。
- */
+/** 管理员笔记下架 / 恢复接口，仅 role=ADMIN 可访问。 */
 @RestController
 public class AdminNoteController {
 
-    private final NoteService noteService;
+    private final NoteCommandService noteCommandService;
 
-    public AdminNoteController(NoteService noteService) {
-        this.noteService = noteService;
+    public AdminNoteController(NoteCommandService noteCommandService) {
+        this.noteCommandService = noteCommandService;
     }
 
-    /**
-     * 下架：{@code ONLINE → OFFLINE}
-     *
-     * <p>已是 OFFLINE 时返回 200 且什么都不做（幂等）；
-     * 笔记已删除返回 40301，笔记不存在返回 40400。
-     */
     @PostMapping("/api/admin/notes/{id}/offline")
     public ApiResponse<Void> offline(@PathVariable Long id) {
-        noteService.adminOffline(id);
+        noteCommandService.changeStatus(new ChangeNoteStatusCommand(id, NoteStatus.OFFLINE));
         return ApiResponse.ok();
     }
 
-    /**
-     * 恢复：{@code OFFLINE → ONLINE}
-     *
-     * <p>不能复活已删除的笔记。
-     * 已删除的笔记报 40301。
-     */
     @PostMapping("/api/admin/notes/{id}/online")
     public ApiResponse<Void> restore(@PathVariable Long id) {
-        noteService.adminRestore(id);
+        noteCommandService.changeStatus(new ChangeNoteStatusCommand(id, NoteStatus.ONLINE));
         return ApiResponse.ok();
     }
 }

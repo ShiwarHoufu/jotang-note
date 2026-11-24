@@ -1,34 +1,35 @@
 package com.wlf.note.domain.catalog;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
 /**
- * course 表。预置数据，is_other=1 为内置「其他」课程，用户不能自建。
- * 见《概要设计》§3.2。
+ * 课程参照数据。
  *
- * <p>不记开课学院（决策 D8）：学院挂在 {@link User} 的 collegeId 上，
- * 笔记的学院归属由上传者推导，见《概要设计》§3.3。
+ * <p>{@code isOther} 标记内置「其他」课程，用户不能自建。
  */
-@Getter
-@Setter
-@AllArgsConstructor
-@NoArgsConstructor
-@TableName("course")
-public class Course {
+public final class Course {
 
-    @TableId(type = IdType.AUTO)
-    private Long id;
-    private String name;
+    private final Long id;
+    private final String name;
+    private final boolean other;
 
-    /**
-     * 用 Integer 而非 boolean：TINYINT 列与 User.status 保持一致，也避开 Lombok
-     * 对 boolean 字段生成 isOther() 后 Jackson 把属性名判成 other 的问题。
-     */
-    private Integer isOther;
+    private Course(Long id, String name, boolean other) {
+        this.id = id;
+        this.name = name;
+        this.other = other;
+    }
+
+    public static Course reconstitute(Long id, String name, boolean other) {
+        return new Course(id, name, other);
+    }
+
+    public Long id() {
+        return id;
+    }
+
+    public String name() {
+        return name;
+    }
+
+    public boolean isOther() {
+        return other;
+    }
 }

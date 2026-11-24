@@ -1,7 +1,7 @@
 package com.wlf.note.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.wlf.note.domain.catalog.Tag;
+import com.wlf.note.infrastructure.persistence.po.TagPO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -14,7 +14,7 @@ import java.util.List;
  * <p>单表 CRUD 由 {@link BaseMapper} 提供。
  */
 @Mapper
-public interface TagMapper extends BaseMapper<Tag> {
+public interface TagMapper extends BaseMapper<TagPO> {
 
     /**
      * 最常用的标签。
@@ -28,5 +28,5 @@ public interface TagMapper extends BaseMapper<Tag> {
             ORDER BY COUNT(nt.note_id) DESC, t.id ASC
             LIMIT #{limit}
             """)
-    List<Tag> selectMostUsed(@Param("limit") int limit);
+    List<TagPO> selectMostUsed(@Param("limit") int limit);
 }

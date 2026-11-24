@@ -1,5 +1,8 @@
 package com.wlf.note.domain.note;
 
+import com.wlf.common.BusinessException;
+import com.wlf.common.ErrorCode;
+
 /**
  * 笔记状态。见《概要设计》§4.1。
  *
@@ -13,7 +16,8 @@ package com.wlf.note.domain.note;
  * （{@code note.status VARCHAR(16)}），本枚举只用于业务逻辑判断，不做 MyBatis-Plus 的枚举映射。
  *
  * <p>{@link #DELETED} 是<b>终态</b>，没有出边；{@link #OFFLINE} 只能回到 {@link #ONLINE}。
- * 迁移的合法性由 {@link NoteStateMachine} 统一把关，任何模块都不得直接改 {@code note.status}。
+ * 迁移的合法性由 {@link Note#offline()} / {@link Note#restore()} / {@link Note#delete(Long)} 把关，
+ * 任何模块都不得直接改 {@code note.status}。
  */
 public enum NoteStatus {
 
@@ -24,5 +28,14 @@ public enum NoteStatus {
     OFFLINE,
 
     /** 上传者删除：软删除，行保留，终态不可逆；收藏列表借此渲染「笔记已删除」占位 */
-    DELETED
+    DELETED;
+
+    /** 数据库值 → 枚举；未知值按服务端错误处理。 */
+    public static NoteStatus fromName(String name) {
+        try {
+            return valueOf(name);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new BusinessException(ErrorCode.SERVER_ERROR, "笔记状态不合法");
+        }
+    }
 }
