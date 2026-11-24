@@ -3,7 +3,6 @@ package com.wlf.ai.config;
 import com.wlf.common.ApiResponse;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.IdentityFilter;
-import com.wlf.common.JwtTokenProvider;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,14 +32,11 @@ public class AiSecurityConfig {
     };
 
     private final ObjectMapper objectMapper;
-    private final JwtTokenProvider jwtTokenProvider;
     private final String gatewayToken;
 
     public AiSecurityConfig(ObjectMapper objectMapper,
-                            JwtTokenProvider jwtTokenProvider,
                             @Value("${jotang.gateway.token:dev-gateway-token}") String gatewayToken) {
         this.objectMapper = objectMapper;
-        this.jwtTokenProvider = jwtTokenProvider;
         this.gatewayToken = gatewayToken;
     }
 
@@ -60,7 +56,7 @@ public class AiSecurityConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(unauthorizedEntryPoint())
                         .accessDeniedHandler(forbiddenHandler()))
-                .addFilterBefore(new IdentityFilter(jwtTokenProvider, gatewayToken),
+                .addFilterBefore(new IdentityFilter(gatewayToken),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
