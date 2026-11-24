@@ -4,7 +4,6 @@ import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.FileMagic;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -22,7 +21,6 @@ import java.util.function.Predicate;
  * 四种扩展名，且要求文件头与扩展名一致——改后缀的伪装文件过不了魔数。
  */
 @Slf4j
-@Component
 public class AvatarFilePolicy {
 
     /** 单文件上限。头像经 ECS 中转上传，与大文件是两回事 */
