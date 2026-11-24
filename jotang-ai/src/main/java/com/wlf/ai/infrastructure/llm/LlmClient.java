@@ -5,9 +5,11 @@ import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MimeTypeUtils;
+import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,6 +39,33 @@ public class LlmClient {
         return text(spec.call().content());
     }
 
+
+    /** 多轮对话，指定生成参数；评测用固定 temperature 降低波动。 */
+    public String chat(String systemPrompt, List<LlmMessage> history, String userMessage,
+                       ChatOptions options, Object... tools) {
+        ChatClient.ChatClientRequestSpec spec = chatClient.prompt()
+                .system(systemPrompt)
+                .messages(conversation(history, userMessage))
+                // 2.1 的 options() 收的是 Builder，不是构建好的 ChatOptions
+                .options(options.mutate());
+        if (tools.length > 0) {
+            spec = spec.tools(tools);
+        }
+        return text(spec.call().content());
+    }
+
+
+    /** 多轮对话，流式返回增量文本。 */
+    public Flux<String> streamChat(String systemPrompt, List<LlmMessage> history, String userMessage,
+                                   Object... tools) {
+        ChatClient.ChatClientRequestSpec spec = chatClient.prompt()
+                .system(systemPrompt)
+                .messages(conversation(history, userMessage));
+        if (tools.length > 0) {
+            spec = spec.tools(tools);
+        }
+        return spec.stream().content();
+    }
 
     /** 单轮文本。 */
     public String chat(String systemPrompt, String userMessage) {

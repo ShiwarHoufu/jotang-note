@@ -27,7 +27,7 @@ public class LoggingAdvisor implements BaseAdvisor {
 
     @Override
     public ChatClientResponse after(ChatClientResponse response, AdvisorChain chain) {
-        log.info("ChatClientResponse:\n{}", toJson(response.chatResponse()));
+        log.info("ChatClientResponse:\n{}", response);
         return response;
     }
 

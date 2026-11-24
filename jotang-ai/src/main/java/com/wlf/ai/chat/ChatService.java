@@ -1,6 +1,8 @@
 package com.wlf.ai.chat;
 
+import com.wlf.ai.chat.dto.ChatStreamEvent;
 import com.wlf.ai.chat.persistence.ConversationStore;
+import com.wlf.ai.chat.tool.KbHit;
 import com.wlf.ai.chat.tool.KbSearchTool;
 import com.wlf.ai.chat.tool.NoteReadTool;
 import com.wlf.ai.chat.tool.NoteSearchTool;
@@ -14,7 +16,11 @@ import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.UUID;
@@ -63,6 +69,48 @@ public class ChatService {
         return new Reply(reply, id);
     }
 
+    /** 流式一轮对话。查历史、限流在返回 Flux 之前完成，异常仍能走 JSON；之后只能靠 error 事件。 */
+    public Streamed stream(Long userId, String message, String conversationId) {
+        boolean existing = conversationId != null && !conversationId.isBlank();
+        String id = existing ? conversationId : UUID.randomUUID().toString();
+        List<LlmMessage> history = existing ? requireHistory(userId, id) : List.of();
+
+        rateLimiter.acquire(userId, AiQuota.CHAT);
+
+        StringBuilder reply = new StringBuilder();
+        Flux<ChatStreamEvent> body = Flux.defer(() ->
+                        llmClient.streamChat(ChatPrompt.SYSTEM, contextWindow(history), message,
+                                new KbSearchTool(userId, kbVectorStore),
+                                new NoteSearchTool(userId, noteGateway),
+                                new NoteReadTool(userId, noteGateway, llmClient)))
+                .map(chunk -> {
+                    reply.append(chunk);                    // 攒全文，用于落库
+                    return ChatStreamEvent.delta(chunk);    // 发给前端的增量
+                })
+                // 先落库再发 done：前端收到 done 后立刻重连会话时历史已经在库里
+                .concatWith(Mono.fromCallable(() -> {
+                    conversationStore.appendTurn(userId, id, message, reply.toString().strip());
+                    return ChatStreamEvent.done(id);
+                }).subscribeOn(Schedulers.boundedElastic()))
+                .onErrorResume(e -> {
+                    log.error("流式对话失败，conversationId={}", id, e);
+                    return Flux.just(ChatStreamEvent.error(ErrorCode.AI_UNAVAILABLE, "对话服务暂不可用，请稍后重试"));
+                });
+
+        return new Streamed(id, Flux.concat(Flux.just(ChatStreamEvent.start(id)), body));
+    }
+
+    /**
+     * 评测用一轮问答：空历史、不限流、不落库，只挂知识库工具。
+     * 返回回答与本轮命中的块。
+     */
+    public EvalAnswer answerForEval(Long userId, String question) {
+        KbSearchTool kbSearchTool = new KbSearchTool(userId, kbVectorStore);
+        String answer = llmClient.chat(ChatPrompt.SYSTEM, List.of(), question,
+                ChatOptions.builder().temperature(0.0).build(), kbSearchTool).strip();
+        return new EvalAnswer(answer, kbSearchTool.retrievedHits());
+    }
+
     /** 该用户最近一次会话及其历史；刷新页面后前端靠它接回上一段对话。 */
     public History history(Long userId) {
         return conversationStore.findLatestConversationId(userId)
@@ -107,6 +155,14 @@ public class ChatService {
 
     /** 一轮问答的输出。 */
     public record Reply(String reply, String conversationId) {
+    }
+
+    /** 评测一轮的输出。 */
+    public record EvalAnswer(String answer, List<KbHit> contexts) {
+    }
+
+    /** 流式一轮对话：会话 id 与事件流。 */
+    public record Streamed(String conversationId, Flux<ChatStreamEvent> events) {
     }
 
     /** 最近一次会话及其历史。 */
