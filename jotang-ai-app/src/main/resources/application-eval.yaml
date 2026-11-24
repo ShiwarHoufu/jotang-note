@@ -1,0 +1,16 @@
+# 评测 profile：不进 Nacos、不监听固定端口，跑完 EvalRunner 即退出。
+server:
+  port: 0
+
+spring:
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+
+jotang:
+  ai:
+    eval:
+      # 相对路径按进程工作目录解析；从 jotang-ai-app 启动时即仓库根下的 eval/
+      questions: ../eval/questions.jsonl
+      output: ../eval/out/run.jsonl

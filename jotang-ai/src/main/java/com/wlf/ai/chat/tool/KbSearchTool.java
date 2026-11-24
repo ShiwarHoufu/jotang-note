@@ -5,19 +5,24 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** 检索学校文件知识库；每次请求新建一个实例。 */
 @Slf4j
 public class KbSearchTool {
 
-    /** 单轮最多回几块。一块约 600 token，4 块已够回答一个问题 */
+    /** 单轮最多回几块 */
     private static final int MAX_HITS = 4;
-    /** 低于这个相似度的块不返回，避免把无关内容塞给模型 */
+    /** 低于这个相似度的块不返回 */
     private static final double SIMILARITY_THRESHOLD = 0.5;
 
     private final Long userId;
     private final KbVectorStore kbVectorStore;
+
+    /** 本次对话累计命中的块，供评测导出；正文作 key，按首次命中顺序去重 */
+    private final Map<String, KbHit> retrievedHits = new LinkedHashMap<>();
 
     public KbSearchTool(Long userId, KbVectorStore kbVectorStore) {
         this.userId = userId;
@@ -35,18 +40,34 @@ public class KbSearchTool {
             return List.of();
         }
 
-        List<KbHit> hits;
+        List<KbHit> found;
         try {
-            hits = kbVectorStore.search(normalized, MAX_HITS, SIMILARITY_THRESHOLD).stream()
+            found = kbVectorStore.search(normalized, MAX_HITS, SIMILARITY_THRESHOLD).stream()
                     .map(KbHit::from)
                     .toList();
         } catch (RuntimeException e) {
-            // 检索失败不能拖垮整轮对话：返回空结果，让模型按「没有资料」处理
             log.error("检索知识库失败：userId={}，query=[{}]", userId, normalized, e);
             return List.of();
         }
 
-        log.info("检索知识库：userId={}，query=[{}]，命中 {} 条", userId, normalized, hits.size());
-        return hits;
+        record(found);
+        
+        log.info("检索知识库：userId={}，query=[{}]，命中 {} 条", userId, normalized, found.size());
+        for (int i = 0; i < found.size(); i++) {
+            KbHit hit = found.get(i);
+            log.info("命中[{}]：title={}，source={}\n{}", i + 1, hit.title(), hit.source(), hit.text());
+        }
+        return found;
+    }
+
+
+
+    /** 本轮对话累计命中的块；返回快照，调用方修改不影响记录。 */
+    public List<KbHit> retrievedHits() {
+        return List.copyOf(retrievedHits.values());
+    }
+
+    private void record(List<KbHit> hits) {
+        hits.forEach(hit -> retrievedHits.putIfAbsent(hit.text(), hit));
     }
 }
