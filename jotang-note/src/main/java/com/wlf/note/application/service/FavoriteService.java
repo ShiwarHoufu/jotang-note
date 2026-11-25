@@ -16,6 +16,7 @@ import com.wlf.note.domain.favorite.FavoriteQueryRepository;
 import com.wlf.note.domain.favorite.FavoriteRepository;
 import com.wlf.note.domain.favorite.query.FavoriteItemSnapshot;
 import com.wlf.note.domain.note.NoteAccessPolicy;
+import com.wlf.note.domain.note.NoteDetailCache;
 import com.wlf.note.domain.note.NoteQueryRepository;
 import com.wlf.note.domain.note.NoteRepository;
 import com.wlf.note.domain.note.NoteStatus;
@@ -25,9 +26,12 @@ import com.wlf.note.domain.uploader.UploaderProfile;
 import com.wlf.note.domain.uploader.UploaderProfileReader;
 import com.wlf.storage.Bucket;
 import com.wlf.storage.StorageService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Collection;
 import java.util.List;
@@ -43,6 +47,7 @@ import java.util.stream.Collectors;
  * {@link #listFavorites} 是「我的收藏」；另有两个给别的模块用的只读方法
  * （{@link #isFavorited} / {@link #favoritedNoteIds}），供详情页与笔记列表填 {@code isFavorited}。
  */
+@Slf4j
 @Service
 public class FavoriteService {
 
@@ -66,18 +71,23 @@ public class FavoriteService {
      */
     private final StorageService storageService;
 
+    /** 收藏数变更后清详情快照，否则详情页最多滞后 10 分钟。 */
+    private final NoteDetailCache noteDetailCache;
+
     public FavoriteService(FavoriteRepository favoriteRepository,
                            FavoriteQueryRepository favoriteQueryRepository,
                            NoteRepository noteRepository,
                            NoteQueryRepository noteQueryRepository,
                            UploaderProfileReader uploaderProfileReader,
-                           StorageService storageService) {
+                           StorageService storageService,
+                           NoteDetailCache noteDetailCache) {
         this.favoriteRepository = favoriteRepository;
         this.favoriteQueryRepository = favoriteQueryRepository;
         this.noteRepository = noteRepository;
         this.noteQueryRepository = noteQueryRepository;
         this.uploaderProfileReader = uploaderProfileReader;
         this.storageService = storageService;
+        this.noteDetailCache = noteDetailCache;
     }
 
     /**
@@ -103,6 +113,7 @@ public class FavoriteService {
         }
 
         noteRepository.incrementFavoriteCount(noteId);
+        evictDetailCacheAfterCommit(noteId);
         // 笔记行被上面的 FOR UPDATE 锁着且确实存在
         return new FavoriteCountResult(noteRepository.favoriteCount(noteId));
     }
@@ -132,9 +143,34 @@ public class FavoriteService {
         if (deleted > 0) {
             // 只有真删掉了关系才减计数。无条件减会让「连点两次取消」把计数多减一次
             noteRepository.decrementFavoriteCount(noteId);
+            evictDetailCacheAfterCommit(noteId);
         }
 
         return new FavoriteCountResult(noteRepository.favoriteCount(noteId));
+    }
+
+    /**
+     * 提交后再清缓存：提前清的话，并发读可能在提交前把旧计数重新读进缓存。
+     */
+    private void evictDetailCacheAfterCommit(Long noteId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            evictDetailCacheQuietly(noteId);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                evictDetailCacheQuietly(noteId);
+            }
+        });
+    }
+
+    private void evictDetailCacheQuietly(Long noteId) {
+        try {
+            noteDetailCache.evict(noteId);
+        } catch (RuntimeException e) {
+            log.warn("清除笔记详情缓存失败 noteId={}", noteId, e);
+        }
     }
 
     /**

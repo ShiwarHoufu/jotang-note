@@ -15,6 +15,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /** 写侧仓储的 MyBatis 实现。 */
@@ -98,8 +99,11 @@ public class NoteRepositoryImpl implements NoteRepository {
     }
 
     @Override
-    public int incrementViewCount(Long noteId, NoteStatus onlyWhen) {
-        return noteMapper.incrementViewCount(noteId, onlyWhen.name());
+    public void saveViewCounts(Map<Long, Long> totals) {
+        if (totals == null || totals.isEmpty()) {
+            return;
+        }
+        noteMapper.updateViewCounts(totals);
     }
 
     @Override

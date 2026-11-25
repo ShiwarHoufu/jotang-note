@@ -198,4 +198,21 @@
         LIMIT #{limit}
     </select>
 
+    <!--
+      浏览量批量回写：Redis 里的总量是单调递增的绝对值。
+      GREATEST 让重复回写、乱序回写都不会把 DB 写小。
+    -->
+    <update id="updateViewCounts">
+        UPDATE note
+        SET view_count = GREATEST(view_count, CASE id
+        <foreach collection="totals" index="id" item="total">
+            WHEN #{id} THEN #{total}
+        </foreach>
+        END)
+        WHERE id IN
+        <foreach collection="totals" index="id" item="total" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
 </mapper>

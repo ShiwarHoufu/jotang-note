@@ -44,6 +44,11 @@ public class NoteQueryRepositoryImpl implements NoteQueryRepository {
     }
 
     @Override
+    public Optional<Long> findViewCount(Long noteId) {
+        return Optional.ofNullable(noteMapper.selectViewCount(noteId));
+    }
+
+    @Override
     public List<NoteTagRefSnapshot> findTagsByNoteIds(Collection<Long> noteIds) {
         if (noteIds == null || noteIds.isEmpty()) {
             return List.of();

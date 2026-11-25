@@ -21,6 +21,12 @@ spring:
       mode: always
       encoding: UTF-8
 
+  # purge 可能很慢，别让它顶住 60s 一轮的浏览量回写
+  task:
+    scheduling:
+      pool:
+        size: 2
+
 jotang:
   # 孤儿对象对账
   purge:
@@ -40,3 +46,14 @@ jotang:
     dlq-check:
       initial-delay: 5m
       fixed-delay: 30m
+  # 浏览量：Redis 聚合，定时回写 DB
+  view:
+    flush:
+      enabled: true
+      initial-delay: 30s
+      fixed-delay: 60s
+      batch-size: 200
+  # 上传者资料：note 侧缓存 user-service 的投影
+  uploader:
+    cache:
+      ttl: 10m

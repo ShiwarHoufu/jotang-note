@@ -17,6 +17,7 @@ import org.apache.ibatis.annotations.Update;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * note 表的数据访问：单表 CRUD 由 {@link BaseMapper} 提供，跨表检索走 {@code NoteMapper.xml}。
@@ -69,9 +70,12 @@ public interface NoteMapper extends BaseMapper<NotePO> {
                                                @Param("status") String status,
                                                @Param("keyword") String keyword);
 
-    /** 浏览量原子自增，仅当笔记处于给定状态；状态由调用方传入。 */
-    @Update("UPDATE note SET view_count = view_count + 1 WHERE id = #{id} AND status = #{status}")
-    int incrementViewCount(@Param("id") Long id, @Param("status") String status);
+    /** 当前浏览量；笔记不存在时为 null。 */
+    @Select("SELECT view_count FROM note WHERE id = #{id}")
+    Long selectViewCount(@Param("id") Long id);
+
+    /** 批量回写浏览量：GREATEST 保证只增不减，重复执行幂等。 */
+    int updateViewCounts(@Param("totals") Map<Long, Long> totals);
 
     /**
      * 收藏量原子自增。{@code favorite_count} 是 note 的列，故放在这里；

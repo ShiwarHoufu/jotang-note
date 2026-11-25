@@ -32,6 +32,8 @@ public interface NoteQueryRepository {
 
     Optional<NoteFileOwnershipSnapshot> findFileOwnership(Long noteId);
 
+    Optional<Long> findViewCount(Long noteId);
+
     List<PendingPurgeSnapshot> findPendingPurge(NoteStatus status, int limit);
 
     List<NoteSearchSnapshot> findOnlineByExactTitle(String title, int limit);
