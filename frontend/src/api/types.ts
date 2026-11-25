@@ -111,7 +111,7 @@ export interface NoteListItem {
   isFavorited: boolean
 }
 
-/** 详情出参（§5.4）：非 ONLINE 时 file 为 null，status 原样返回由前端渲染提示 */
+/** 详情出参（§5.4）：OFFLINE 时 file 仍返回（仅本人/管理员可见），DELETED 不可见 */
 export interface NoteDetail {
   id: number
   title: string

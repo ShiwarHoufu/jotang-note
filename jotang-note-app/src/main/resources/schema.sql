@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS `note` (
   `download_count` INT UNSIGNED    NOT NULL DEFAULT 0,
   `favorite_count` INT UNSIGNED    NOT NULL DEFAULT 0,
   `created_at`     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  -- 这里的语义是「用户最后编辑笔记的时间」。不能挂上 ON UPDATE
+  -- 这里的语义是用户最后编辑笔记的时间。不能挂上 ON UPDATE
   `updated_at`     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `deleted_at`     DATETIME        NULL COMMENT 'status=DELETED 时写入',
   PRIMARY KEY (`id`),

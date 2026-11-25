@@ -150,10 +150,11 @@ public class NoteQueryService {
                 .toList();
     }
 
-    public PreviewUrlResult previewUrl(Long noteId) {
+    /** 预览与详情页同一可见性：ONLINE 所有人，OFFLINE 仅本人/管理员，DELETED 无人。 */
+    public PreviewUrlResult previewUrl(Long noteId, Long viewerId, boolean viewerIsAdmin) {
         NoteFileOwnershipSnapshot row = noteQueryRepository.findFileOwnership(noteId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-        NoteAccessPolicy.requireOnline(row.noteStatus());
+        NoteAccessPolicy.requireVisible(row.noteStatus(), row.uploaderId(), viewerId, viewerIsAdmin);
         if (PreviewMode.of(row.contentType()) != PreviewMode.IMAGE_INLINE) {
             throw new BusinessException(ErrorCode.FILE_INVALID, "该类型不支持内联预览，请下载后查看");
         }
@@ -161,10 +162,11 @@ public class NoteQueryService {
                 storageService.presignedUrl(Bucket.NOTE, row.storageKey(), PREVIEW_URL_TTL, null));
     }
 
-    public RawContentResult openRaw(Long noteId) {
+    /** 与 {@link #previewUrl} 同一可见性规则。 */
+    public RawContentResult openRaw(Long noteId, Long viewerId, boolean viewerIsAdmin) {
         NoteFileOwnershipSnapshot row = noteQueryRepository.findFileOwnership(noteId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-        NoteAccessPolicy.requireOnline(row.noteStatus());
+        NoteAccessPolicy.requireVisible(row.noteStatus(), row.uploaderId(), viewerId, viewerIsAdmin);
         if (PreviewMode.of(row.contentType()) != PreviewMode.TEXT_PROXY) {
             throw new BusinessException(ErrorCode.FILE_INVALID, "该类型不支持文本预览，请下载后查看");
         }
@@ -190,7 +192,7 @@ public class NoteQueryService {
                 row.favoriteCount(),
                 row.createdAt(),
                 row.updatedAt(),
-                status == NoteStatus.ONLINE ? fileInfoOf(row) : null,
+                status == NoteStatus.DELETED ? null : fileInfoOf(row),
                 favoriteService.isFavorited(viewerId, row.id()));
     }
 

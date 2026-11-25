@@ -121,7 +121,7 @@ async function adminToggle() {
     <template v-else-if="detail">
       <el-alert
         v-if="detail.status === 'OFFLINE'"
-        title="该笔记已被管理员下架，暂不可预览、下载与收藏"
+        title="该笔记已下架，下载与收藏暂不可用"
         type="warning"
         :closable="false"
         show-icon
@@ -190,7 +190,7 @@ async function adminToggle() {
         </template>
       </div>
 
-      <el-card v-if="isOnline && detail.file" class="file-card" shadow="never">
+      <el-card v-if="detail.file" class="file-card" shadow="never">
         <template #header>
           <div class="file-head">
             <span class="file-name">{{ detail.file.originalName }}</span>

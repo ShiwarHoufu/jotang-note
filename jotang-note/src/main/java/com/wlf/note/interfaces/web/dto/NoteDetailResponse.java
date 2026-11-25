@@ -17,7 +17,7 @@ import java.util.List;
  * @param uploader  上传者。学院挂在这一层而不是顶层
  * @param tags      复用了 {@link TagResponse}
  * @param viewCount 已经含本次浏览。递
- * @param file      <b>非 ONLINE 时为 {@code null}</b>。ONLINE 笔记必有且只有一个文件
+ * @param file      <b>详情可见时返回</b>：ONLINE 所有人，OFFLINE 仅本人/管理员；DELETED 不可达
  * @param isFavorited 如实反映 {@code favorite} 表里的关系，<b>非 ONLINE 时也照查</b>：
  */
 public record NoteDetailResponse(
@@ -40,7 +40,7 @@ public record NoteDetailResponse(
 
     /**
      * 文件信息。
-     * 非 ONLINE 时整个 {@link NoteDetailResponse#file()} 为 null。
+     * 与详情可见性一致：OFFLINE 时仅本人/管理员能拿到，DELETED 不可达。
      *
      * <p>不返回 {@code storageKey}：那是 OSS 对象键，属于「东西存在哪」而非「东西是什么」，
      * 露出去只会诱使前端自己拼 URL 绕过 §6.2 的鉴权。

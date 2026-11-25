@@ -23,7 +23,7 @@ public record NoteDetailResult(Long id,
                                FileInfo file,
                                boolean isFavorited) {
 
-    /** 非 ONLINE 时整个 file 为 null。 */
+    /** 详情可见即返回：ONLINE 所有人，OFFLINE 仅本人/管理员；DELETED 不可达。 */
     public record FileInfo(String originalName, long size, String contentType, PreviewMode previewMode) {
     }
 }

@@ -69,13 +69,16 @@ public class NoteController {
     }
 
     @GetMapping("/api/notes/{id}/preview-url")
-    public ApiResponse<NotePreviewUrlResponse> previewUrl(@PathVariable Long id) {
-        return ApiResponse.ok(noteAssembler.toResponse(noteQueryService.previewUrl(id)));
+    public ApiResponse<NotePreviewUrlResponse> previewUrl(@AuthenticationPrincipal AuthenticatedUser user,
+                                                          @PathVariable Long id) {
+        return ApiResponse.ok(noteAssembler.toResponse(
+                noteQueryService.previewUrl(id, user.userId(), user.isAdmin())));
     }
 
     @GetMapping("/api/notes/{id}/raw")
-    public ResponseEntity<InputStreamResource> raw(@PathVariable Long id) {
-        RawContentResult content = noteQueryService.openRaw(id);
+    public ResponseEntity<InputStreamResource> raw(@AuthenticationPrincipal AuthenticatedUser user,
+                                                   @PathVariable Long id) {
+        RawContentResult content = noteQueryService.openRaw(id, user.userId(), user.isAdmin());
         return ResponseEntity.ok()
                 .contentType(new MediaType("text", "plain", StandardCharsets.UTF_8))
                 .header("X-Content-Type-Options", "nosniff")
