@@ -22,7 +22,6 @@ import com.wlf.note.application.result.UploaderResult;
 import com.wlf.note.domain.note.NoteAccessPolicy;
 import com.wlf.note.domain.note.NoteDetailCache;
 import com.wlf.note.domain.note.NoteQueryRepository;
-import com.wlf.note.domain.note.NoteRepository;
 import com.wlf.note.domain.note.NoteStatus;
 import com.wlf.note.domain.note.PreviewMode;
 import com.wlf.note.domain.note.query.AdminNoteSnapshot;
@@ -58,22 +57,22 @@ public class NoteQueryService {
     private static final int MAX_TITLE_SEARCH_LIMIT = 20;
     private static final Duration PREVIEW_URL_TTL = Duration.ofMinutes(5);
 
-    private final NoteRepository noteRepository;
     private final NoteQueryRepository noteQueryRepository;
     private final NoteDetailCache noteDetailCache;
+    private final ViewCountService viewCountService;
     private final FavoriteService favoriteService;
     private final UploaderProfileReader uploaderProfileReader;
     private final StorageService storageService;
 
-    public NoteQueryService(NoteRepository noteRepository,
-                            NoteQueryRepository noteQueryRepository,
+    public NoteQueryService(NoteQueryRepository noteQueryRepository,
                             NoteDetailCache noteDetailCache,
+                            ViewCountService viewCountService,
                             FavoriteService favoriteService,
                             UploaderProfileReader uploaderProfileReader,
                             StorageService storageService) {
-        this.noteRepository = noteRepository;
         this.noteQueryRepository = noteQueryRepository;
         this.noteDetailCache = noteDetailCache;
+        this.viewCountService = viewCountService;
         this.favoriteService = favoriteService;
         this.uploaderProfileReader = uploaderProfileReader;
         this.storageService = storageService;
@@ -85,15 +84,25 @@ public class NoteQueryService {
             throw new BusinessException(ErrorCode.NOT_FOUND);
         }
         NoteDetailSnapshot row = view.detail();
-
         NoteStatus status = row.noteStatus();
+
         NoteAccessPolicy.requireVisible(status, row.uploaderId(), viewerId, viewerIsAdmin);
 
-        noteRepository.incrementViewCount(noteId, NoteStatus.ONLINE);
+        long viewCount = row.viewCount();
+            // 正常浏览：Redis自增 + 返回含本次的总量；
+        if (status == NoteStatus.ONLINE) {
+            Long recorded = viewCountService.recordView(noteId);
+            if (recorded != null) viewCount = recorded;
+        }
+            //（自己或管理员）看下架的笔记不该计数，但仍需展示最新总量
+        else {
+            Long current = viewCountService.current(noteId);
+            if (current != null) viewCount = current;
+        }
 
         UploaderProfile uploader = uploaderProfileReader.batchGet(List.of(row.uploaderId()))
                 .get(row.uploaderId());
-        return toDetailResult(row, view.tags(), status, viewerId, uploader);
+        return toDetailResult(row, view.tags(), status, viewerId, uploader, viewCount);
     }
 
     public PageResult<NoteListItemResult> list(Long viewerId, NoteListQuery query) {
@@ -193,7 +202,8 @@ public class NoteQueryService {
                                             List<NoteTagRefSnapshot> tags,
                                             NoteStatus status,
                                             Long viewerId,
-                                            UploaderProfile uploader) {
+                                            UploaderProfile uploader,
+                                            long viewCount) {
         return new NoteDetailResult(
                 row.id(),
                 row.title(),
@@ -203,7 +213,7 @@ public class NoteQueryService {
                 new CourseResult(row.courseId(), row.courseName()),
                 uploaderOf(row.uploaderId(), uploader),
                 tags.stream().map(ref -> new TagResult(ref.tagId(), ref.tagName())).toList(),
-                row.viewCount(),
+                viewCount,
                 row.downloadCount(),
                 row.favoriteCount(),
                 row.createdAt(),

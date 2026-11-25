@@ -8,8 +8,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
 
 /**
- * 走 SMTP 直接发信。<b>全项目唯一接触 {@code JavaMailSender} 的地方。</b>
- * 见《概要设计》§6.6。
+ * 走 SMTP 直接发信。<b>全项目唯一接触 {@code JavaMailSender} 的地方。
  *
  * <p><b>本类刻意不加 {@code @ConditionalOnProperty}，永远注册。</b>这是引入 MQ 之后
  * 仍然必须成立的一条：消费者（{@code MailDispatchConsumer}）要发信，就得拿到一个

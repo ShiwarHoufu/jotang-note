@@ -40,3 +40,10 @@ jotang:
     dlq-check:
       initial-delay: 5m
       fixed-delay: 30m
+  # 浏览量：Redis 聚合，定时回写 DB
+  view:
+    flush:
+      enabled: true
+      initial-delay: 30s
+      fixed-delay: 60s
+      batch-size: 200

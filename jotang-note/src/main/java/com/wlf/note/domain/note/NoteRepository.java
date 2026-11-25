@@ -1,6 +1,7 @@
 package com.wlf.note.domain.note;
 
 import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 
 /** 写侧：以聚合为单位加载与保存。 */
@@ -29,7 +30,8 @@ public interface NoteRepository {
 
     void markFilePurged(Long noteId);
 
-    int incrementViewCount(Long noteId, NoteStatus onlyWhen);
+    /** 按绝对总量回写浏览量，只增不减。 */
+    void saveViewCounts(Map<Long, Long> totals);
 
     int incrementFavoriteCount(Long noteId);
 
