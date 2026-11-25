@@ -16,7 +16,6 @@ services:
       # 只绑回环：应用都在本机，没必要对局域网暴露
       - "127.0.0.1:3306:3306"
     volumes:
-      # 与 Redis 不同，这里是唯一一份业务数据，卷必须保留
       - mysql-data:/var/lib/mysql
       # 仅在数据卷为空（首次启动）时执行，用于创建三个业务库
       - ./deploy/mysql/init:/docker-entrypoint-initdb.d:ro
@@ -55,14 +54,13 @@ services:
       start_period: 40s
 
   redis:
-    # 不设密码：与 application.yaml 里 ${REDIS_PASSWORD:} 的空默认值对齐，本地图省事。
-    # 生产那份是另一回事，见 .trae/documents/docker-prod-deploy-plan.md。
+    # 不设密码：与 application.yaml 里 ${REDIS_PASSWORD:} 的空默认值对齐，本地省事。
     image: redis:8-alpine
     container_name: redis
     restart: unless-stopped
     ports:
       - "6379:6379"
-    # 不挂卷，Redis 在这里只是读缓存，掉了重新查库就是。
+    # 不挂卷：读缓存丢了重查；
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -70,7 +68,7 @@ services:
       retries: 5
 
   qdrant:
-    # 本地已有 qdrant/qdrant:latest（281MB），直接用，避免重复拉镜像
+    # 本地已有 qdrant/qdrant:latest，直接用
     image: qdrant/qdrant:latest
     container_name: jotang-qdrant
     restart: unless-stopped
@@ -116,6 +114,5 @@ services:
 volumes:
   mysql-data:
   rabbitmq-data:
-#    name: rabbitmq-data
   nacos-data:
   qdrant-data:

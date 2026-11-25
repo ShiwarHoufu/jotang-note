@@ -5,6 +5,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -35,5 +37,17 @@ public class ViewCountFlusher {
         } catch (RuntimeException e) {
             log.error("浏览量回写失败，下一轮重试", e);
         }
+    }
+
+    /**
+     * 关停时补回写一批，减少未落库计数的丢失。
+     *
+     * <p>监听 {@link ContextClosedEvent} 而非 {@code @PreDestroy}：前者在
+     * {@code SmartLifecycle#stop} 之前发布，此时 Redis 连接还没关。
+     */
+    @EventListener(ContextClosedEvent.class)
+    public void flushOnShutdown() {
+        log.info("应用关停，补回写一次浏览量");
+        flush();
     }
 }
