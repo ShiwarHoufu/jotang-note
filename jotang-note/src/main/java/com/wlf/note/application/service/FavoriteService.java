@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
 
 /**
  * 收藏业务：仅 ONLINE 可收藏；
- * 列表按 {@code note.status} 渲染「已下架 / 已删除」占位。
+ * 收藏列表也只展示 ONLINE 的笔记。
  *
  * <p>三个入口：{@link #favorite} / {@link #unfavorite} 是写入侧，
  * {@link #listFavorites} 是「我的收藏」；另有两个给别的模块用的只读方法
@@ -84,7 +84,6 @@ public class FavoriteService {
      * 收藏一篇笔记，返回操作后的最新收藏量。
      *
      * <p>只允许收藏 {@code ONLINE} 的笔记
-     * @param userId 收藏者，取自 JWT
      * @throws BusinessException 40400 笔记不存在；40301 笔记非 ONLINE；40902 已收藏过
      */
     @Transactional
@@ -99,9 +98,7 @@ public class FavoriteService {
         try {
             favoriteRepository.insert(favorite);
         } catch (DuplicateKeyException e) {
-            // 去重由 uk_user_note 兜底，不做「先查再插」——那套在并发下会漏，
-            // 两个请求可以同时查到「没收藏过」（§3.3）。异常继续外抛而不是吞掉，
-            // 事务照常回滚；此时第 3 步还没执行，没有任何东西要撤销。
+            // 去重由 uk_user_note 兜底，不做「先查再插」——那套在并发下会漏，两个请求可以同时查到「没收藏过」。
             throw new BusinessException(ErrorCode.ALREADY_FAVORITED);
         }
 
@@ -113,16 +110,13 @@ public class FavoriteService {
     /**
      * 取消收藏，返回操作后的最新收藏量。
      *
-     * <p>幂等：本来就没收藏过也返回 200，而不是 40400。
-     *
-     * <p>笔记非 ONLINE 也放行。
-     * 由于软删除，占位项如果不允许取消，用户就永远清不掉自己收藏列表里的已删除/下架的项
+     * <p>笔记非 ONLINE 也放行：这类历史收藏虽然不再出现在列表里，
+     * 但关系行还在，接口层仍要允许解除，避免它们永远留在表中。
      *
      * <p>第一步取锁而不取状态：本方法不关心 {@code ONLINE}，但要与
      * {@link #favorite} 走同一把锁的同一获取顺序（note → favorite），否则收藏与取消收藏
      * 并发作用于同一 {@code (user, note)} 时锁序相反，一样会死锁。
      *
-     * @param userId 取消者，取自 JWT
      * @throws BusinessException 40400 笔记不存在。注意「存在但没收藏过」是 200，两者要分清
      */
     @Transactional
@@ -149,10 +143,9 @@ public class FavoriteService {
      * <p>只查自己的收藏：{@code userId} 取自 JWT。
      * （未来实现让用户选择是否公开自己的收藏？）
      *
-     * <p><b>三种状态都渲染</b>（§6.5）：{@code ONLINE} 正常项，
-     * {@code OFFLINE} / {@code DELETED} 是占位项——保留标题与课程，其余置空。
+     * <p><b>只返回 {@code ONLINE}</b>：状态过滤放在 SQL 里，
+     * 这样分页 {@code total} 与每页条数都只统计在线项。
      *
-     * @param userId 当前登录者，取自 JWT
      * @throws BusinessException 40001 分页过深（{@code page × size > 1000}，见 {@link Paging#MAX_PAGE_DEPTH}）
      */
     public PageResult<FavoriteItemResult> listFavorites(Long userId, FavoriteListQuery query) {
@@ -189,16 +182,8 @@ public class FavoriteService {
     private FavoriteItemResult toFavoriteItem(FavoriteItemSnapshot row,
                                               Map<Long, List<TagResult>> tagsByNote,
                                               Map<Long, UploaderProfile> profiles) {
-        NoteStatus status = NoteStatus.fromName(row.status());
         CourseResult course = new CourseResult(row.courseId(), row.courseName());
-
-        if (status != NoteStatus.ONLINE) {
-            return new FavoriteItemResult(row.noteId(), status, row.favoritedAt(),
-                    row.title(), course,
-                    null, List.of(), null, null, null, null);
-        }
-
-        return new FavoriteItemResult(row.noteId(), status, row.favoritedAt(),
+        return new FavoriteItemResult(row.noteId(), NoteStatus.fromName(row.status()), row.favoritedAt(),
                 row.title(), course,
                 uploaderOf(row.uploaderId(), profiles.get(row.uploaderId())),
                 // 没有标签时给空列表：getOrDefault 的默认值必须是不可变的 List.of()，

@@ -17,10 +17,8 @@ public interface FavoriteMapper extends BaseMapper<FavoritePO> {
 
     /**
      * 某个用户的收藏，一页。
-     *
-     * <p>不筛 {@code note.status}：三种状态都要取回来交给 Service 渲染占位；
-     * 这个列表只有本人能看，所以只需要 {@code userId}。
      */
     IPage<FavoriteItemSnapshot> selectFavoritePage(IPage<FavoriteItemSnapshot> page,
-                                                   @Param("userId") Long userId);
+                                                   @Param("userId") Long userId,
+                                                   @Param("status") String status);
 }

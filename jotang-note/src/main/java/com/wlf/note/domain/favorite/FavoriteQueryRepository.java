@@ -9,6 +9,7 @@ import java.util.Set;
 /** 收藏读侧。 */
 public interface FavoriteQueryRepository {
 
+    /** 我的收藏，只包含笔记状态为 ONLINE 的项。 */
     PageSlice<FavoriteItemSnapshot> findPage(Long userId, int page, int size);
 
     Set<Long> findFavoritedNoteIds(Long userId, Collection<Long> noteIds);

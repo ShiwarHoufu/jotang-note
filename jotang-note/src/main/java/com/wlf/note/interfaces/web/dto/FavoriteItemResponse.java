@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 收藏项出参：正常项，或「已下架 / 已删除」占位。
+ * 收藏项出参。
  */
 public record FavoriteItemResponse(
         Long noteId,

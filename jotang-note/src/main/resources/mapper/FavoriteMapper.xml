@@ -12,7 +12,7 @@
     <!--
       我的收藏的一页。
 
-      不筛 n.status。正常项、OFFLINE、DELETED三种状态都取回来交给 Service 渲染：
+      只取 ONLINE，分页 total 也只统计在线项。
 
       标签不并进来：它与笔记是 to-many，一旦 JOIN 进带 LIMIT 的语句，LIMIT 切的就是
       JOIN 之后的行——一篇带 3 个标签的笔记会占掉 3 个名额，标签另起一条 IN 查询批量取回，在 Service 里按 noteId 装配。
@@ -37,6 +37,7 @@
                  JOIN note n ON n.id = f.note_id
                  JOIN course c ON c.id = n.course_id
         WHERE f.user_id = #{userId}
+          AND n.status = #{status}
         ORDER BY f.created_at DESC, f.id DESC
     </select>
 

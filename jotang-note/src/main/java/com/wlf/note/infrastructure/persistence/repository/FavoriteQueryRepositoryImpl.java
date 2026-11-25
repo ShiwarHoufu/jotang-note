@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.wlf.note.domain.favorite.FavoriteQueryRepository;
 import com.wlf.note.domain.favorite.query.FavoriteItemSnapshot;
+import com.wlf.note.domain.note.NoteStatus;
 import com.wlf.note.domain.shared.PageSlice;
 import com.wlf.note.infrastructure.persistence.FavoriteMapper;
 import com.wlf.note.infrastructure.persistence.po.FavoritePO;
@@ -27,7 +28,7 @@ public class FavoriteQueryRepositoryImpl implements FavoriteQueryRepository {
     @Override
     public PageSlice<FavoriteItemSnapshot> findPage(Long userId, int page, int size) {
         IPage<FavoriteItemSnapshot> result = favoriteMapper.selectFavoritePage(
-                new Page<>(page, size), userId);
+                new Page<>(page, size), userId, NoteStatus.ONLINE.name());
         return new PageSlice<>(result.getRecords(), result.getTotal());
     }
 
