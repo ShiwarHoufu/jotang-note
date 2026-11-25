@@ -3,9 +3,11 @@ package com.wlf.note.application.service;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import com.wlf.common.Paging;
+import com.wlf.note.application.query.AdminNoteListQuery;
 import com.wlf.note.application.query.MyNoteListQuery;
 import com.wlf.note.application.query.NoteListQuery;
 import com.wlf.note.application.query.NoteSearchQuery;
+import com.wlf.note.application.result.AdminNoteItemResult;
 import com.wlf.note.application.result.CourseResult;
 import com.wlf.note.application.result.MyNoteItemResult;
 import com.wlf.note.application.result.NoteDetailResult;
@@ -23,6 +25,7 @@ import com.wlf.note.domain.note.NoteQueryRepository;
 import com.wlf.note.domain.note.NoteRepository;
 import com.wlf.note.domain.note.NoteStatus;
 import com.wlf.note.domain.note.PreviewMode;
+import com.wlf.note.domain.note.query.AdminNoteSnapshot;
 import com.wlf.note.domain.note.query.MyNoteSnapshot;
 import com.wlf.note.domain.note.query.NoteDetailSnapshot;
 import com.wlf.note.domain.note.query.NoteDetailView;
@@ -125,6 +128,19 @@ public class NoteQueryService {
                 query.size());
     }
 
+    public PageResult<AdminNoteItemResult> listOffline(AdminNoteListQuery query) {
+        Paging.requireShallow(query.page(), query.size());
+
+        PageSlice<AdminNoteSnapshot> result = noteQueryRepository.findOfflinePage(
+                query.page(), query.size(), escapeLikeKeyword(query.keyword()));
+
+        return new PageResult<>(
+                assembleOffline(result.items()),
+                result.total(),
+                query.page(),
+                query.size());
+    }
+
     public NoteFileResult requireOwnFile(Long noteId, Long uploaderId) {
         NoteFileOwnershipSnapshot row = noteQueryRepository.findFileOwnership(noteId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
@@ -192,7 +208,7 @@ public class NoteQueryService {
                 row.favoriteCount(),
                 row.createdAt(),
                 row.updatedAt(),
-                status == NoteStatus.DELETED ? null : fileInfoOf(row),
+                fileInfoOf(row),
                 favoriteService.isFavorited(viewerId, row.id()));
     }
 
@@ -279,6 +295,31 @@ public class NoteQueryService {
                         row.favoriteCount(),
                         row.createdAt(),
                         favoritedNoteIds.contains(row.id())))
+                .toList();
+    }
+
+    private List<AdminNoteItemResult> assembleOffline(List<AdminNoteSnapshot> rows) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<Long> noteIds = rows.stream().map(AdminNoteSnapshot::id).toList();
+        List<Long> uploaderIds = rows.stream().map(AdminNoteSnapshot::uploaderId).distinct().toList();
+
+        Map<Long, List<TagResult>> tagsByNote = tagsGroupedByNote(noteIds);
+        Map<Long, UploaderProfile> profiles = uploaderProfileReader.batchGet(uploaderIds);
+
+        return rows.stream()
+                .map(row -> new AdminNoteItemResult(
+                        row.id(),
+                        row.title(),
+                        new CourseResult(row.courseId(), row.courseName()),
+                        uploaderOf(row.uploaderId(), profiles.get(row.uploaderId())),
+                        tagsByNote.getOrDefault(row.id(), List.of()),
+                        row.viewCount(),
+                        row.downloadCount(),
+                        row.favoriteCount(),
+                        row.createdAt(),
+                        row.updatedAt()))
                 .toList();
     }
 

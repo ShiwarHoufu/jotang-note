@@ -2,8 +2,10 @@ package com.wlf.note.interfaces.web.assembler;
 
 import com.wlf.note.application.command.UpdateNoteCommand;
 import com.wlf.note.application.command.UploadNoteCommand;
+import com.wlf.note.application.query.AdminNoteListQuery;
 import com.wlf.note.application.query.MyNoteListQuery;
 import com.wlf.note.application.query.NoteListQuery;
+import com.wlf.note.application.result.AdminNoteItemResult;
 import com.wlf.note.application.result.CourseResult;
 import com.wlf.note.application.result.MyNoteItemResult;
 import com.wlf.note.application.result.NoteCreatedResult;
@@ -13,6 +15,8 @@ import com.wlf.note.application.result.PreviewUrlResult;
 import com.wlf.note.application.result.TagResult;
 import com.wlf.note.application.result.UploaderResult;
 import com.wlf.note.domain.note.NoteSort;
+import com.wlf.note.interfaces.web.dto.AdminNoteItemResponse;
+import com.wlf.note.interfaces.web.dto.AdminNoteListRequest;
 import com.wlf.note.interfaces.web.dto.CourseResponse;
 import com.wlf.note.interfaces.web.dto.MyNoteItemResponse;
 import com.wlf.note.interfaces.web.dto.MyNoteListRequest;
@@ -53,6 +57,10 @@ public class NoteAssembler {
         return new MyNoteListQuery(request.getPage(), request.getSize());
     }
 
+    public AdminNoteListQuery toQuery(AdminNoteListRequest request) {
+        return new AdminNoteListQuery(request.getPage(), request.getSize(), request.getKeyword());
+    }
+
     public NoteCreatedResponse toResponse(NoteCreatedResult result) {
         return new NoteCreatedResponse(result.id());
     }
@@ -77,6 +85,13 @@ public class NoteAssembler {
                 result.id(), result.status(), result.title(), toResponse(result.course()),
                 toTagResponses(result.tags()), result.viewCount(), result.downloadCount(),
                 result.favoriteCount(), result.createdAt(), result.isFavorited());
+    }
+
+    public AdminNoteItemResponse toResponse(AdminNoteItemResult result) {
+        return new AdminNoteItemResponse(
+                result.id(), result.title(), toResponse(result.course()), toResponse(result.uploader()),
+                toTagResponses(result.tags()), result.viewCount(), result.downloadCount(),
+                result.favoriteCount(), result.createdAt(), result.updatedAt());
     }
 
     public NotePreviewUrlResponse toResponse(PreviewUrlResult result) {

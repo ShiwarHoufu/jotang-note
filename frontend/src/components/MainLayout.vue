@@ -33,6 +33,13 @@ async function logout() {
           <el-menu-item index="home" :route="{ name: 'home' }">首页</el-menu-item>
           <el-menu-item index="my-notes" :route="{ name: 'my-notes' }">我的上传</el-menu-item>
           <el-menu-item index="my-favorites" :route="{ name: 'my-favorites' }">我的收藏</el-menu-item>
+          <el-menu-item
+            v-if="auth.isAdmin"
+            index="admin-offline-notes"
+            :route="{ name: 'admin-offline-notes' }"
+          >
+            下架管理
+          </el-menu-item>
         </el-menu>
       </div>
       <div class="header-right">

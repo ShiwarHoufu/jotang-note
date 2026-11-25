@@ -1,5 +1,6 @@
 package com.wlf.note.domain.note;
 
+import com.wlf.note.domain.note.query.AdminNoteSnapshot;
 import com.wlf.note.domain.note.query.MyNoteSnapshot;
 import com.wlf.note.domain.note.query.NoteDetailSnapshot;
 import com.wlf.note.domain.note.query.NoteFileOwnershipSnapshot;
@@ -26,6 +27,8 @@ public interface NoteQueryRepository {
     PageSlice<NoteListSnapshot> findPage(NoteListCriteria criteria);
 
     PageSlice<MyNoteSnapshot> findMine(Long uploaderId, int page, int size);
+
+    PageSlice<AdminNoteSnapshot> findOfflinePage(int page, int size, String keyword);
 
     Optional<NoteFileOwnershipSnapshot> findFileOwnership(Long noteId);
 

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.wlf.note.domain.note.NoteQueryRepository;
 import com.wlf.note.domain.note.NoteStatus;
+import com.wlf.note.domain.note.query.AdminNoteSnapshot;
 import com.wlf.note.domain.note.query.MyNoteSnapshot;
 import com.wlf.note.domain.note.query.NoteDetailSnapshot;
 import com.wlf.note.domain.note.query.NoteFileOwnershipSnapshot;
@@ -66,6 +67,13 @@ public class NoteQueryRepositoryImpl implements NoteQueryRepository {
     public PageSlice<MyNoteSnapshot> findMine(Long uploaderId, int page, int size) {
         IPage<MyNoteSnapshot> result = noteMapper.selectMyNotePage(
                 new Page<>(page, size), uploaderId, NoteStatus.DELETED.name());
+        return new PageSlice<>(result.getRecords(), result.getTotal());
+    }
+
+    @Override
+    public PageSlice<AdminNoteSnapshot> findOfflinePage(int page, int size, String keyword) {
+        IPage<AdminNoteSnapshot> result = noteMapper.selectOfflinePage(
+                new Page<>(page, size), NoteStatus.OFFLINE.name(), keyword);
         return new PageSlice<>(result.getRecords(), result.getTotal());
     }
 

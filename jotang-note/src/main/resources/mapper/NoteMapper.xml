@@ -127,6 +127,30 @@
     </select>
 
     <!--
+      管理员「已下架笔记」。
+      updated_at 是最后编辑时间，不是下架时间；下架动作不写时间。
+    -->
+    <select id="selectOfflinePage" resultType="com.wlf.note.domain.note.query.AdminNoteSnapshot">
+        SELECT n.id,
+               n.title,
+               n.view_count,
+               n.download_count,
+               n.favorite_count,
+               n.created_at,
+               n.updated_at,
+               c.id   AS course_id,
+               c.name AS course_name,
+               n.uploader_id AS uploader_id
+        FROM note n
+                 JOIN course c ON c.id = n.course_id
+        WHERE n.status = #{status}
+        <if test="keyword != null and keyword != ''">
+            AND n.title LIKE CONCAT('%', #{keyword}, '%') ESCAPE '/'
+        </if>
+        ORDER BY n.updated_at DESC, n.id DESC
+    </select>
+
+    <!--
       一整页笔记的标签，一次取回。
 
       调用方保证 noteIds 非空：IN () 是语法错误，空页应当在 Service 里直接短路。

@@ -2,6 +2,7 @@ package com.wlf.note.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.wlf.note.domain.note.query.AdminNoteSnapshot;
 import com.wlf.note.domain.note.query.MyNoteSnapshot;
 import com.wlf.note.domain.note.query.NoteDetailSnapshot;
 import com.wlf.note.domain.note.query.NoteFileOwnershipSnapshot;
@@ -58,6 +59,15 @@ public interface NoteMapper extends BaseMapper<NotePO> {
     IPage<MyNoteSnapshot> selectMyNotePage(IPage<MyNoteSnapshot> page,
                                            @Param("uploaderId") Long uploaderId,
                                            @Param("excludedStatus") String excludedStatus);
+
+    /**
+     * 管理员「已下架笔记」的一页。
+     *
+     * @param keyword 已由查询服务转义过的 LIKE 模式
+     */
+    IPage<AdminNoteSnapshot> selectOfflinePage(IPage<AdminNoteSnapshot> page,
+                                               @Param("status") String status,
+                                               @Param("keyword") String keyword);
 
     /** 浏览量原子自增，仅当笔记处于给定状态；状态由调用方传入。 */
     @Update("UPDATE note SET view_count = view_count + 1 WHERE id = #{id} AND status = #{status}")

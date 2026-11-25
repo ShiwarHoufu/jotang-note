@@ -48,9 +48,7 @@ public class TagService {
     /**
      * 把标签名字解析成 id。不存在的当场创建。上传笔记时用。
      *
-     * @param names 标签名，可含 null / 空白项（会被丢弃）
      * @return 标签 id，顺序同入参去重后的顺序；无有效标签时返回空列表
-     * @throws BusinessException 40001 单个标签过长或标签过多（data 携带 {@link FieldViolation}）
      */
     public List<Long> resolveIds(Collection<String> names) {
         List<String> wanted = normalize(names);

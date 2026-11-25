@@ -151,6 +151,20 @@ export interface MyNoteItem {
   isFavorited: boolean
 }
 
+/** 管理员「已下架笔记」项：含上传者，便于定位；状态恒定 OFFLINE，故不下发 */
+export interface AdminNoteItem {
+  id: number
+  title: string
+  course: Course
+  uploader: Uploader
+  tags: Tag[]
+  viewCount: number
+  downloadCount: number
+  favoriteCount: number
+  createdAt: string
+  updatedAt: string
+}
+
 /**
  * 收藏列表项（§5.5）：占位项保留 title / course，uploader 与计数为 null，
  * 「是不是占位」只需看 status

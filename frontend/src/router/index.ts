@@ -41,6 +41,12 @@ const router = createRouter({
           component: () => import('@/views/FavoritesView.vue'),
         },
         {
+          path: 'admin/notes/offline',
+          name: 'admin-offline-notes',
+          component: () => import('@/views/AdminOfflineNotesView.vue'),
+          meta: { admin: true },
+        },
+        {
           path: 'profile',
           name: 'profile',
           component: () => import('@/views/ProfileView.vue'),
@@ -106,6 +112,11 @@ router.beforeEach(async (to) => {
     await auth.loadCurrentUser()
   } catch {
     return { name: 'login', query: { redirect: to.fullPath } }
+  }
+
+  // 管理页要靠后端已加载的 role 判定；非管理员直接回首页，不弹提示
+  if (to.meta.admin && !auth.isAdmin) {
+    return { name: 'home' }
   }
   return true
 })
