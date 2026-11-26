@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Import;
         scanBasePackages = {"com.wlf.ai", "com.wlf.common"},
         exclude = RabbitAutoConfiguration.class)
 @EnableFeignClients(basePackages = "com.wlf.ai.infrastructure.note")
-@MapperScan("com.wlf.ai.chat.persistence")
+@MapperScan({"com.wlf.ai.chat.persistence", "com.wlf.ai.rag.ingest.persistence"})
 @Import({OssConfig.class, OssStorageService.class})
 public class AiApplication {
 

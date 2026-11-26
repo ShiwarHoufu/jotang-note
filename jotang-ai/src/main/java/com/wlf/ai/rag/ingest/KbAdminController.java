@@ -7,9 +7,10 @@ import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 知识库运维接口：手动触发全量导入。 */
+/** 知识库运维接口：手动触发增量导入。 */
 @RestController
 public class KbAdminController {
 
@@ -20,17 +21,19 @@ public class KbAdminController {
     }
 
     /**
-     * 全量导入知识库目录。
+     * 增量导入知识库目录；{@code force=true} 忽略指纹全量重做。
      *
      * <p>只允许 ADMIN
      */
     @PostMapping("/api/ai/kb/reindex")
     public ApiResponse<KbReindexResponse> reindex(
-            @AuthenticationPrincipal AuthenticatedUser user) {
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(defaultValue = "false") boolean force) {
         if (!user.isAdmin()) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
-        KbIngestionService.IngestReport report = ingestionService.ingestAll();
-        return ApiResponse.ok(new KbReindexResponse(report.total(), report.indexed(), report.failed()));
+        KbIngestionService.IngestReport report = ingestionService.ingestAll(force);
+        return ApiResponse.ok(new KbReindexResponse(
+                report.total(), report.indexed(), report.skipped(), report.failed()));
     }
 }

@@ -2,6 +2,7 @@ package com.wlf.ai.rag.ingest;
 
 import com.wlf.ai.infrastructure.vectorstore.KbChunkFields;
 import com.wlf.ai.infrastructure.vectorstore.KbVectorStore;
+import com.wlf.ai.rag.ingest.persistence.KbDocumentStateStore;
 import com.wlf.common.BusinessException;
 import com.wlf.common.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
@@ -15,10 +16,13 @@ import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -28,7 +32,9 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /** 知识库导入：先把目录下的文件加载成 {@link Resource}。 */
 @Slf4j
@@ -43,6 +49,13 @@ public class KbIngestionService {
     private static final int MIN_CHUNK_LENGTH_TO_EMBED = 10;
     /** 单篇文档最多切多少块，防止异常文件把索引撑爆 */
     private static final int MAX_NUM_CHUNKS = 5000;
+
+    /**
+     * 切块参数快照，写进状态表：参数一变旧行的指纹就失效，整库重新索引。
+     * 改标点表或 keepSeparator 这类非数字选项要手动 force，不在快照里。
+     */
+    private static final String CHUNK_CONFIG =
+            CHUNK_SIZE + "x" + MIN_CHUNK_SIZE_CHARS + "x" + MIN_CHUNK_LENGTH_TO_EMBED + "x" + MAX_NUM_CHUNKS;
 
     /** 英文标点之外补上中文句读，切分点更自然 */
     private static final List<Character> PUNCTUATION =
@@ -60,28 +73,48 @@ public class KbIngestionService {
     private final ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
 
     private final String kbDir;
+    private final String embeddingModel;
     private final KbDocumentReader documentReader;
     private final KbVectorStore kbVectorStore;
+    private final KbDocumentStateStore stateStore;
 
     public KbIngestionService(@Value("${jotang.ai.kb.dir}") String kbDir,
+                              @Value("${spring.ai.openai.embedding.model:unknown}") String embeddingModel,
                               KbDocumentReader documentReader,
-                              KbVectorStore kbVectorStore) {
+                              KbVectorStore kbVectorStore,
+                              KbDocumentStateStore stateStore) {
         this.kbDir = kbDir;
+        this.embeddingModel = embeddingModel;
         this.documentReader = documentReader;
         this.kbVectorStore = kbVectorStore;
+        this.stateStore = stateStore;
     }
 
 
-
-    /** 导入整个知识库目录。 */
-    public IngestReport ingestAll() {
+    /** 增量导入整个知识库目录：内容未变的文件跳过，最后清理已消失文件的块与状态。 */
+    public IngestReport ingestAll(boolean force) {
         List<Resource> resources = loadResources();
+        Set<String> currentPaths = resources.stream()
+                .map(this::relativePath)
+                .collect(Collectors.toSet());
+        Map<String, String> indexedHashes = force
+                ? Map.of()
+                : stateStore.findHashes(embeddingModel, CHUNK_CONFIG);
         List<String> failed = new ArrayList<>();
         int indexed = 0;
+        int skipped = 0;
 
         for (Resource resource : resources) {
             try {
+                String path = relativePath(resource);
+                String hash = contentHash(resource);
+                if (hash.equals(indexedHashes.get(path))) {
+                    skipped++;
+                    continue;
+                }
+
                 int chunks = ingest(resource);
+                stateStore.save(path, sha256(path), hash, chunks, embeddingModel, CHUNK_CONFIG);
                 indexed++;
                 log.info("已导入 {}，{} 个块", resource.getFilename(), chunks);
             } catch (BusinessException e) {
@@ -93,21 +126,20 @@ public class KbIngestionService {
             }
         }
 
-        log.info("知识库导入完成：文件 {} 个，成功 {} 个，失败 {} 个",
-                resources.size(), indexed, failed.size());
-        return new IngestReport(resources.size(), indexed, failed);
+        kbVectorStore.removeStale(currentPaths);
+        stateStore.deleteNotIn(currentPaths);
+
+        log.info("知识库导入完成：文件 {} 个，成功 {} 个，跳过 {} 个，失败 {} 个",
+                resources.size(), indexed, skipped, failed.size());
+        return new IngestReport(resources.size(), indexed, skipped, failed);
     }
 
 
     /** 导入单个文件：解析 → 切块 → 补元数据 → 覆盖该文档在向量库里的旧块。 */
-    public int ingest(Resource resource) {
+    private int ingest(Resource resource) {
         KbMetadata metadata = metadataOf(resource);
         List<Document> rawChunks = splitter.apply(documentReader.read(resource));
         List<Document> enrichedChunks = enrich(rawChunks, metadata);
-        if (enrichedChunks.isEmpty()) {
-            return 0;
-        }
-
         kbVectorStore.replaceDocument(metadata.documentId(), enrichedChunks);
         return enrichedChunks.size();
     }
@@ -203,6 +235,21 @@ public class KbIngestionService {
         return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
+    /** 文件字节的 SHA-256；边读边算，大 PDF 不进内存。 */
+    private static String contentHash(Resource resource) {
+        try (InputStream in = resource.getInputStream();
+             DigestInputStream digest = new DigestInputStream(
+                     in, MessageDigest.getInstance("SHA-256"))) {
+            digest.transferTo(OutputStream.nullOutputStream());
+            return HexFormat.of().formatHex(digest.getMessageDigest().digest());
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.SERVER_ERROR,
+                    "读取文件失败：" + resource.getFilename());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("JVM 不支持 SHA-256", e);
+        }
+    }
+
     /** 文档 id 取相对路径的哈希：文件挪动或改名视为新文档，重跑是幂等的。 */
     private static String sha256(String value) {
         try {
@@ -223,8 +270,8 @@ public class KbIngestionService {
     private record KbMetadata(String documentId, String path, String title, String sourceUrl) {
     }
 
-    /** 一次全量导入的结果。 */
-    public record IngestReport(int total, int indexed, List<String> failed) {
+    /** 一次增量导入的结果。 */
+    public record IngestReport(int total, int indexed, int skipped, List<String> failed) {
 
         public IngestReport {
             failed = List.copyOf(failed);
