@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 /** 知识库导入：先把目录下的文件加载成 {@link Resource}。 */
@@ -78,6 +79,9 @@ public class KbIngestionService {
     private final KbVectorStore kbVectorStore;
     private final KbDocumentStateStore stateStore;
 
+    /** 同一 JVM 内只允许一个重建在跑；多实例部署时挡不住，需换分布式锁 */
+    private final ReentrantLock reindexLock = new ReentrantLock();
+
     public KbIngestionService(@Value("${jotang.ai.kb.dir}") String kbDir,
                               @Value("${spring.ai.openai.embedding.model:unknown}") String embeddingModel,
                               KbDocumentReader documentReader,
@@ -93,13 +97,27 @@ public class KbIngestionService {
 
     /** 增量导入整个知识库目录：内容未变的文件跳过，最后清理已消失文件的块与状态。 */
     public IngestReport ingestAll(boolean force) {
+        if (!reindexLock.tryLock()) {
+            throw new BusinessException(ErrorCode.KB_REBUILD_RUNNING);
+        }
+        try {
+            return doIngestAll(force);
+        } finally {
+            reindexLock.unlock();
+        }
+    }
+
+    private IngestReport doIngestAll(boolean force) {
         List<Resource> resources = loadResources();
+
         Set<String> currentPaths = resources.stream()
                 .map(this::relativePath)
                 .collect(Collectors.toSet());
+
         Map<String, String> indexedHashes = force
                 ? Map.of()
                 : stateStore.findHashes(embeddingModel, CHUNK_CONFIG);
+
         List<String> failed = new ArrayList<>();
         int indexed = 0;
         int skipped = 0;

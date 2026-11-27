@@ -31,6 +31,8 @@ public enum ErrorCode {
 
     EMAIL_TAKEN(40903, "该邮箱已被注册", HttpStatus.CONFLICT),
 
+    KB_REBUILD_RUNNING(40904, "知识库正在重建，请稍后再试", HttpStatus.CONFLICT),
+
     FILE_INVALID(42200, "文件类型或大小不合法", HttpStatus.UNPROCESSABLE_ENTITY),
 
     ACCOUNT_LOCKED(42300, "账号已锁定", HttpStatus.LOCKED),
