@@ -38,9 +38,15 @@ spring:
         api-key: ${JOTANG_EMBEDDING_API_KEY:}
         base-url: ${JOTANG_EMBEDDING_BASE_URL:https://api.siliconflow.cn/v1}
         model: ${JOTANG_EMBEDDING_MODEL:BAAI/bge-m3}
+    # 范围门禁的 DecisionModel 走本地 Ollama；decision 只能选一个 provider，必须显式写
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      decision:
+        model: ${OLLAMA_DECISION_MODEL:d1-omni:600m}
     model:
       chat: openai
       embedding: openai
+      decision: ollama
       image: none
       audio:
         speech: none

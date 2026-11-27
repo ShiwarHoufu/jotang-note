@@ -1,4 +1,4 @@
-# 起 MySQL、RabbitMQ、Redis、Nacos 与 Qdrant。
+# 起 MySQL、RabbitMQ、Redis、Nacos、Qdrant 与 Ollama。
 #
 # 密码不落仓库，从同目录 .env 读取（Compose 会自动加载该文件）。
 
@@ -86,6 +86,27 @@ services:
       timeout: 3s
       retries: 5
 
+  ollama:
+    # 对话范围门禁的 DecisionModel 走 /v1/systemone；该端点要求 0.40.4+
+    # （d1-omni:600m 模型配置里的 requires）。宿主机若装了原生 Ollama，
+    # 先退出再起容器，否则 11434 端口被占用。
+    image: ollama/ollama:${OLLAMA_VERSION:-0.40.5}
+    container_name: jotang-ollama
+    restart: unless-stopped
+    ports:
+      # 只绑回环：应用在本机，DecisionModel 连 http://localhost:11434
+      - "127.0.0.1:11434:11434"
+    volumes:
+      # 模型文件几百 MB，重拉一次不便宜
+      - ollama-data:/root/.ollama
+    healthcheck:
+      # 镜像自带 CLI；只探服务是否响应，不加载模型
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   nacos:
     # 与 SCA 2025.1.0.0 内置的 nacos-client 3.1.1 对齐；镜像仓库缺这个标签时，
     # 在 .env 里设 NACOS_VERSION=v3.3.0 覆盖即可
@@ -116,3 +137,4 @@ volumes:
   rabbitmq-data:
   nacos-data:
   qdrant-data:
+  ollama-data:

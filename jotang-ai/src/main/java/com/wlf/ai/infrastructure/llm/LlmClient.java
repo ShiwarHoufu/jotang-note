@@ -1,5 +1,6 @@
 package com.wlf.ai.infrastructure.llm;
 
+import com.wlf.ai.chat.advisor.ScopeGuardAdvisor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -21,9 +22,11 @@ import java.util.List;
 public class LlmClient {
 
     private final ChatClient chatClient;
+    private final ScopeGuardAdvisor scopeGuardAdvisor;
 
-    public LlmClient(ChatClient chatClient) {
+    public LlmClient(ChatClient chatClient, ScopeGuardAdvisor scopeGuardAdvisor) {
         this.chatClient = chatClient;
+        this.scopeGuardAdvisor = scopeGuardAdvisor;
     }
 
 
@@ -32,7 +35,8 @@ public class LlmClient {
                       Object... tools) {
         ChatClient.ChatClientRequestSpec spec = chatClient.prompt()
                 .system(systemPrompt)
-                .messages(conversation(history, userMessage));
+                .messages(conversation(history, userMessage))
+                .advisors(scopeGuardAdvisor);
         if (tools.length > 0) {
             spec = spec.tools(tools);
         }
@@ -60,7 +64,8 @@ public class LlmClient {
                                    Object... tools) {
         ChatClient.ChatClientRequestSpec spec = chatClient.prompt()
                 .system(systemPrompt)
-                .messages(conversation(history, userMessage));
+                .messages(conversation(history, userMessage))
+                .advisors(scopeGuardAdvisor);
         if (tools.length > 0) {
             spec = spec.tools(tools);
         }
