@@ -32,15 +32,6 @@ public class KbVectorStore {
                 .build());
     }
 
-    /** 追加一批块；
-     * point id 相同的块会被覆盖。 */
-    public void append(List<Document> chunks) {
-        if (chunks.isEmpty()) {
-            return;
-        }
-        vectorStore.add(chunks);
-    }
-
     /** 覆盖一篇文档的全部块；
      * 先删旧块，块数变少或解析不出内容时都不会留下多余的点。 */
     public void replaceDocument(String documentId, List<Document> chunks) {
@@ -53,11 +44,11 @@ public class KbVectorStore {
         vectorStore.add(chunks);
     }
 
-    /** 删除不在本次扫描结果里的文档块：文件被删除或改名后，旧块不再参与检索。 */
+    /** 删除不在本次扫描结果里的文档块：
+     * 文件被删除或改名后，旧块不再参与检索。 */
     public void removeStale(Collection<String> currentPaths) {
-        // NIN 不接受空列表；空串不可能是合法相对路径，空目录时等价于删除所有知识库块
         List<Object> kept = currentPaths.isEmpty()
-                ? List.of("")
+                ? List.of("")  // NIN不接受空列表；空目录时等价于删除所有块
                 : new ArrayList<>(currentPaths);
         vectorStore.delete(new FilterExpressionBuilder()
                 .nin(KbChunkFields.DOCUMENT_PATH, kept)
